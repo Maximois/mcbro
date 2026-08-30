@@ -1,0 +1,48 @@
+{
+  "name": "mc-browser-v2",
+  "version": "1.0.0",
+  "description": "MC Browser — Privacy First Desktop Browser",
+  "main": "main.js",
+  "author": "MC Browser",
+  "license": "GPL-3.0",
+  "scripts": {
+    "start": "electron .",
+    "dev": "set MC_DEV=1 && electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "30.0.9",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.mcbrowser.v2",
+    "productName": "MC Browser",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "modules/**/*",
+      "preload/**/*",
+      "assets/**/*",
+      "favicon/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MC Browser"
+    }
+  }
+}

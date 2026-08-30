@@ -1,0 +1,32 @@
+# Dependencias
+node_modules/
+
+# Build / empaquetado
+dist/
+out/
+*.blockmap
+
+# Logs
+*.log
+npm-debug.log*
+run.txt
+
+# Archivos de diagnóstico / depuración temporales
+check_renderer.js
+compare-html.js
+debug-scan.js
+debug_parser.py
+find_error.js
+scan-render.js
+scan.js
+scan_renderer_syntax.py
+test_syntax.js
+validate_renderer_syntax.js
+
+# Backups
+*.backup
+*.broken-backup
+
+# Sistema
+.DS_Store
+Thumbs.db
