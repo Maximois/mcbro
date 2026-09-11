@@ -7,6 +7,7 @@ const os = require('os');
 const { spawn, execFile } = require('child_process');
 const crypto = require('crypto');
 const { isAggressiveAdNavigation, isTrustedResource, isVideoHost } = require('./modules/adblocker/main');
+const Permissions = require('./lib/permissions');
 
 // Unique data folder per build: dev and installed app keep separate data
 const DATA_DIR = app.isPackaged ? 'MC Browser' : 'mc-browser-v2-dev';
@@ -40,26 +41,11 @@ const SKIP_EXT_RE = /\.(html?|php|aspx?|jsp|json|xml|css|js|svg|woff2?|ttf|eot)(
 let mainWin;
 
 function normalizeSiteHost(url) {
-  try {
-    const value = String(url || '').trim();
-    if (!value || value === 'about:blank') return '';
-    return new URL(value).hostname.replace(/^\.+/, '').toLowerCase();
-  } catch {
-    return '';
-  }
+  return Permissions.normalizeSiteHost(url);
 }
 
 function normalizeGlobalBlockPattern(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  try {
-    const withScheme = /^https?:\/\//i.test(raw) ? raw : 'https://' + raw;
-    const host = new URL(withScheme).hostname.replace(/^\.+/, '').replace(/^www\./i, '').toLowerCase();
-    return host || '';
-  } catch {
-    const host = raw.replace(/^https?:\/\//i, '').split('/')[0].replace(/^\.+/, '').replace(/^www\./i, '').toLowerCase();
-    return host || '';
-  }
+  return Permissions.normalizeGlobalBlockPattern(value);
 }
 
 const MULTI_LABEL_PUBLIC_SUFFIXES = new Set(['co.uk', 'org.uk', 'ac.uk', 'com.au', 'net.au', 'org.au', 'co.jp', 'co.kr', 'com.br', 'com.cn', 'com.mx', 'co.in']);
@@ -109,64 +95,30 @@ function allowNavigationTransition(sourceUrl, targetUrl) {
 }
 
 function parseGlobalBlockRule(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return null;
-  if (raw.startsWith('*.')) {
-    const host = raw.slice(2).replace(/^\.+/, '').replace(/^www\./i, '').toLowerCase();
-    return host ? { host, subdomainOnly: true } : null;
-  }
-  const host = normalizeGlobalBlockPattern(raw);
-  return host ? { host, subdomainOnly: false } : null;
+  return Permissions.parseGlobalBlockRule(value);
 }
 
 function isGlobalBlockMatch(requestHost, documentHost, rule) {
-  if (!rule?.host) return false;
-  const { host, subdomainOnly } = rule;
-  if (subdomainOnly) {
-    return requestHost === host || documentHost === host || requestHost.endsWith('.' + host) || documentHost.endsWith('.' + host);
-  }
-  if (requestHost === host || documentHost === host) return true;
-  return requestHost.endsWith('.' + host) || documentHost.endsWith('.' + host);
+  return Permissions.isGlobalBlockMatch(requestHost, documentHost, rule);
 }
 
 function getPermissionRuleForHost(host, permission) {
-  const normalizedHost = String(host || '').trim().replace(/^\.+/, '').replace(/^www\./i, '').toLowerCase();
-  if (!normalizedHost || !CFG.permissions) return null;
-
-  // La UI guarda dominios sin "www"; aplicar la misma regla a sus subdominios.
-  const candidates = Object.keys(CFG.permissions)
-    .map(rawKey => ({ rawKey, key: String(rawKey).replace(/^\.+/, '').replace(/^www\./i, '').toLowerCase() }))
-    .filter(({ key }) => normalizedHost === key || normalizedHost.endsWith('.' + key))
-    .sort((a, b) => b.key.length - a.key.length);
-  for (const { rawKey } of candidates) {
-    const rule = normalizePermissionMap(CFG.permissions[rawKey]);
-    if (rule[permission]) return rule[permission];
-  }
-  return null;
+  return Permissions.getPermissionRuleForHost(host, permission, CFG);
 }
 
 function isSitePermissionAllowed(host) {
-  return getPermissionRuleForHost(host, 'site') === 'allow';
+  return Permissions.isSitePermissionAllowed(host, CFG);
 }
 
 function resolvePermissionDecision(host, permissionKey) {
-  const rule = getPermissionRuleForHost(host, permissionKey);
-  if (rule === 'allow') return true;
-  if (rule === 'deny' || rule === 'block') return false;
-  if (['notifications', 'geolocation', 'camera', 'microphone', 'images', 'audio', 'media'].includes(permissionKey)) return false;
-  return false;
+  return Permissions.resolvePermissionDecision(host, permissionKey, CFG);
 }
 
 // Electron entrega los pedidos de camara/microfono bajo un unico tipo
 // 'media' (no 'camera' / 'microphone'); para distinguirlos hay que mirar
-// details.mediaTypes ('video' | 'audio'). Esta funcion traduce ese pedido
-// a las claves granulares que sí guarda la UI (camera / microphone).
+// details.mediaTypes ('video' | 'audio'). Ver lib/permissions.js.
 function resolveMediaPermissionDecision(host, mediaTypes) {
-  const types = Array.isArray(mediaTypes) && mediaTypes.length ? mediaTypes : ['video', 'audio'];
-  return types.every(type => {
-    const key = type === 'audio' ? 'microphone' : type === 'video' ? 'camera' : 'media';
-    return resolvePermissionDecision(host, key);
-  });
+  return Permissions.resolveMediaPermissionDecision(host, mediaTypes, CFG);
 }
 
 function setupSessionPermissionHandlers(sess) {
@@ -185,18 +137,7 @@ function setupSessionPermissionHandlers(sess) {
 }
 
 function getAllowlistPolicyForHost(host) {
-  const normalized = String(host || '').replace(/^\.+/, '').toLowerCase();
-  if (!normalized) return null;
-  const list = CFG.allowlist || {};
-  if (list[normalized]) return list[normalized];
-  if (list['.' + normalized]) return list['.' + normalized];
-  for (const [key, policy] of Object.entries(list)) {
-    const k = String(key).replace(/^\.+/, '').toLowerCase();
-    if (!k) continue;
-    if (normalized === k || normalized.endsWith('.' + k)) return policy;
-    if (k.endsWith('.' + normalized)) return policy;
-  }
-  return null;
+  return Permissions.getAllowlistPolicyForHost(host, CFG);
 }
 
 function cookieRemovalUrl(cookie, fallbackHost) {
@@ -1720,13 +1661,7 @@ ipcMain.handle('history:clear', () => {
 });
 // Permissions
 function normalizePermissionMap(value) {
-  if (Array.isArray(value)) {
-    const map = {};
-    for (const item of value) map[item] = 'allow';
-    return map;
-  }
-  if (value && typeof value === 'object') return value;
-  return {};
+  return Permissions.normalizePermissionMap(value);
 }
 
 function removePermissionEntry(domain, permission) {
@@ -2806,8 +2741,8 @@ app.whenReady().then(() => {
         if (setCookie) {
           const domain = host;
           const thirdParty = CFG.strictDomainIsolation && d.documentUrl && !isTrustedResource(d.url, d.documentUrl) && !isMediaRequest;
-          const allowPolicy = getAllowlistPolicyForHost(domain);
-          const blocked = thirdParty || allowPolicy === 'block';
+          const cookieAction = Permissions.resolveCookieAction({ host: domain, thirdParty, cfg: CFG });
+          const blocked = cookieAction === 'block';
           if (blocked && mainWin && !mainWin.isDestroyed()) {
             for (const c of Array.isArray(setCookie) ? setCookie : [setCookie]) {
               mainWin.webContents.send('cookie-intercepted', { action: 'blocked', domain, cookie: c });
@@ -2818,7 +2753,7 @@ app.whenReady().then(() => {
             // 'block' explicito (o 3ra parte con aislamiento) → el header
             // Set-Cookie no debe llegar nunca al navegador.
             delete responseHeaders[cookieKey];
-          } else if (allowPolicy === 'session' || (CFG.cookiePolicy === 'session' && allowPolicy !== 'allow')) {
+          } else if (cookieAction === 'session') {
             const sessionCookies = (value) => String(value)
               .replace(/;\s*expires=[^;]*/gi, '')
               .replace(/;\s*max-age=[^;]*/gi, '');

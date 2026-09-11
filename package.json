@@ -9,7 +9,8 @@
     "start": "electron .",
     "dev": "set MC_DEV=1 && electron .",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "test": "node --test"
   },
   "devDependencies": {
     "electron": "30.0.9",
