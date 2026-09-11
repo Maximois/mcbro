@@ -2586,8 +2586,12 @@ const WebChat = {
     document.querySelectorAll('.wch-prov-btn').forEach(b => b.classList.toggle('active', b.dataset.prov === id));
     const wv = this.ensureWebview();
     if (!wv) return;
-    if (this._ready) {
-      wv.loadURL(prov.url);
+    // Cargar vía src directamente (igual que WhatsApp) — más confiable que _pendingUrl,
+    // porque un webview sin src puede no disparar dom-ready y quedar en blanco.
+    let current = '';
+    try { current = wv.getURL() || ''; } catch {}
+    if (current !== prov.url) {
+      wv.setAttribute('src', prov.url);
     }
     this._pendingUrl = prov.url;
   },
@@ -2598,10 +2602,11 @@ const WebChat = {
 
     wv.addEventListener('dom-ready', () => {
       this._ready = true;
-      if (wv.getURL() === 'about:blank' && this._pendingUrl) {
+      let url = '';
+      try { url = wv.getURL() || ''; } catch {}
+      if ((url === 'about:blank' || !url) && this._pendingUrl) {
         wv.loadURL(this._pendingUrl);
       }
-
     });
 
     wv.addEventListener('did-navigate', () => {
@@ -2686,8 +2691,8 @@ const WebChat = {
       if (btn) btn.classList.add('active');
       this.ensureWebview();
       if (!this._contextTimer) this._contextTimer = setInterval(() => this.injectContextElement(), 3000);
-      // cargar provider activo si el webview está en about:blank
-      if (this._wv && this._wv.getURL() === 'about:blank' && this._active) {
+      // cargar provider activo (setActive carga vía src directamente)
+      if (this._wv && this._active) {
         this.setActive(this._active);
       }
     } else {
