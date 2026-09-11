@@ -4,9 +4,9 @@ const { app, BrowserWindow, session, ipcMain, shell, dialog, Notification, Menu,
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const crypto = require('crypto');
-const { isAggressiveAdNavigation, isTrustedResource } = require('./modules/adblocker/main');
+const { isAggressiveAdNavigation, isTrustedResource, isVideoHost } = require('./modules/adblocker/main');
 
 // Unique data folder per build: dev and installed app keep separate data
 const DATA_DIR = app.isPackaged ? 'MC Browser' : 'mc-browser-v2-dev';
@@ -62,6 +62,52 @@ function normalizeGlobalBlockPattern(value) {
   }
 }
 
+const MULTI_LABEL_PUBLIC_SUFFIXES = new Set(['co.uk', 'org.uk', 'ac.uk', 'com.au', 'net.au', 'org.au', 'co.jp', 'co.kr', 'com.br', 'com.cn', 'com.mx', 'co.in']);
+function baseNavigationDomain(host) {
+  const normalized = String(host || '').toLowerCase().replace(/^\.+/, '').replace(/\.$/, '');
+  const parts = normalized.split('.');
+  if (parts.length <= 2) return normalized;
+  const suffix = parts.slice(-2).join('.');
+  return parts.slice(-(MULTI_LABEL_PUBLIC_SUFFIXES.has(suffix) ? 3 : 2)).join('.');
+}
+
+function isSameNavigationSite(sourceUrl, targetUrl) {
+  try {
+    const source = new URL(sourceUrl);
+    const target = new URL(targetUrl);
+    if (!/^https?:$/.test(source.protocol) || !/^https?:$/.test(target.protocol)) return true;
+    return baseNavigationDomain(source.hostname) === baseNavigationDomain(target.hostname);
+  } catch {
+    return true;
+  }
+}
+
+function isExplicitNavigationSite(host) {
+  return isAuthDomain(host) || getPermissionRuleForHost(host, 'site') === 'allow';
+}
+
+function isExplicitMediaRedirectHost(host) {
+  const normalized = String(host || '').toLowerCase().replace(/^\.+/, '').replace(/\.$/, '');
+  if (!normalized) return false;
+  const explicitMediaHosts = [
+    'savefiles.com', 'playmogo.com', 'playmogo.net', 'mixdrop.co', 'mixdrop.to', 'miixdrop.top',
+    'dood.wf', 'dood.la', 'dood.to', 'doodstream.com', 'voe.sx', 'voe.com',
+    'mxdrop.com', 'mxdrop.to', 'lulu.to', 'mp4upload.com', 'streamwish.com', 'streamwish.to',
+    'filemoon.to', 'filemoon.sx', 'filemoon.in', 'pixeldrain.com', 'mega.nz'
+  ];
+  return explicitMediaHosts.some(domain => normalized === domain || normalized.endsWith('.' + domain));
+}
+
+function allowNavigationTransition(sourceUrl, targetUrl) {
+  try {
+    const targetHost = new URL(targetUrl).hostname;
+    if (isExplicitMediaRedirectHost(targetHost) || isVideoHost(targetHost)) return true;
+    return isSameNavigationSite(sourceUrl, targetUrl) || isExplicitNavigationSite(targetHost);
+  } catch {
+    return true;
+  }
+}
+
 function parseGlobalBlockRule(value) {
   const raw = String(value || '').trim();
   if (!raw) return null;
@@ -77,16 +123,30 @@ function isGlobalBlockMatch(requestHost, documentHost, rule) {
   if (!rule?.host) return false;
   const { host, subdomainOnly } = rule;
   if (subdomainOnly) {
-    return requestHost.endsWith('.' + host) || documentHost.endsWith('.' + host);
+    return requestHost === host || documentHost === host || requestHost.endsWith('.' + host) || documentHost.endsWith('.' + host);
   }
   if (requestHost === host || documentHost === host) return true;
   return requestHost.endsWith('.' + host) || documentHost.endsWith('.' + host);
 }
 
 function getPermissionRuleForHost(host, permission) {
-  const normalizedHost = String(host || '').trim().replace(/^\.+/, '').toLowerCase();
-  if (!normalizedHost || !CFG.permissions || !CFG.permissions[normalizedHost]) return null;
-  return CFG.permissions[normalizedHost][permission] || null;
+  const normalizedHost = String(host || '').trim().replace(/^\.+/, '').replace(/^www\./i, '').toLowerCase();
+  if (!normalizedHost || !CFG.permissions) return null;
+
+  // La UI guarda dominios sin "www"; aplicar la misma regla a sus subdominios.
+  const candidates = Object.keys(CFG.permissions)
+    .map(rawKey => ({ rawKey, key: String(rawKey).replace(/^\.+/, '').replace(/^www\./i, '').toLowerCase() }))
+    .filter(({ key }) => normalizedHost === key || normalizedHost.endsWith('.' + key))
+    .sort((a, b) => b.key.length - a.key.length);
+  for (const { rawKey } of candidates) {
+    const rule = normalizePermissionMap(CFG.permissions[rawKey]);
+    if (rule[permission]) return rule[permission];
+  }
+  return null;
+}
+
+function isSitePermissionAllowed(host) {
+  return getPermissionRuleForHost(host, 'site') === 'allow';
 }
 
 function resolvePermissionDecision(host, permissionKey) {
@@ -135,12 +195,44 @@ function createRequestGuard() {
   return (details) => {
     try {
       const requestHost = normalizeSiteHost(details?.url || '');
-      const documentHost = normalizeSiteHost(details?.documentUrl || '');
-      const globalBlocks = (Array.isArray(CFG.customRules) ? CFG.customRules : [])
+      // Fallback a referrer cuando documentUrl viene vacío (primera navegación)
+      const documentHost = normalizeSiteHost(details?.documentUrl || details?.referrer || '');
+      const resourceRule = (Array.isArray(CFG.resourceRules) ? CFG.resourceRules : [])
+        .find(rule => rule && rule.url === details?.url && (!rule.resourceType || rule.resourceType === details?.resourceType));
+      if (resourceRule?.action === 'allow') return { allow: true };
+      if (resourceRule?.action === 'block') return { cancel: true };
+      // Reglas personalizadas:
+      //  - site-scoped: SIEMPRE aplican en su sitio (incluso en dominios auth).
+      //  - globales: NO aplican en dominios auth (proteger OAuth/login).
+      // El bypass de auth solo protege los permisos de contenido (más abajo).
+      const customRulesArr = Array.isArray(CFG.customRules) ? CFG.customRules : [];
+      const globalBlocks = customRulesArr
+        .filter(rule => !rule.site)
         .map(rule => parseGlobalBlockRule(rule && rule.pattern ? rule.pattern : rule))
         .filter(Boolean);
-      if (globalBlocks.some(rule => isGlobalBlockMatch(requestHost, documentHost, rule))) {
-        return { cancel: true };
+      const siteScopedBlocks = customRulesArr
+        .filter(rule => rule.site)
+        .map(rule => ({ ...parseGlobalBlockRule(rule && rule.pattern ? rule.pattern : rule), site: rule.site }))
+        .filter(r => r && r.host);
+      // Sitio/contenedor puede abrir un dominio de la lista de bloqueo manual,
+      // pero no implica desactivar adblock ni permisos de contenido en terceros.
+      const siteOverridesBlock = isSitePermissionAllowed(requestHost) || isSitePermissionAllowed(documentHost);
+      if (!siteOverridesBlock) {
+        // Reglas site-scoped: SIEMPRE aplican en su sitio (incluso en dominios auth)
+        if (documentHost && siteScopedBlocks.some(rule => {
+          if (!rule.site) return false;
+          const docBase = baseNavigationDomain(documentHost);
+          const siteBase = baseNavigationDomain(rule.site);
+          return docBase === siteBase && isGlobalBlockMatch(requestHost, documentHost, rule);
+        })) {
+          return { cancel: true };
+        }
+        // Reglas globales: NO aplican en dominios auth (proteger OAuth/login)
+        if (!isAuthDomain(requestHost) && !isAuthDomain(documentHost)) {
+          if (globalBlocks.some(rule => isGlobalBlockMatch(requestHost, documentHost, rule))) {
+            return { cancel: true };
+          }
+        }
       }
 
       const resourceType = String(details?.resourceType || '').toLowerCase();
@@ -158,8 +250,15 @@ function createRequestGuard() {
         } catch {}
       }
 
+      // Permisos de contenido (images/js/audio) se evalúan sobre el documento activo.
+      // site:allow en un CDN/request host ya no salta esas reglas en páginas ajenas.
       const host = normalizeSiteHost(details?.documentUrl || details?.url || '');
       if (!host) return null;
+      if (isSitePermissionAllowed(host)) return null;
+
+      // La cadena OAuth puede cargar scripts y recursos entre X, x.ai, Google y Grok.
+      // Las reglas de permisos de contenido no deben cortar esos recursos.
+      if (isAuthDomain(requestHost) || isAuthDomain(documentHost)) return null;
 
       const imageRule = getPermissionRuleForHost(host, 'images');
       const audioRule = getPermissionRuleForHost(host, 'audio');
@@ -208,9 +307,8 @@ function createWindow() {
       mainWin.webContents.openDevTools({ mode: 'detach' });
     }
   });
-
   // ── Hot-reload en modo dev ──
-  if (process.env.MC_DEV === '1') {
+  if (process.env.MC_DEV === '1' && process.env.MC_HOT_RELOAD === '1') {
     let _reloadTimer = null;
     const watchPaths = [
       path.join(__dirname, 'src'),
@@ -246,17 +344,44 @@ const UA_WHATSAPP = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3
 const AUTH_DOMAINS = [
   'login.microsoftonline.com', 'login.live.com', 'login.windows.net',
   'accounts.google.com', 'accounts.youtube.com', 'oauth.googleusercontent.com',
-  'accounts.google.com', 'login.skype.com', 'graph.windows.net',
-  'appleid.apple.com', 'idmsa.apple.com', 'auth0.com',
-  'github.com', 'api.github.com',
-  'copilot.microsoft.com', 'api.copilot.microsoft.com',
-  'chatgpt.com', 'auth.openai.com', 'api.openai.com',
-  'claude.ai', 'api.anthropic.com'
+  'google.com', 'www.google.com', 'gmail.com', 'mail.google.com',
+  'googleusercontent.com', 'googleapis.com', 'gstatic.com', 'googlevideo.com',
+  'youtube.com', 'www.youtube.com', 'myaccount.google.com', 'meet.google.com',
+  'drive.google.com', 'docs.google.com', 'slides.google.com', 'sheets.google.com',
+  'chat.google.com', 'maps.google.com', 'play.google.com', 'accounts.google.com',
+  'login.skype.com', 'graph.windows.net', 'appleid.apple.com', 'idmsa.apple.com',
+  'auth0.com', 'github.com', 'api.github.com', 'copilot.microsoft.com',
+  'api.copilot.microsoft.com', 'chatgpt.com', 'auth.openai.com', 'api.openai.com',
+  'claude.ai', 'api.anthropic.com', 'grok.com', 'www.grok.com', 'auth.grok.com',
+  'api.grok.com', 'x.com', 'www.x.com', 'twitter.com', 'www.twitter.com',
+  'api.x.com', 'oauth.x.com', 'auth.x.com', 'mobile.x.com', 'support.x.com',
+  'x.ai', 'www.x.ai', 'accounts.x.ai', 'api.x.ai', 'oauth.x.ai', 'auth.x.ai', 'login.x.ai',
+  'api.twitter.com', 'mobile.twitter.com', 'auth.twitter.com', 'id.twitter.com',
+  'abs.twimg.com', 'pbs.twimg.com', 'video.twimg.com', 'twimg.com'
 ];
 
 function isAuthDomain(host) {
   const normalized = String(host || '').toLowerCase().replace(/^\.+/, '');
+  if (!normalized) return false;
   return AUTH_DOMAINS.some(domain => normalized === domain || normalized.endsWith('.' + domain));
+}
+
+function isAuthRedirectFlow(targetHost, documentHost) {
+  const host = String(targetHost || '').toLowerCase().replace(/^\.+/, '');
+  const doc = String(documentHost || '').toLowerCase().replace(/^\.+/, '');
+  if (!host && !doc) return false;
+  return isAuthDomain(host) || isAuthDomain(doc) ||
+    (host && doc && (host.includes('google') && doc.includes('google')))
+    || (host && doc && (host.includes('x.ai') || host.includes('x.com') || host.includes('twitter.com')) && (doc.includes('grok.com') || doc.includes('x.ai') || doc.includes('x.com') || doc.includes('twitter.com')))
+    || (host && doc && (host.includes('x.com') || host.includes('twitter.com')) && (doc.includes('grok.com') || doc.includes('x.com') || doc.includes('twitter.com')))
+    || (host && doc && (host.includes('grok.com') || host.includes('google') || host.includes('x.ai') || host.includes('x.com') || host.includes('twitter.com')) && (doc.includes('grok.com') || doc.includes('google') || doc.includes('x.ai') || doc.includes('x.com') || doc.includes('twitter.com')));
+}
+function isAuthPopupUrl(rawUrl) {
+  try {
+    return isAuthDomain(new URL(rawUrl).hostname);
+  } catch {
+    return false;
+  }
 }
 
 // === Module action references (set after whenReady) ===
@@ -293,6 +418,9 @@ function applyCookiePolicy(policy) {
       const s = session.fromPartition('persist:mc');
       s.cookies.get({}).then(cookies => {
         for (const c of cookies) {
+          const host = String(c.domain || '').replace(/^\.+/, '').toLowerCase();
+          const allowPolicy = getAllowlistPolicyForHost(host);
+          if (isAuthDomain(host) || allowPolicy === 'allow') continue;
           if (c.session === false) {
             s.cookies.remove(cookieRemovalUrl(c), c.name).catch(() => {});
           }
@@ -316,7 +444,7 @@ let CFG = {
   mediaDetect: false, httpsOnly: true,
   currentUA: 'win-chrome', rotateUA: false,
   language: '', refererPolicy: '',
-  downloadDir: '', allowlist: {}, customRules: [], permissions: {},
+  downloadDir: '', allowlist: {}, customRules: [], permissions: {}, resourceRules: [], userCosmeticRules: [],
   aiConfig: {
     provider: 'ollama', ollamaUrl: 'http://localhost:11434', ollamaModel: 'qwen2.5:1.5b',
     openaiKey: '', openaiModel: 'gpt-4o',
@@ -350,6 +478,71 @@ function saveCfg() {
   }
 }
 loadCfg();
+
+// === REGLAS NATIVAS SITE-SCOPED (publicidad en YouTube) ===
+// Se aplican solo dentro de youtube.com para no interferir en otros sitios.
+const DEFAULT_SITE_RULES = [
+  { pattern: '*.doubleclick.net', action: 'block', site: 'youtube.com' },
+  { pattern: '*.googlesyndication.com', action: 'block', site: 'youtube.com' },
+  { pattern: 'googleadservices.com', action: 'block', site: 'youtube.com' },
+  { pattern: 'static.googleadservices.com', action: 'block', site: 'youtube.com' },
+  { pattern: 'adservice.google.com', action: 'block', site: 'youtube.com' },
+  { pattern: 'googletagmanager.com', action: 'block', site: 'youtube.com' }
+];
+function ensureDefaultSiteRules() {
+  try {
+    if (!Array.isArray(CFG.customRules)) CFG.customRules = [];
+    let changed = false;
+    for (const rule of DEFAULT_SITE_RULES) {
+      // 1. Asegurar la regla site-scoped
+      const exists = CFG.customRules.some(r => r && r.pattern === rule.pattern && r.site === rule.site);
+      if (!exists) {
+        CFG.customRules.push(rule);
+        changed = true;
+      }
+      // 2. Convertir reglas globales del mismo patrón a site-scoped (no interferir en otros sitios)
+      const globalRules = CFG.customRules.filter(r => r && r.pattern === rule.pattern && !r.site);
+      for (const gr of globalRules) {
+        CFG.customRules = CFG.customRules.filter(r => r !== gr);
+        changed = true;
+      }
+    }
+    // 3. Eliminar reglas globales cubiertas por wildcards site-scoped (ej. static.doubleclick.net cubierto por *.doubleclick.net)
+    const siteWildcards = CFG.customRules.filter(r => r && r.site && String(r.pattern).startsWith('*.'));
+    const globalRules2 = CFG.customRules.filter(r => r && !r.site);
+    for (const gr of globalRules2) {
+      const covered = siteWildcards.some(w => {
+        const base = String(w.pattern).slice(2).toLowerCase();
+        const p = String(gr.pattern).toLowerCase().replace(/^https?:\/\//i, '').split('/')[0];
+        return p === base || p.endsWith('.' + base);
+      });
+      if (covered) {
+        CFG.customRules = CFG.customRules.filter(r => r !== gr);
+        changed = true;
+      }
+    }
+    // 4. Eliminar del allowlist GLOBAL los dominios de publicidad de YouTube,
+    //    para que solo apliquen como reglas site-scoped (no mezclar con globales)
+    if (CFG.allowlist && typeof CFG.allowlist === 'object') {
+      for (const key of Object.keys(CFG.allowlist)) {
+        const k = String(key).replace(/^https?:\/\//i, '').split('/')[0].replace(/^\.+/, '').toLowerCase();
+        if (!k) continue;
+        const covered = DEFAULT_SITE_RULES.some(r => {
+          const base = String(r.pattern).replace(/^\*\./, '').toLowerCase();
+          return k === base || k.endsWith('.' + base);
+        });
+        if (covered) {
+          delete CFG.allowlist[key];
+          changed = true;
+        }
+      }
+    }
+    if (changed) saveCfg();
+  } catch (e) {
+    console.error('[CFG] Error applying default site rules:', e.message);
+  }
+}
+ensureDefaultSiteRules();
 
 // === BOOKMARKS ===
 const BOOKMARKS_PATH = path.join(app.getPath('userData'), 'bookmarks.json');
@@ -400,6 +593,18 @@ ipcMain.handle('win-min', (e) => mainWin?.minimize());
 ipcMain.handle('win-max', (e) => mainWin?.isMaximized() ? mainWin.unmaximize() : mainWin?.maximize());
 ipcMain.handle('win-ismax', (e) => mainWin?.isMaximized() || false);
 ipcMain.handle('win-close', (e) => mainWin?.close());
+ipcMain.handle('webview:destroy', (_event, webContentsId) => {
+  const id = Number(webContentsId);
+  if (!Number.isInteger(id) || id < 1) return { ok: false, error: 'ID de webview inválido' };
+  try {
+    const guest = require('electron').webContents.fromId(id);
+    if (!guest || guest.isDestroyed() || guest.getType() !== 'webview') return { ok: true, destroyed: false };
+    guest.destroy();
+    return { ok: true, destroyed: true };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
 function cfgSnapshot() {
   return {
     ...CFG,
@@ -445,7 +650,7 @@ ipcMain.handle('proxy:set', async (_e, settings = {}) => {
 // Stats
 let STATS = { pagesLoaded: 0, totalRequests: 0, detectedAds: 0, detectedTrackers: 0, detectedThird: 0, blockedAds: 0, blockedTrackers: 0, blockedThird: 0, blockedCrypto: 0, detectedMedia: 0, requestsBlocked: 0, cookiesBlocked: 0, bytesDownloaded: 0, uptimeStart: Date.now() };
 const MEDIA_URLS = [];
-const REQ_LOG_TYPES = new Set(['main_frame', 'mainFrame', 'xmlhttprequest', 'fetch', 'websocket', 'manifest']);
+const REQ_LOG_TYPES = new Set(['main_frame', 'mainFrame', 'xmlhttprequest', 'fetch', 'websocket', 'manifest', 'script']);
 const AD_REQUEST_RE = /doubleclick|googlesyndication|googleadservices|adservice|adsystem|adnxs|adsrvr|rubicon|criteo|pubmatic|openx|casalemedia|moatads|taboola|outbrain|popunder|popads|adserver|advertising|adskeeper|exoclick|adcash|monetag|trafficfactory|prebid|pagead|\/ads?(?:[/?#]|$)|\/advert(?:[/?#]|$)|\/banner(?:[/?#]|$)|\/vast(?:[/?#]|$)/i;
 const TRACKER_REQUEST_RE = /analytics|google-analytics|googletagmanager|tracking|tracker|telemetry|pixel|beacon|scorecardresearch|quantserve|demdex|hotjar|clarity\.ms|connect\.facebook|facebook\.net\/tr|fingerprint|session-replay|fullstory|mouseflow|mixpanel|amplitude|matomo|segment\.io/i;
 function classifyRequest(url, documentUrl) {
@@ -455,6 +660,23 @@ function classifyRequest(url, documentUrl) {
   if (documentUrl && !isTrustedResource(url, documentUrl)) return 'third';
   return 'request';
 }
+function shouldReportRequest(details) {
+  try {
+    const rawUrl = details?.url || '';
+    const docUrl = details?.documentUrl || details?.referrer || '';
+    const url = new URL(rawUrl);
+    const host = url.hostname.toLowerCase();
+    const docHost = docUrl ? new URL(docUrl).hostname.toLowerCase() : '';
+    if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) return false;
+    if (isAuthDomain(host) || isAuthDomain(docHost) || isAuthRedirectFlow(host, docHost)) return false;
+    if (host.endsWith('.whatsapp.net') || host.endsWith('.whatsapp.com')) return false;
+    if (details?.resourceType === 'image' || details?.resourceType === 'stylesheet' || details?.resourceType === 'font' || details?.resourceType === 'media') return false;
+    return REQ_LOG_TYPES.has(details?.resourceType);
+  } catch {
+    return false;
+  }
+}
+
 function recordBlockedRequest(details, forcedType) {
   const type = forcedType || classifyRequest(details.url, details.documentUrl || details.referrer || '');
   if (forcedType && type === 'ads' && classifyRequest(details.url, details.documentUrl || details.referrer || '') !== 'ads') STATS.detectedAds++;
@@ -465,6 +687,9 @@ function recordBlockedRequest(details, forcedType) {
   if (type === 'third') STATS.blockedThird++;
   if (type === 'request') STATS.requestsBlocked++;
   if (mainWin && !mainWin.isDestroyed()) {
+    if (details?.resourceType === 'script') {
+      mainWin.webContents.send('req-blocked', { type: 'script', resourceType: details.resourceType, blocked: true, url: details.url, msg: details.url });
+    }
     mainWin.webContents.send('stats-update', { ...STATS, uptime: Date.now() - STATS.uptimeStart });
   }
 }
@@ -475,9 +700,9 @@ function recordObservedRequest(details) {
   if (type === 'ads') STATS.detectedAds++;
   if (type === 'trackers') STATS.detectedTrackers++;
   if (type === 'third') STATS.detectedThird++;
-  if (mainWin && !mainWin.isDestroyed() && REQ_LOG_TYPES.has(details.resourceType)) {
+  if (mainWin && !mainWin.isDestroyed() && shouldReportRequest(details)) {
     const short = details.url.replace(/https?:\/\//, '').substring(0, 80);
-    mainWin.webContents.send('req-blocked', { type, url: details.url, msg: short });
+    mainWin.webContents.send('req-blocked', { type, resourceType: details.resourceType, blocked: false, url: details.url, msg: short });
     mainWin.webContents.send('stats-update', { ...STATS, uptime: Date.now() - STATS.uptimeStart });
   }
 }
@@ -492,8 +717,73 @@ ipcMain.handle('get-sysinfo', () => ({
   hostname: os.hostname(), platform: os.platform(), arch: os.arch(),
   cpus: os.cpus().length, totalMemory: os.totalmem(), freeMemory: os.freemem(),
   uptime: os.uptime(), nodeVersion: process.version, electronVersion: process.versions.electron,
-  chromeVersion: process.versions.chrome
+  chromeVersion: process.versions.chrome,
+  dlDir: CFG.downloadDir || app.getPath('downloads')
 }));
+ipcMain.handle('get-processes', async (event) => {
+  const contexts = await event.sender.executeJavaScript(`(() => Array.from(document.querySelectorAll('webview')).map(wv => ({
+    id: wv.id || '',
+    webContentsId: typeof wv.getWebContentsId === 'function' ? wv.getWebContentsId() : 0,
+    url: (() => { try { return wv.getURL() || ''; } catch { return ''; } })()
+  })))()`).catch(() => []);
+  const contextByPid = new Map();
+  for (const context of contexts) {
+    try {
+      const guest = require('electron').webContents.fromId(Number(context.webContentsId));
+      if (guest && !guest.isDestroyed()) {
+        // getProcessId() devuelve el ID interno de Chromium; getOSProcessId() el PID real del SO
+        const osPid = typeof guest.getOSProcessId === 'function' ? guest.getOSProcessId() : guest.getProcessId();
+        if (osPid) contextByPid.set(osPid, context);
+      }
+    } catch {}
+  }
+  try {
+    const mainRendererPid = mainWin?.webContents ? (typeof mainWin.webContents.getOSProcessId === 'function' ? mainWin.webContents.getOSProcessId() : mainWin.webContents.getProcessId()) : 0;
+    if (mainRendererPid) contextByPid.set(mainRendererPid, { role: 'Interfaz principal', url: 'file://renderer.html' });
+  } catch {}
+  const roleFor = (metric) => {
+    const context = contextByPid.get(metric.pid);
+    if (context?.role) return context.role;
+    if (!context) {
+      if (metric.type === 'Browser') return 'Proceso principal';
+      if (metric.type === 'GPU') return 'GPU';
+      if (metric.type === 'Utility') return metric.serviceName || 'Servicio auxiliar';
+      return metric.type || 'Proceso Electron';
+    }
+    if (context.id === 'wa-wv') return 'WhatsApp Web';
+    if (context.id === 'wch-wv') return 'WebChat';
+    if (context.id === 'ai-wv') return 'IA Web';
+    if (context.id.startsWith('webview-')) return 'Pestaña: ' + (context.url || 'Nueva pestaña');
+    return 'Webview: ' + (context.url || 'about:blank');
+  };
+  const metrics = app.getAppMetrics();
+  const memoryByPid = new Map();
+  if (process.platform === 'win32') {
+    await new Promise(resolve => {
+      execFile('tasklist.exe', ['/FO', 'CSV', '/NH'], { windowsHide: true }, (error, stdout) => {
+        if (!error && stdout) {
+          for (const line of stdout.split(/\r?\n/)) {
+            const fields = line.match(/"(?:[^"]|"")*"|[^,]+/g) || [];
+            const pid = Number(String(fields[1] || '').replace(/"/g, '').trim());
+            const memoryKb = Number(String(fields[4] || '').replace(/["\s,.KB]/gi, ''));
+            if (pid > 0 && Number.isFinite(memoryKb)) memoryByPid.set(pid, Math.round(memoryKb / 1024));
+          }
+        }
+        resolve();
+      });
+    });
+  }
+  return metrics.map(metric => ({
+    pid: metric.pid,
+    type: metric.type,
+    role: roleFor(metric),
+    state: 'Activo',
+    memory: memoryByPid.get(metric.pid) || Math.round((metric.memory?.workingSetSize || metric.memory?.privateBytes || 0) / 1048576),
+    cpu: Number(metric.cpu?.percentCPUUsage || 0).toFixed(1),
+    url: contextByPid.get(metric.pid)?.url || '',
+    service: metric.serviceName || ''
+  }));
+});
 // Media detected by the active browser session
 ipcMain.handle('get-media', () => MEDIA_URLS);
 // ── Helpers de descarga ──────────────────────────
@@ -1007,9 +1297,20 @@ ipcMain.handle('dl-file', async (e, { id, url, name, pageUrl }) => {
   const t0 = Date.now();
   const extraHeaders = mediaRequestHeaders(pageUrl, url);
   const entry = dlRegister(id, url, 'file');
-  const fname = path.join(dlDir, (name || 'media_' + Date.now()) + '.mp4');
-  const ext = path.extname(url.split('?')[0]) || '.media';
-  const rawName = fname + (ext === '.mp4' ? '.part' + ext : ext);
+  const safeBase = String(name || 'media_' + Date.now()).replace(/[\\/:*?"<>|]/g, '_').trim() || 'media';
+  const detectedExt = (() => {
+    const lower = String(url || '').split('?')[0].toLowerCase();
+    if (/\.(png|jpe?g|gif|webp|avif|bmp|svg)(?:$|[?#])/i.test(lower)) return '.png';
+    if (/\.(mp3|wav|flac|ogg|m4a|aac)(?:$|[?#])/i.test(lower)) return '.mp3';
+    if (/\.(mp4|m4v|webm|mkv|mov|avi|mpeg|mpg|3gp)(?:$|[?#])/i.test(lower)) return '.mp4';
+    if (/\.(jpg|jpeg)(?:$|[?#])/i.test(lower)) return '.jpg';
+    if (/\.(gif)(?:$|[?#])/i.test(lower)) return '.gif';
+    if (/\.(webp)(?:$|[?#])/i.test(lower)) return '.webp';
+    return '.bin';
+  })();
+  const finalNameBase = safeBase.toLowerCase().endsWith(detectedExt.toLowerCase()) ? safeBase : safeBase + detectedExt;
+  const finalTarget = path.join(dlDir, finalNameBase);
+  const rawName = finalTarget + '.part';
   let output;
   try {
     ACTIONS.emit('dl-progress', { id, url, pct: 0, done: 0, total: 1, speed: 0 });
@@ -1063,14 +1364,13 @@ ipcMain.handle('dl-file', async (e, { id, url, name, pageUrl }) => {
     }
     if (totalLen === 0) throw new Error('Servidor devolvió 0 bytes');
     await new Promise((resolve, reject) => output.end(error => error ? reject(error) : resolve()));
-    const finalized = await finalizeMediaFile(rawName, fname);
-    const resultPath = finalized.path;
+    if (fs.existsSync(finalTarget)) try { fs.unlinkSync(finalTarget); } catch {}
+    fs.renameSync(rawName, finalTarget);
+    const resultPath = finalTarget;
     const size = (totalLen / 1048576).toFixed(1);
     ACTIONS.emit('dl-complete', { id, url, file: resultPath, size, secs: ((Date.now()-t0)/1000).toFixed(1), filename: path.basename(resultPath) });
-    const mode = finalized.remuxed ? 'remux MP4' : finalized.converted ? 'recodificado MP4 H.264/AAC' : 'TS original';
-    ACTIONS.emit('ytdlp-log', `✓ Descargado (${mode}): ${resultPath} (${size} MB)`);
-    if (!finalized.converted) ACTIONS.emit('ytdlp-log', '⚠ ' + finalized.error + '; se conservó el archivo original');
-    return { ok: true, path: resultPath, size: totalLen, converted: finalized.converted };
+    ACTIONS.emit('ytdlp-log', `✓ Descargado: ${resultPath} (${size} MB)`);
+    return { ok: true, path: resultPath, size: totalLen, converted: false };
   } catch (e) {
     if (output && !output.closed) output.destroy();
     const cancelled = entry.state === 'cancelled';
@@ -1109,6 +1409,13 @@ ipcMain.handle('dl-cancel', (_e, id) => {
   return { ok: true };
 });
 ipcMain.handle('open-dl-folder', () => { shell.openPath(CFG.downloadDir || app.getPath('downloads')); });
+ipcMain.handle('dl:open-file', async (_e, filePath) => {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return { error: 'Archivo no encontrado' };
+    const err = await shell.openPath(filePath);
+    return err ? { error: err } : { ok: true };
+  } catch (err) { return { error: err.message }; }
+});
 ipcMain.handle('choose-dl-dir', async () => {
   const result = await dialog.showOpenDialog(mainWin, { properties: ['openDirectory'] });
   if (!result.canceled && result.filePaths.length) {
@@ -1134,11 +1441,39 @@ ipcMain.handle('clear-cookies', async () => {
 ipcMain.handle('clear-cache', async () => {
   try { await sess().clearCache(); return { ok: true }; } catch (e) { return { error: e.message }; }
 });
+ipcMain.handle('clear-data', async (_e, opts = {}) => {
+  try {
+    const settings = {
+      history: Boolean(opts.history),
+      cache: Boolean(opts.cache),
+      cookies: Boolean(opts.cookies),
+      keepSessions: Boolean(opts.keepSessions)
+    };
+
+    if (settings.cookies) {
+      const cookies = await sess().cookies.get({});
+      const filtered = settings.keepSessions ? cookies.filter(c => !c.session) : cookies;
+      for (const c of filtered) await sess().cookies.remove(cookieRemovalUrl(c), c.name);
+    }
+
+    if (settings.cache) await sess().clearCache();
+    if (settings.history) {
+      HISTORY = [];
+      saveHistory();
+    }
+
+    return { ok: true, settings };
+  } catch (e) { return { ok: false, error: e.message || String(e) }; }
+});
 ipcMain.handle('clear-all', async () => {
   try {
     const cookies = await sess().cookies.get({});
     for (const c of cookies) await sess().cookies.remove(cookieRemovalUrl(c), c.name);
     await sess().clearCache();
+    await sess().clearStorageData();
+    HISTORY = [];
+    saveHistory();
+    STATS = { pagesLoaded: 0, totalRequests: 0, detectedAds: 0, detectedTrackers: 0, detectedThird: 0, blockedAds: 0, blockedTrackers: 0, blockedThird: 0, blockedCrypto: 0, detectedMedia: 0, requestsBlocked: 0, cookiesBlocked: 0, bytesDownloaded: 0, uptimeStart: Date.now() };
     return { ok: true };
   } catch (e) { return { error: e.message }; }
 });
@@ -1198,11 +1533,30 @@ ipcMain.handle('add-block-rule', (e, rule) => {
   if (rule && rule.pattern) { CFG.customRules.push(rule); saveCfg(); }
   return { ok: true };
 });
-ipcMain.handle('remove-block-rule', (e, { pattern }) => {
-  CFG.customRules = CFG.customRules.filter(r => r.pattern !== pattern);
+ipcMain.handle('remove-block-rule', (e, { pattern, site }) => {
+  if (site) {
+    CFG.customRules = CFG.customRules.filter(r => !(r.pattern === pattern && r.site === site));
+  } else {
+    CFG.customRules = CFG.customRules.filter(r => r.pattern !== pattern);
+  }
   saveCfg();
   return { ok: true };
 });
+ipcMain.handle('add-resource-rule', (e, rule = {}) => {
+  const url = String(rule.url || '').trim();
+  const action = rule.action === 'allow' ? 'allow' : rule.action === 'block' ? 'block' : '';
+  if (!url || !action) return { ok: false, error: 'faltan URL o acción' };
+  CFG.resourceRules = (Array.isArray(CFG.resourceRules) ? CFG.resourceRules : []).filter(item => item.url !== url || item.resourceType !== rule.resourceType);
+  CFG.resourceRules.push({ url, action, resourceType: String(rule.resourceType || 'script') });
+  saveCfg();
+  return { ok: true };
+});
+ipcMain.handle('remove-resource-rule', (e, { url, resourceType }) => {
+  CFG.resourceRules = (Array.isArray(CFG.resourceRules) ? CFG.resourceRules : []).filter(item => item.url !== url || (resourceType && item.resourceType !== resourceType));
+  saveCfg();
+  return { ok: true };
+});
+ipcMain.handle('get-resource-rules', () => Array.isArray(CFG.resourceRules) ? [...CFG.resourceRules] : []);
 // Bookmarks
 ipcMain.handle('bookmarks:list', () => [...BOOKMARKS]);
 ipcMain.handle('bookmarks:add', (e, bookmark) => {
@@ -1274,7 +1628,7 @@ function removePermissionEntry(domain, permission) {
   return { ok: true };
 }
 
-ipcMain.handle('add-permission', (e, { domain, permission, value = 'allow' }) => {
+function setPermissionEntry(domain, permission, value = 'allow') {
   const host = String(domain || '').trim().replace(/^\.+/, '').toLowerCase();
   const key = String(permission || '').trim();
   if (!host || !key) return { ok: false, error: 'faltan dominio o permiso' };
@@ -1282,16 +1636,12 @@ ipcMain.handle('add-permission', (e, { domain, permission, value = 'allow' }) =>
   CFG.permissions[host][key] = value;
   saveCfg();
   return { ok: true, permissions: CFG.permissions[host] };
-});
-ipcMain.handle('set-site-permission', (e, { domain, permission, value = 'allow' }) => {
-  const host = String(domain || '').trim().replace(/^\.+/, '').toLowerCase();
-  const key = String(permission || '').trim();
-  if (!host || !key) return { ok: false, error: 'faltan dominio o permiso' };
-  CFG.permissions[host] = normalizePermissionMap(CFG.permissions[host]);
-  CFG.permissions[host][key] = value;
-  saveCfg();
-  return { ok: true, permissions: CFG.permissions[host] };
-});
+}
+
+ipcMain.handle('add-permission', (e, { domain, permission, value = 'allow' }) =>
+  setPermissionEntry(domain, permission, value));
+ipcMain.handle('set-site-permission', (e, { domain, permission, value = 'allow' }) =>
+  setPermissionEntry(domain, permission, value));
 ipcMain.handle('remove-permission', (e, { domain, permission }) => removePermissionEntry(domain, permission));
 ipcMain.handle('remove-site-permission', (e, { domain, permission }) => removePermissionEntry(domain, permission));
 ipcMain.handle('get-permissions', () => ({ ...CFG.permissions }));
@@ -1390,20 +1740,115 @@ const STREAM_SCAN_SCRIPT = `
       const SKIP_EXT = /\\.(html?|php|aspx?|jsp|json|xml|css|js|svg|woff2?|ttf|eot)(\\?|#|$)/i;
       const MEDIA_RE = /\\.(m3u8|mp4|webm|mpd|ts|m4s|mkv|avi|mov)(\\?|#|$)/i;
       const TOKEN_RE = /[?&](token|exp|sign|auth|st|nonce|signature|hls|m3u8|mpd|playlist)=/i;
-      const isMedia = u => u && !SKIP_EXT.test(u) && !/^(about|data|javascript):/i.test(u) && (MEDIA_RE.test(u) || TOKEN_RE.test(u));
-      const add=(url,via)=>{
-        if(!url||window.__mcFound.find(f=>f.url===url)||!isMedia(url)) return;
-        window.__mcFound.push({url,via,pageUrl});
+      const isMedia = u => u && !SKIP_EXT.test(u) && !/^(about|data|javascript):/i.test(u) && (MEDIA_RE.test(u) || TOKEN_RE.test(u) || /^https?:\/\/(x\.com|twitter\.com)\/[^/]+\/status\/\d+\/video\//i.test(u));
+      // Extraer usuario de un bloque de tweet (x.com): a[href="/username"] o [data-testid="User-Name"]
+      function extractUserFromNode(node) {
+        const links = node.querySelectorAll('a[href]');
+        for (const a of links) {
+          const href = a.getAttribute('href');
+          const m = href.match(/^\/([a-zA-Z0-9_]{1,15})$/);
+          if (m && !/^(home|explore|search|notifications|messages|settings|i|compose|login|signup|hashtag|status|photo)$/i.test(m[1])) {
+            return '@' + m[1];
+          }
+        }
+        const un = node.querySelector('[data-testid="User-Name"]');
+        if (un) {
+          const t = un.textContent.trim().replace(/^@/, '');
+          if (t && t.length >= 2 && t.length <= 40) return '@' + t;
+        }
+        return null;
+      }
+      // Buscar el autor/usuario del post que contiene el medio recorriendo el DOM hacia arriba
+      function findAuthor(el) {
+        // x.com / twitter.com: article[data-testid="tweet"] más cercano → usuario del tweet
+        if (el.closest) {
+          const article = el.closest('article[data-testid="tweet"]');
+          if (article) {
+            const u = extractUserFromNode(article);
+            if (u) return u;
+          }
+        }
+        let node = el;
+        for (let i = 0; i < 50 && node && node !== document.body; i++) {
+          // x.com: [data-testid="User-Name"] (handle visible del tweet) en el ancestro
+          if (node.querySelector) {
+            const un = node.querySelector('[data-testid="User-Name"]');
+            if (un) {
+              const t = un.textContent.trim().replace(/^@/, '');
+              if (t && t.length >= 2 && t.length <= 40) return '@' + t;
+            }
+          }
+          // Genérico: itemprop="author"
+          if (node.querySelector) {
+            const auth = node.querySelector('[itemprop="author"]');
+            if (auth) {
+              const t = (auth.getAttribute('content') || auth.textContent || '').trim().replace(/^@/, '');
+              if (t && t.length >= 2 && t.length <= 40) return '@' + t;
+            }
+          }
+          node = node.parentElement;
+        }
+        return null;
+      }
+      // Encontrar el autor del video activo (reproduciéndose o visible en pantalla)
+      function findActiveVideoAuthor() {
+        const videos = document.querySelectorAll('video');
+        // 1. Video reproduciéndose
+        for (const v of videos) {
+          if (!v.paused) {
+            const a = findAuthor(v);
+            if (a) return a;
+          }
+        }
+        // 2. Video visible en pantalla
+        for (const v of videos) {
+          const r = v.getBoundingClientRect();
+          if (r.top < window.innerHeight && r.bottom > 0 && r.width > 0) {
+            const a = findAuthor(v);
+            if (a) return a;
+          }
+        }
+        // 3. Si solo hay un video, usarlo
+        if (videos.length === 1) {
+          const a = findAuthor(videos[0]);
+          if (a) return a;
+        }
+        // 4. Último video del DOM (el más reciente)
+        for (let i = videos.length - 1; i >= 0; i--) {
+          const a = findAuthor(videos[i]);
+          if (a) return a;
+        }
+        return null;
+      }
+      const add=(url,via,author)=>{
+        if(!url||!isMedia(url)) return;
+        const currentPage = location.href;
+        const samePage = window.__mcFound.find(f => f.url === url && f.pageUrl === currentPage);
+        if (samePage) {
+          if (author && !samePage.author) samePage.author = author;
+          return;
+        }
+        const existing = window.__mcFound.find(f => f.url === url && f.pageUrl !== currentPage);
+        if (existing) {
+          existing.pageUrl = currentPage;
+          if (author && !existing.author) existing.author = author;
+          return;
+        }
+        window.__mcFound.push({url,via,pageUrl:currentPage,author:author||null});
       };
       document.querySelectorAll('video,audio').forEach(el=>{
-        if(el.src&&isMedia(el.src)) add(el.src,'DOM:'+el.tagName);
-        if(el.currentSrc&&el.currentSrc!==el.src&&isMedia(el.currentSrc)) add(el.currentSrc,'currentSrc');
-        el.querySelectorAll('source').forEach(s=>{if(s.src) add(s.src,'source');});
+        const author = findAuthor(el);
+        if(el.src&&isMedia(el.src)) add(el.src,'DOM:'+el.tagName,author);
+        if(el.currentSrc&&el.currentSrc!==el.src&&isMedia(el.currentSrc)) add(el.currentSrc,'currentSrc',author);
+        el.querySelectorAll('source').forEach(s=>{if(s.src) add(s.src,'source',author);});
       });
-      document.querySelectorAll('iframe').forEach(f=>{if(f.src&&isMedia(f.src)) add(f.src,'iframe');});
+      document.querySelectorAll('iframe').forEach(f=>{
+        const author = findAuthor(f);
+        if(f.src&&isMedia(f.src)) add(f.src,'iframe',author);
+      });
       try {
         performance.getEntriesByType('resource').forEach(entry => {
-          if (entry.name && /\\.(m3u8|mpd|mp4|webm|mkv)(?:\\?|#|$)|manifest|playlist|stream/i.test(entry.name)) add(entry.name,'performance');
+          if (entry.name && /\\.(m3u8|mpd|mp4|webm|mkv)(?:\\?|#|$)|manifest|playlist|stream/i.test(entry.name)) add(entry.name,'performance',findActiveVideoAuthor());
         });
       }catch(e){}
       document.querySelectorAll('link[href]').forEach(link => {
@@ -1426,12 +1871,12 @@ const STREAM_SCAN_SCRIPT = `
         window.__mcHooked=true;
         const _f=window.fetch; window.fetch=function(r,...a){
           const u=typeof r==='string'?r:(r&&r.url)||'';
-          if(/\\.m3u8|\\.mpd|manifest|segment|chunk/i.test(u)) add(u,'fetch');
+          if(/\\.m3u8|\\.mpd|manifest|segment|chunk/i.test(u)) add(u,'fetch',findActiveVideoAuthor());
           return _f.apply(this,[r,...a]);
         };
         const _x=XMLHttpRequest.prototype.open;
         XMLHttpRequest.prototype.open=function(m,u,...a){
-          if(u&&/\\.m3u8|\\.mpd|manifest|segment/i.test(u)) add(u,'xhr');
+          if(u&&/\\.m3u8|\\.mpd|manifest|segment/i.test(u)) add(u,'xhr',findActiveVideoAuthor());
           return _x.apply(this,[m,u,...a]);
         };
       }
@@ -1560,14 +2005,122 @@ const aiFallbacks = (ctx) => {
 };
 // NOTE: aiFallbacks() NO se llama aquí — se llama en el catch del AI module más abajo
 
+// Resuelve las coordenadas CSS del clic derecho (para elementFromPoint).
+// params.x/y vienen en DIP; la página espera píxeles CSS. Se usa la posición
+// capturada por el listener 'contextmenu' inyectado en la página (exacta),
+// con fallback a la escala empírica (ancho de ventana DIP / viewport CSS).
+async function resolveCtxCssPoint(wc, params) {
+  try {
+    const pos = await wc.executeJavaScript(`(() => {
+      const p = window.__mcCtxPos;
+      if (p && typeof p.x === 'number' && typeof p.y === 'number' && Date.now() - p.t < 30000) {
+        return { x: Math.round(p.x), y: Math.round(p.y), src: 'page' };
+      }
+      return null;
+    })()`);
+    if (pos && typeof pos.x === 'number') return pos;
+  } catch {}
+  let scale = 1;
+  try {
+    const win = wc.getOwnerBrowserWindow();
+    const size = win ? win.getContentSize() : null;
+    const css = await wc.executeJavaScript('({ w: window.innerWidth || 1, h: window.innerHeight || 1 })');
+    if (size && size[0] > 0 && css && css.w > 0) {
+      const s = size[0] / css.w;
+      if (s > 0 && s < 10) scale = s;
+    }
+  } catch {}
+  return {
+    x: Math.round((Number(params.x) || 0) / scale),
+    y: Math.round((Number(params.y) || 0) / scale),
+    src: 'scale'
+  };
+}
+
 // === WINDOW EVENTS (popups -> nueva pestaña) ────────────
 app.on('web-contents-created', (event, wc) => {
+  wc.on('will-redirect', (navigationEvent, url, isInPlace, isMainFrame) => {
+    let targetHost = '';
+    try {
+      targetHost = new URL(url).hostname.toLowerCase();
+    } catch {}
+    const isAllowedRedirectHost = !!targetHost && (isExplicitMediaRedirectHost(targetHost) || isVideoHost(targetHost));
+    // Mantener la restricción estricta: solo bloqueamos navegación externa real
+    // del frame principal, o redirecciones a subframes que no entren en la lista
+    // explícita de hosts multimedia permitidos.
+    if (!isMainFrame && !isAllowedRedirectHost) return;
+    const sourceUrl = wc.getURL();
+    try {
+      const sourceHost = new URL(sourceUrl).hostname;
+      if (isAuthRedirectFlow(targetHost, sourceHost)) return;
+    } catch {}
+    if (!allowNavigationTransition(sourceUrl, url)) {
+      navigationEvent.preventDefault();
+      try { mainWin?.webContents?.send('req-blocked', { type: 'navigation', url, msg: 'Redirección externa bloqueada desde ' + sourceUrl }); } catch {}
+    }
+  });
   wc.on('did-start-navigation', (_event, url, isInPlace, isMainFrame) => {
     if (isMainFrame && /^https?:\/\/(?:[^/]+\.)?whatsapp\.(?:com|net)(?:\/|$)/i.test(url)) {
       wc.setUserAgent(UA_WHATSAPP);
     }
   });
-  wc.on('context-menu', (_contextEvent, params) => {
+  // Captura la posición del clic derecho en píxeles CSS (exacta para elementFromPoint)
+  wc.on('dom-ready', () => {
+    try {
+      if (wc.getType() !== 'webview') return;
+      wc.executeJavaScript(`(() => {
+        if (window.__mcCtxPosInstalled) return;
+        window.__mcCtxPosInstalled = true;
+        window.__mcCtxPos = null;
+        document.addEventListener('contextmenu', (e) => {
+          window.__mcCtxPos = { x: e.clientX, y: e.clientY, t: Date.now() };
+        }, true);
+      })()`).catch(() => {});
+    } catch {}
+  });
+  wc.on('context-menu', async (_contextEvent, params) => {
+    // Reglas cosméticas del usuario aplicables al dominio actual
+    let pageDomain = '';
+    try { pageDomain = new URL(wc.getURL()).hostname.replace(/^www\./i, '').toLowerCase(); } catch {}
+    const allRules = (Array.isArray(CFG.userCosmeticRules) ? CFG.userCosmeticRules : [])
+      .map(r => String(r || '').trim())
+      .filter(r => r.includes('##'));
+    const domainRules = allRules.filter(r => {
+      const d = r.split('##')[0].trim().toLowerCase();
+      return !d || pageDomain === d || pageDomain.endsWith('.' + d);
+    });
+
+    // Detectar si el elemento bajo el cursor ya está bloqueado por una regla cosmética
+    let blockedRule = null;
+    try {
+      const selectors = domainRules.map(r => r.split('##')[1]);
+      if (selectors.length) {
+        const pt = await resolveCtxCssPoint(wc, params);
+        const selectorsJson = JSON.stringify(selectors)
+          .replace(/\\/g, '\\\\')
+          .replace(/`/g, '\\`')
+          .replace(/\$\{/g, '\\${');
+        const match = await wc.executeJavaScript(`(() => {
+          const px = ${pt.x};
+          const py = ${pt.y};
+          const el = document.elementFromPoint(px, py);
+          if (!el) return null;
+          const selectors = ${selectorsJson};
+          let node = el;
+          while (node && node.nodeType === 1) {
+            for (const s of selectors) {
+              try { if (node.matches(s)) return { selector: s }; } catch {}
+            }
+            node = node.parentElement;
+          }
+          return null;
+        })()`);
+        if (match?.selector) {
+          blockedRule = allRules.find(r => r.split('##')[1].trim() === match.selector) || null;
+        }
+      }
+    } catch {}
+
     const template = [
       { label: 'Atrás', enabled: wc.canGoBack(), click: () => wc.goBack() },
       { label: 'Adelante', enabled: wc.canGoForward(), click: () => wc.goForward() },
@@ -1594,6 +2147,13 @@ app.on('web-contents-created', (event, wc) => {
         {
           label: 'Copiar dirección del enlace',
           click: () => clipboard.writeText(params.linkURL)
+        },
+        {
+          label: 'Descargar enlace',
+          click: () => {
+            if (/^https?:\/\//i.test(params.linkURL)) mainWin?.webContents?.downloadURL(params.linkURL);
+            else if (params.linkURL) shell.openExternal(params.linkURL).catch(() => {});
+          }
         }
       );
     }
@@ -1607,26 +2167,201 @@ app.on('web-contents-created', (event, wc) => {
       });
     }
     if (params.mediaType === 'image' && params.srcURL) {
-      template.push({
-        label: 'Copiar dirección de imagen',
-        click: () => clipboard.writeText(params.srcURL)
-      });
+      template.push(
+        {
+          label: 'Copiar dirección de imagen',
+          click: () => clipboard.writeText(params.srcURL)
+        },
+        {
+          label: 'Descargar imagen',
+          click: () => {
+            if (/^https?:\/\//i.test(params.srcURL)) mainWin?.webContents?.downloadURL(params.srcURL);
+          }
+        }
+      );
     }
     if (params.srcURL && params.mediaType !== 'none') {
-      template.push({
-        label: 'Abrir recurso multimedia',
-        click: () => mainWin?.webContents?.send('open-new-tab', params.srcURL)
-      });
+      template.push(
+        {
+          label: 'Abrir recurso multimedia',
+          click: () => mainWin?.webContents?.send('open-new-tab', params.srcURL)
+        },
+        {
+          label: 'Descargar multimedia',
+          click: () => {
+            if (/^https?:\/\//i.test(params.srcURL)) mainWin?.webContents?.downloadURL(params.srcURL);
+          }
+        }
+      );
+    }
+    if (blockedRule) {
+      template.push(
+        { type: 'separator' },
+        {
+          label: 'Desbloquear este elemento',
+          click: async () => {
+            CFG.userCosmeticRules = (CFG.userCosmeticRules || []).filter(r => r !== blockedRule);
+            saveCfg();
+            try { wc.reload(); } catch {}
+            mainWin?.webContents?.send('cosmetic-unblock-result', { ok: true, rule: blockedRule });
+          }
+        }
+      );
+    }
+    if (domainRules.length) {
+      template.push(
+        { type: 'separator' },
+        {
+          label: 'Desbloquear elemento...',
+          submenu: domainRules.map(rule => ({
+            label: rule.split('##')[1],
+            click: () => {
+              CFG.userCosmeticRules = (CFG.userCosmeticRules || []).filter(r => r !== rule);
+              saveCfg();
+              try { wc.reload(); } catch {}
+              mainWin?.webContents?.send('cosmetic-unblock-result', { ok: true, rule });
+            }
+          }))
+        }
+      );
     }
     template.push(
       { type: 'separator' },
       {
+        label: 'Bloquear este elemento',
+        click: async () => {
+          try {
+            const pt = await resolveCtxCssPoint(wc, params);
+            const px = pt.x;
+            const py = pt.y;
+            const info = await wc.executeJavaScript(`(() => {
+              const px = ${px};
+              const py = ${py};
+              const isUsable = (e) => e && e.nodeType === 1 && e !== document.documentElement && e !== document.body;
+              let el = document.elementFromPoint(px, py);
+              if (!isUsable(el)) {
+                const all = document.elementsFromPoint(px, py);
+                for (const e of all) { if (isUsable(e)) { el = e; break; } }
+              }
+              // Refinar si el elemento es enorme (>40% del viewport): buscar iframes
+              // cerca del punto (banners en blanco/colapsados o con pointer-events:none
+              // que elementFromPoint ignora) o el elemento más pequeño en el punto
+              if (isUsable(el)) {
+                const r = el.getBoundingClientRect();
+                const vw = window.innerWidth, vh = window.innerHeight;
+                if (r.width * r.height > vw * vh * 0.4) {
+                  let bestIframe = null, bestDist = Infinity;
+                  for (const f of document.querySelectorAll('iframe')) {
+                    const fr = f.getBoundingClientRect();
+                    const w = fr.width || (parseInt(f.getAttribute('width'), 10) || 0);
+                    const h = fr.height || (parseInt(f.getAttribute('height'), 10) || 0);
+                    if (w < 8 || h < 8) continue;
+                    const cx = Math.max(fr.left, Math.min(px, fr.right));
+                    const cy = Math.max(fr.top, Math.min(py, fr.bottom));
+                    const dist = Math.hypot(px - cx, py - cy);
+                    if (dist < bestDist) { bestDist = dist; bestIframe = f; }
+                  }
+                  if (bestIframe && bestDist < 200) {
+                    el = bestIframe;
+                  } else {
+                    const all = document.elementsFromPoint(px, py);
+                    let best = null, bestArea = Infinity;
+                    for (const e of all) {
+                      if (!isUsable(e) || e === el) continue;
+                      const er = e.getBoundingClientRect();
+                      if (er.width < 24 || er.height < 24) continue;
+                      if (er.width * er.height > vw * vh * 0.4) continue;
+                      const area = er.width * er.height;
+                      if (area < bestArea) { bestArea = area; best = e; }
+                    }
+                    if (best) el = best;
+                  }
+                }
+              }
+              if (!isUsable(el)) {
+                let best = null, bestArea = Infinity, scanned = 0;
+                const nodes = document.querySelectorAll('body *');
+                for (const e of nodes) {
+                  if (++scanned > 4000) break;
+                  if (!isUsable(e)) continue;
+                  const r = e.getBoundingClientRect();
+                  if (r.width < 8 || r.height < 8) continue;
+                  if (px >= r.left && px <= r.right && py >= r.top && py <= r.bottom) {
+                    const area = r.width * r.height;
+                    if (area < bestArea) { bestArea = area; best = e; }
+                  }
+                }
+                el = best;
+              }
+              if (!isUsable(el)) return null;
+              const cssPath = (node) => {
+                const parts = [];
+                let cur = node;
+                while (cur && cur.nodeType === 1 && parts.length < 6) {
+                  let part = cur.tagName.toLowerCase();
+                  if (cur.id) {
+                    part += '#' + CSS.escape(cur.id).slice(0, 80);
+                    parts.unshift(part);
+                    break;
+                  }
+                  const parent = cur.parentElement;
+                  if (parent) {
+                    const siblings = [...parent.children].filter(c => c.tagName === cur.tagName);
+                    if (siblings.length > 1) {
+                      part += ':nth-of-type(' + (siblings.indexOf(cur) + 1) + ')';
+                    }
+                  }
+                  if (cur.classList && cur.classList.length) {
+                    part += '.' + [...cur.classList].slice(0, 3).map(c => CSS.escape(c)).join('.');
+                  }
+                  parts.unshift(part);
+                  cur = cur.parentElement;
+                }
+                return parts.join(' > ');
+              };
+              const selector = cssPath(el);
+              try {
+                el.setAttribute('data-mc-blocked', '1');
+                el.style.setProperty('display', 'none', 'important');
+                el.style.setProperty('visibility', 'hidden', 'important');
+                el.style.setProperty('height', '0', 'important');
+                el.style.setProperty('max-height', '0', 'important');
+                el.style.setProperty('overflow', 'hidden', 'important');
+              } catch {}
+              return {
+                selector,
+                tag: el.tagName.toLowerCase(),
+                domain: location.hostname.replace(/^www\\./i, '').toLowerCase(),
+                pageUrl: location.href
+              };
+            })()`);
+            if (!info?.selector || !info?.domain) {
+              mainWin?.webContents?.send('cosmetic-block-result', { ok: false, error: 'No se pudo identificar el elemento' });
+              return;
+            }
+            const raw = `${info.domain}##${info.selector}`;
+            if (!Array.isArray(CFG.userCosmeticRules)) CFG.userCosmeticRules = [];
+            if (!CFG.userCosmeticRules.includes(raw)) {
+              CFG.userCosmeticRules.push(raw);
+              saveCfg();
+            }
+            try {
+              await wc.insertCSS(`${info.selector}{display:none!important;visibility:hidden!important;height:0!important;max-height:0!important;overflow:hidden!important;margin:0!important;padding:0!important;}`);
+            } catch {}
+            mainWin?.webContents?.send('cosmetic-block-result', { ok: true, rule: raw, domain: info.domain, selector: info.selector });
+          } catch (error) {
+            mainWin?.webContents?.send('cosmetic-block-result', { ok: false, error: error.message || 'No se pudo bloquear el elemento' });
+          }
+        }
+      },
+      {
         label: 'Diagnosticar elemento con IA (adblock)',
         click: async () => {
           try {
+            const pt = await resolveCtxCssPoint(wc, params);
             const element = await wc.executeJavaScript(`(() => {
-              const px = ${Number(params.x) || 0};
-              const py = ${Number(params.y) || 0};
+              const px = ${pt.x};
+              const py = ${pt.y};
               const el = document.elementFromPoint(px, py);
               if (!el) return null;
 
@@ -1777,22 +2512,120 @@ app.on('web-contents-created', (event, wc) => {
     Menu.buildFromTemplate(template).popup({ window: mainWin });
   });
   wc.setWindowOpenHandler(({ url }) => {
+    // Bloquear siempre popups claramente publicitarios/de seguimiento.
     if (isAggressiveAdNavigation(url)) {
       return { action: 'deny' };
     }
-    try { mainWin?.webContents?.send('open-new-tab', url); } catch {}
+    // OAuth de Google/X debe abrirse normalmente dentro de la sesión actual.
+    // Forzar deny/redirect aquí rompe el flujo y evita que aparezca la pantalla
+    // de login del segundo usuario.
+    if (isAuthPopupUrl(url)) {
+      return { action: 'allow' };
+    }
+    // Para TODO lo demás, impedimos que Chromium abra una ventana nativa.
+    // La conversión a pestaña (una sola vez) queda exclusivamente a cargo
+    // del evento 'new-window' del webview en renderer.html, que filtra por
+    // mismo dominio. Evitamos aqui el segundo 'open-new-tab' que provocaba
+    // la aparición de varias pestañas duplicadas al pulsar Descargar.
     return { action: 'deny' };
   });
 });
 
 // === APP LIFECYCLE ===
+// Bloqueo de instancia única: si ya hay una instancia de MC Browser corriendo,
+// la nueva se cierra y enfoca la ventana existente. Evita conflictos de caché/
+// sesión (persist:mc) que rompen WhatsApp al lanzar el proyecto varias veces.
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    try {
+      if (mainWin) {
+        if (mainWin.isMinimized()) mainWin.restore();
+        mainWin.focus();
+      }
+    } catch {}
+  });
+}
+
 app.whenReady().then(() => {
+  if (!gotTheLock) return;
   createWindow();
   const sess = session.fromPartition('persist:mc');
   ACTIONS.emit = (ch, ...args) => { try { mainWin?.webContents?.send(ch, ...args); } catch {} };
+  // Desactivado: la señalización automática de auth-session-updated provoca
+  // redirecciones durante el flujo OAuth de Google/X y rompe el login de la
+  // segunda cuenta. El navegador debe dejar completar la autenticación sin
+  // interrumpir la sesión del proveedor.
+  let authCookieTimer = null;
   if (CFG.proxyEnabled && CFG.proxyHost) {
     sess.setProxy({ proxyRules: `${CFG.proxyType || 'socks5'}://${CFG.proxyHost}:${CFG.proxyPort || 1080}` }).catch(e => console.error('[PROXY]', e.message));
   }
+
+  // ── Descargas nativas del navegador (will-download) ──
+  // Captura descargas normales (botón "Descargar", enlaces directos, etc.)
+  // que no pasan por el detector de streams, y las muestra en el panel.
+  sess.on('will-download', (event, item, webContents) => {
+    try {
+      const url = item.getURL() || '';
+      const filename = item.getFilename() || 'descarga';
+      const totalBytes = item.getTotalBytes();
+      const pageUrl = webContents?.getURL?.() || '';
+      const dlId = 'dl-native-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+      const dlDir = CFG.downloadDir || app.getPath('downloads');
+      if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
+      // Guardar en la carpeta de descargas configurada
+      item.setSavePath(path.join(dlDir, filename));
+
+      // Avisar al renderer para cerrar la pestaña popup que solo sirvió
+      // para iniciar esta descarga (comportamiento de navegadores normales:
+      // la pestaña de descarga se abre y se cierra sola).
+      try {
+        mainWin?.webContents?.send('dl-native-tab', { wcId: webContents?.id });
+      } catch {}
+
+      ACTIONS.emit('dl-native', {
+        id: dlId,
+        url,
+        filename,
+        totalBytes,
+        pageUrl,
+        state: 'active'
+      });
+
+      item.on('updated', (e, state) => {
+        const received = item.getReceivedBytes();
+        const pct = totalBytes > 0 ? Math.round(received / totalBytes * 100) : 0;
+        ACTIONS.emit('dl-native-progress', {
+          id: dlId,
+          url,
+          filename,
+          received,
+          totalBytes,
+          pct,
+          state
+        });
+      });
+
+      item.on('done', (e, state) => {
+        const received = item.getReceivedBytes();
+        const size = (received / 1048576).toFixed(1);
+        const filePath = item.getSavePath();
+        ACTIONS.emit('dl-native-done', {
+          id: dlId,
+          url,
+          filename,
+          file: filePath,
+          size,
+          state,
+          cancelled: state === 'cancelled' || state === 'interrupted'
+        });
+      });
+    } catch (e) {
+      console.error('[DL-NATIVE]', e.message);
+    }
+  });
 
   // ── Live request log & cookie interception ──
   sess.webRequest.onBeforeSendHeaders({ urls: ['<all_urls>'] }, (d, cb) => {
@@ -1800,7 +2633,13 @@ app.whenReady().then(() => {
     const headers = { ...d.requestHeaders };
     const isMediaRequest = d.resourceType === 'media' || /\.(?:m3u8|mpd|ts|m4s|mp4|aac|mp3|webm)(?:[?#]|$)|(?:segment|chunk|playlist|\/stream(?:\/|$))/i.test(d.url);
     const isMainFrame = d.resourceType === 'mainFrame' || d.resourceType === 'main_frame';
-    if (CFG.strictDomainIsolation && !isMainFrame && d.documentUrl && !isMediaRequest && !isAuthDomain(new URL(d.url).hostname) && !isTrustedResource(d.url, d.documentUrl)) {
+    const targetHost = new URL(d.url).hostname;
+    const docHost = d.documentUrl ? new URL(d.documentUrl).hostname : '';
+    const isAuthDocument = !!docHost && isAuthDomain(docHost);
+    if (isAuthDomain(targetHost) || isAuthDocument || isAuthRedirectFlow(targetHost, docHost)) {
+      return cb({ requestHeaders: headers });
+    }
+    if (CFG.strictDomainIsolation && !isMainFrame && d.documentUrl && !isMediaRequest && !isTrustedResource(d.url, d.documentUrl)) {
       for (const key of Object.keys(headers)) {
         if (key.toLowerCase() === 'cookie') delete headers[key];
       }
@@ -1836,7 +2675,11 @@ app.whenReady().then(() => {
     try {
       const responseHeaders = { ...d.responseHeaders };
       const host = new URL(d.url).hostname.toLowerCase();
+      const docHost = d.documentUrl ? new URL(d.documentUrl).hostname.toLowerCase() : '';
       const isMediaRequest = d.resourceType === 'media' || /\.(?:m3u8|mpd|ts|m4s|mp4|aac|mp3|webm)(?:[?#]|$)|(?:segment|chunk|playlist|\/stream(?:\/|$))/i.test(d.url);
+      if (isAuthDomain(host) || isAuthDomain(docHost) || isAuthRedirectFlow(host, docHost)) {
+        return cb({ responseHeaders });
+      }
       const cookieKey = responseHeaders['set-cookie'] ? 'set-cookie' : 'Set-Cookie';
       if (d.responseHeaders) {
         const setCookie = d.responseHeaders['set-cookie'] || d.responseHeaders['Set-Cookie'];
@@ -1851,7 +2694,7 @@ app.whenReady().then(() => {
             }
             STATS.cookiesBlocked += Array.isArray(setCookie) ? setCookie.length : 1;
           }
-          if (thirdParty || allowPolicy === 'session' || (CFG.cookiePolicy === 'session' && !isAuthDomain(host) && allowPolicy !== 'allow')) {
+          if (thirdParty || allowPolicy === 'session' || (CFG.cookiePolicy === 'session' && allowPolicy !== 'allow')) {
             const sessionCookies = (value) => String(value)
               .replace(/;\s*expires=[^;]*/gi, '')
               .replace(/;\s*max-age=[^;]*/gi, '');
@@ -1992,6 +2835,12 @@ app.whenReady().then(() => {
     console.error('[AI]', e.message);
     aiFallbacks({ aiConfig: CFG.aiConfig, saveCfg });
   }
+
+  // WhatsApp extractor module (independiente)
+  try {
+    const m = require('./modules/whatsapp-extractor/main');
+    m.setup({ cfg: CFG });
+  } catch (e) { console.error('[WA-EXTRACT]', e.message); }
 
   // ── Media detection (stream hunter) ─────────────────
 

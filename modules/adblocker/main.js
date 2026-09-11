@@ -4,6 +4,10 @@ const { ipcMain, session } = require('electron');
 const { ListManager, FILTER_LISTS } = require('./lists');
 const { Engine } = require('./engine');
 
+// Estado compartido del módulo (se inicializa en setup)
+let cfg = null;
+let authDomainsList = [];
+
 // ── Built-in fallback domains (funciona sin descargar listas) ─
 const FALLBACK_DOMAINS = [
   'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
@@ -74,20 +78,41 @@ function isAggressiveAdNavigation(rawUrl) {
   }
 }
 
+// YouTube: los streams de anuncios vienen de googlevideo.com con parámetros
+// ad_ en la URL (indistinguibles por dominio, pero distinguibles por URL).
+// Bloquearlos hace que YouTube salte el anuncio (como hace Brave/uBlock).
+function isYouTubeAdStream(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    const host = url.hostname.toLowerCase();
+    if (host !== 'googlevideo.com' && !host.endsWith('.googlevideo.com')) return false;
+    return /[?&]ad_/i.test(url.search) || /ad_signature/i.test(url.search);
+  } catch {
+    return false;
+  }
+}
+
 // ── Aislamiento estricto de terceros (port desde Android) ──
 // Equivalente a isUntrustedThirdPartyResource: corta recursos incrustados
 // (iframe/frame/embed/object) cuyo dominio no es el del documento actual.
 const VIDEO_HOSTS = [
-  'mega.nz', 'filemoon', 'savefiles', 'dood', 'voe',
-  'mxdrop', 'lulu', 'mp4upload'
+  'mega.nz', 'pixeldrain.com', 'filemoon.to', 'filemoon.sx', 'filemoon.in',
+  'savefiles', 'playmogo', 'mixdrop', 'miixdrop', 'dood', 'voe', 'mxdrop',
+  'lulu', 'mp4upload', 'streamwish'
 ];
 
 const TRUSTED_CROSS_ORIGINS = {
-  'google.com': ['gstatic.com', 'googleusercontent.com', 'googleapis.com'],
+  'google.com': ['gstatic.com', 'googleusercontent.com', 'googleapis.com', 'accounts.google.com', 'oauth.googleusercontent.com'],
   'youtube.com': ['ytimg.com', 'googlevideo.com', 'googleusercontent.com'],
   'microsoft.com': ['microsoftonline.com', 'live.com', 'office.net'],
   'github.com': ['githubusercontent.com', 'githubassets.com'],
-  'apple.com': ['icloud.com', 'apple-cloudkit.com']
+  'apple.com': ['icloud.com', 'apple-cloudkit.com'],
+  'x.com': ['twitter.com', 'google.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com', 'twimg.com', 'api.x.com', 'oauth.x.com'],
+  'twitter.com': ['x.com', 'google.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com', 'twimg.com', 'api.x.com', 'oauth.x.com'],
+  'x.ai': ['x.com', 'twitter.com', 'google.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com', 'accounts.x.ai', 'oauth.x.ai', 'auth.x.ai'],
+  'grok.com': ['x.com', 'twitter.com', 'google.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com', 'x.ai', 'accounts.x.ai'],
+  'whatsapp.com': ['whatsapp.net', 'whatsapp.org', 'fbcdn.net'],
+  'whatsapp.net': ['whatsapp.com', 'whatsapp.org', 'fbcdn.net']
 };
 
 // En Electron 30: subFrame = iframe/frame, object = embed/object.
@@ -98,6 +123,39 @@ const VIDEO_PATH_RE = /(?:^|[/?_-])(embed|player|watch|video|stream|playlist|man
 
 function isVideoHost(host) {
   return VIDEO_HOSTS.some(v => host === v || host.includes(v));
+}
+
+function isSiteAllowed(host) {
+  const normalizedHost = normalizeHost(host);
+  if (!normalizedHost || !cfg?.permissions) return false;
+  return Object.entries(cfg.permissions).some(([rawDomain, value]) => {
+    const domain = normalizeHost(rawDomain).replace(/^www\./, '');
+    const rules = value && typeof value === 'object' ? value : {};
+    return rules.site === 'allow' && (normalizedHost === domain || normalizedHost.endsWith('.' + domain));
+  });
+}
+
+function isExplicitlyBlocked(host, documentUrl) {
+  const normalizedHost = normalizeHost(host);
+  if (!normalizedHost || !Array.isArray(cfg?.customRules)) return false;
+  let docHost = '';
+  try {
+    if (documentUrl) docHost = new URL(documentUrl).hostname.toLowerCase();
+  } catch {}
+  const isAuth = (h) => h && authDomainsList.some(d => h === d || h.endsWith('.' + d));
+  return cfg.customRules.some(rule => {
+    const pattern = String(rule?.pattern || rule || '').trim().replace(/^\*\./, '').replace(/^www\./, '').toLowerCase();
+    if (!pattern) return false;
+    const matches = normalizedHost === pattern || normalizedHost.endsWith('.' + pattern);
+    if (!matches) return false;
+    // Regla site-scoped: solo aplica si el documento coincide con el sitio
+    if (rule.site) {
+      return !!docHost && baseDomain(rule.site) === baseDomain(docHost);
+    }
+    // Regla global: NO aplica en dominios auth (proteger OAuth/login)
+    if (isAuth(normalizedHost) || isAuth(docHost)) return false;
+    return true;
+  });
 }
 
 function isLikelyVideoResource(rawUrl, resourceType) {
@@ -179,7 +237,12 @@ function createBlockHandler(getEngine, allowedDomains, isEnabled, isCategoryEnab
         const guard = requestGuard(details);
         if (guard?.redirectURL) return callback({ redirectURL: guard.redirectURL });
         if (guard?.cancel) return callback({ cancel: true });
+        if (guard?.allow) return callback({ cancel: false });
       } catch {}
+    }
+    // [DIAG-AD] temporal: ver qué pasa con las peticiones de anuncios de display
+    if (/doubleclick|googlesyndication|googleadservices/i.test(details.url)) {
+      console.log('[DIAG-AD]', details.resourceType, '| doc:', (details.documentUrl || details.referrer || '').slice(0, 90), '| url:', details.url.slice(0, 140));
     }
     if (requestCb) requestCb(details);
     if (mediaCb) mediaCb(details.url, details.documentUrl || details.referrer || '', details.resourceType);
@@ -188,6 +251,20 @@ function createBlockHandler(getEngine, allowedDomains, isEnabled, isCategoryEnab
       const url = new URL(details.url);
       const host = url.hostname.toLowerCase();
 
+      if (isExplicitlyBlocked(host, details.documentUrl || details.referrer || '')) {
+        if (blockCb) blockCb(details, 'ads');
+        return callback({ cancel: true });
+      }
+
+      // YouTube: bloquear el stream del anuncio (googlevideo.com con
+      // parámetros ad_). Al bloquearlo, YouTube salta el anuncio en vez de
+      // mostrarlo en blanco (mismo enfoque que Brave/uBlock).
+      if (isYouTubeAdStream(details.url)) {
+        console.log('[DIAG-YT-AD] stream de anuncio bloqueado:', details.url.slice(0, 170));
+        if (blockCb) blockCb(details, 'ads');
+        return callback({ cancel: true });
+      }
+
       // Always allow auth/login domains
       for (const ad of allowedDomains) {
         if (host === ad || host.endsWith('.' + ad)) {
@@ -195,8 +272,17 @@ function createBlockHandler(getEngine, allowedDomains, isEnabled, isCategoryEnab
         }
       }
 
+      // Hosts de vídeo: permitir siempre (streams embebidos).
+      if (isVideoHost(host)) {
+        return callback({ cancel: false });
+      }
+
+      // "Sitio / contenedor" NO desactiva el motor de listas.
+      // Solo evita el heurístico de tokens de tracking (OAuth, APIs propias, etc.).
+      const siteTrusted = isSiteAllowed(host);
+
       const isTrackerRequest = TRACKER_TOKENS.test(details.url);
-      if (isCategoryEnabled('trackers') && isTrackerRequest) {
+      if (isCategoryEnabled('trackers') && isTrackerRequest && !siteTrusted) {
         if (blockCb) blockCb(details, 'trackers');
         return callback({ cancel: true });
       }
@@ -230,6 +316,7 @@ function createBlockHandler(getEngine, allowedDomains, isEnabled, isCategoryEnab
       }
 
     } catch {}
+    if (/doubleclick|googlesyndication|googleadservices/i.test(details.url)) console.log('[DIAG-AD] ALLOWED');
     callback({ cancel: false });
   };
 }
@@ -244,12 +331,67 @@ async function autoDownloadLists(manager, onProgress, onDone) {
   }
 }
 
+// Selectores cosméticos integrados para YouTube. Los anuncios de display los
+// renderiza YouTube inline con componentes ytw/ytd (p. ej.
+// ad-button-hover-overlay-view-model, clases ytwAd...); bloquear el host no
+// los oculta porque el contenido se sirve desde dominios propios de YouTube y
+// el enlace a googleadservices.com solo es el click-through.
+const YT_COSMETIC_SELECTORS = [
+  // Componentes nuevos (ytw) de anuncios
+  'ad-button-hover-overlay-view-model',
+  'ad-button-view-model',
+  'ad-slot-renderer',
+  'ad-badge-view-model',
+  '[class*="ytwAd"]',
+  '[class*="AdButtonHoverOverlay"]',
+  '[class*="AdButtonViewModel"]',
+  '[class*="AdHoverOverlay"]',
+  '[class*="AdImageHoverOverlay"]',
+  '[class*="AdOverlayContainer"]',
+  '[class*="AdTextOverlay"]',
+  '[class*="AdImageOverlay"]',
+  '[class*="AdBadge"]',
+  '[class*="AdSimpleAdBadge"]',
+  // Renderers clásicos de anuncios
+  'ytd-display-ad-renderer',
+  'ytd-in-feed-ad-layout-renderer',
+  'ytd-ad-slot-renderer',
+  'ytd-companion-slot-renderer',
+  'ytd-promoted-video-renderer',
+  'ytd-promoted-sparkles-web-renderer',
+  'ytd-banner-promo-renderer',
+  'ytd-statement-banner-renderer',
+  'ytd-video-masthead-ad-v3-renderer',
+  'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"]',
+  // Contenedores / overlays del reproductor
+  '#masthead-ad',
+  '#player-ads',
+  '.ytp-ad-module',
+  '.ytp-ad-overlay-container',
+  '.ytp-ad-text-overlay',
+  '.ytp-ad-image-overlay',
+  '.ytp-ad-simple-ad-badge',
+  '.ytp-ad-badge'
+];
+
+function builtInCosmeticSelectors(pageUrl) {
+  try {
+    const hostname = new URL(pageUrl).hostname.toLowerCase();
+    if (hostname !== 'youtube.com' && !hostname.endsWith('.youtube.com')) return [];
+    return YT_COSMETIC_SELECTORS;
+  } catch {
+    return [];
+  }
+}
+
 // ── Setup ──────────────────────────────────────────────────
 function setup(ctx) {
   if (!ctx) return;
-  const { cfg, saveCfg, emit, session: targetSession, allowedDomains, mediaCallback, blockCallback, requestCallback, requestGuard } = ctx;
+  const { cfg: ctxCfg, saveCfg, emit, session: targetSession, allowedDomains, mediaCallback, blockCallback, requestCallback, requestGuard } = ctx;
   const sess = targetSession || session.fromPartition('persist:mc');
   const allowed = allowedDomains || [];
+  cfg = ctxCfg || null;
+  authDomainsList = allowedDomains || [];
 
   const cacheDir = ctx.cacheDir || undefined;
   const manager = new ListManager(cacheDir);
@@ -370,7 +512,89 @@ function setup(ctx) {
     return { enabled: !!on };
   });
 
-  return { manager, toggleBlocking };
+  function normalizeCosmeticRule(raw) {
+    const text = String(raw || '').trim();
+    if (!text) return null;
+    const exceptionIdx = text.indexOf('#@#');
+    if (exceptionIdx >= 0) {
+      const domain = text.substring(0, exceptionIdx).trim().toLowerCase();
+      const selector = text.substring(exceptionIdx + 3).trim();
+      if (!selector) return null;
+      return { raw: (domain ? domain : '') + '#@#' + selector, domain, selector, exception: true };
+    }
+    const ci = text.indexOf('##');
+    if (ci < 0) return null;
+    const domain = text.substring(0, ci).trim().toLowerCase();
+    const selector = text.substring(ci + 2).trim();
+    if (!selector) return null;
+    return { raw: (domain ? domain : '') + '##' + selector, domain, selector, exception: false };
+  }
+
+  function userCosmeticSelectors(pageUrl) {
+    let hostname = '';
+    try { hostname = new URL(pageUrl).hostname.toLowerCase(); } catch { return []; }
+    const rules = Array.isArray(cfg?.userCosmeticRules) ? cfg.userCosmeticRules : [];
+    const out = [];
+    for (const item of rules) {
+      const rule = typeof item === 'string' ? normalizeCosmeticRule(item) : normalizeCosmeticRule(item?.raw || `${item?.domain || ''}##${item?.selector || ''}`);
+      if (!rule || rule.exception) continue;
+      if (rule.domain && !(hostname === rule.domain || hostname.endsWith('.' + rule.domain))) continue;
+      out.push(rule.selector);
+    }
+    return out;
+  }
+
+  function buildPageCosmeticCss(pageUrl) {
+    const fromEngine = (cfg?.blockAds === true || enabledAds)
+      ? manager.engine.buildCosmeticCss(pageUrl || '')
+      : { selectors: [], css: '' };
+    const userSelectors = userCosmeticSelectors(pageUrl);
+    const builtIn = builtInCosmeticSelectors(pageUrl);
+    const selectors = [...new Set([...(fromEngine.selectors || []), ...userSelectors, ...builtIn])];
+    if (!selectors.length) return { ok: true, count: 0, selectors: [], css: '' };
+    const chunks = [];
+    for (let i = 0; i < selectors.length; i += 40) {
+      chunks.push(selectors.slice(i, i + 40).join(',\n'));
+    }
+    const css = chunks
+      .map(chunk => `${chunk}{display:none!important;visibility:hidden!important;height:0!important;max-height:0!important;min-height:0!important;overflow:hidden!important;margin:0!important;padding:0!important;}`)
+      .join('\n');
+    return { ok: true, count: selectors.length, selectors, css, userCount: userSelectors.length };
+  }
+
+  ipcMain.handle('adblock:cosmetics', (_e, { url } = {}) => {
+    try {
+      return buildPageCosmeticCss(url || '');
+    } catch (e) {
+      return { ok: false, error: e.message, count: 0, selectors: [], css: '' };
+    }
+  });
+
+  ipcMain.handle('adblock:add-cosmetic', (_e, { domain, selector, raw } = {}) => {
+    const rule = normalizeCosmeticRule(raw || `${String(domain || '').trim()}##${String(selector || '').trim()}`);
+    if (!rule || rule.exception) return { ok: false, error: 'regla cosméticas inválida' };
+    if (!cfg.userCosmeticRules) cfg.userCosmeticRules = [];
+    if (cfg.userCosmeticRules.includes(rule.raw)) return { ok: true, rule: rule.raw, exists: true };
+    cfg.userCosmeticRules.push(rule.raw);
+    if (saveCfg) saveCfg();
+    return { ok: true, rule: rule.raw };
+  });
+
+  ipcMain.handle('adblock:remove-cosmetic', (_e, { raw, domain, selector } = {}) => {
+    const target = normalizeCosmeticRule(raw || `${String(domain || '').trim()}##${String(selector || '').trim()}`);
+    if (!target) return { ok: false, error: 'regla inválida' };
+    const before = Array.isArray(cfg.userCosmeticRules) ? cfg.userCosmeticRules.length : 0;
+    cfg.userCosmeticRules = (cfg.userCosmeticRules || []).filter(item => String(item) !== target.raw);
+    if (saveCfg) saveCfg();
+    return { ok: true, removed: before !== cfg.userCosmeticRules.length };
+  });
+
+  ipcMain.handle('adblock:list-cosmetics', () => ({
+    ok: true,
+    rules: Array.isArray(cfg?.userCosmeticRules) ? [...cfg.userCosmeticRules] : []
+  }));
+
+  return { manager, toggleBlocking, buildPageCosmeticCss };
 }
 
 module.exports = {

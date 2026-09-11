@@ -9,6 +9,17 @@ const WEB_PROVIDERS = {
   perplexity: { label: 'Perplexity',    url: 'https://perplexity.ai' },
 };
 
+function destroyEmbeddedWebview(wv) {
+  if (!wv) return;
+  let webContentsId = 0;
+  try { webContentsId = Number(wv.getWebContentsId?.()) || 0; } catch {}
+  if (webContentsId && typeof mc !== 'undefined' && typeof mc.destroyWebview === 'function') {
+    mc.destroyWebview(webContentsId).catch(() => {});
+  }
+  try { wv.removeAttribute('src'); } catch {}
+  try { wv.remove(); } catch {}
+}
+
 const AI = {
   cfg: null,
   msgs: [],
@@ -22,6 +33,7 @@ const AI = {
   _sessions: [],
   _saveTimer: null,
   _currentProjectUrl: '',
+  _attachedImages: [],
 
   init() {
     console.log('[AI] init started');
@@ -43,14 +55,14 @@ const AI = {
       this.appendMsg('system', `✓ Descargado: ${info.name} (${info.size} MB)`);
     });
     mc.on('ai:exec:log', msg => addSidebarLog('info', '[TERM] ' + msg));
-    // Init lab mode toggle style
+    // Init lab mode toggle style (refleja el estado real, no forzar activo)
     setTimeout(() => {
       const btn = document.getElementById('ai-lab-toggle');
       if (btn) {
-        btn.style.borderColor = 'var(--accent)';
-        btn.style.background = 'var(--accent)';
-        btn.style.color = '#000';
-        btn.title = 'Modo Lab: activo (código → laboratorio)';
+        btn.style.borderColor = this._labMode ? 'var(--accent)' : 'var(--border)';
+        btn.style.background = this._labMode ? 'var(--accent)' : 'transparent';
+        btn.style.color = this._labMode ? '#000' : 'var(--text)';
+        btn.title = this._labMode ? 'Modo Lab: activo (código → laboratorio)' : 'Modo Lab: inactivo (código → chat)';
       }
     }, 500);
   },
@@ -199,11 +211,14 @@ const AI = {
         <button class="ai-mode-pill" data-mode="private" title="Máxima privacidad">🔒</button>
         <button class="ai-mode-pill" data-mode="supervised" title="Requiere confirmación">🛡</button>
       </div>
-      <div class="input-container">
+      <div class="input-container" style="flex-wrap:wrap;">
+          <div id="ai-attach-preview" class="attach-preview" style="display:none;flex-basis:100%;"></div>
           <textarea id="ai-inp" rows="1"
             placeholder="Pregúntale a MC-AI... (Enter para enviar, Shift+Enter para nueva línea)"
-            onkeydown="AI.onKey(event)"></textarea>
+            onkeydown="AI.onKey(event)" onpaste="AI.onPaste(event)"></textarea>
+        <button id="ai-attach" class="attach-btn" onclick="AI.attachImages()" title="Adjuntar imágenes">📎</button>
         <button id="ai-send" class="send-btn" onclick="AI.send()" disabled>↑</button>
+        <input type="file" id="ai-file" accept="image/*" multiple style="display:none" onchange="AI.onFileSelected(event)">
       </div>
       </div><!-- fin ai-tab-chat -->
 
@@ -246,23 +261,13 @@ const AI = {
     const main = document.getElementById('main');
     if (main) main.appendChild(sb); else document.body.appendChild(sb);
 
-    // crear webview para chats web (debe ser createElement, no innerHTML)
-    const aiWv = document.createElement('webview');
-    aiWv.id = 'ai-wv';
-    aiWv.style.cssText = 'flex:0;border:none;height:0;min-height:0;';
-    aiWv.setAttribute('partition', 'persist:mc');
-    aiWv.setAttribute('allow', 'autoplay; media; encrypted-media');
-    aiWv.setAttribute('webpreferences', 'contextIsolation=yes');
     const cfgEl = document.getElementById('ai-sb-cfg');
     const msgsEl = document.getElementById('ai-msgs');
-    // ai-msgs puede estar dentro de un tab wrapper, usar su padre real
-    if (msgsEl && msgsEl.parentNode) msgsEl.parentNode.insertBefore(aiWv, msgsEl);
-    else sb.appendChild(aiWv);
 
     const inp = document.getElementById('ai-inp');
     const send = document.getElementById('ai-send');
     if (inp && send) {
-      inp.addEventListener('input', () => { if (send.dataset.mode !== 'stop') send.disabled = !inp.value.trim(); });
+      inp.addEventListener('input', () => this.updateSendState());
     }
 
     const modelsFooter = document.getElementById('ai-models-footer');
@@ -273,7 +278,8 @@ const AI = {
         details.addEventListener('toggle', async () => {
           if (!details.open) return;
           modelsList.textContent = 'Cargando…';
-          const res = await mc.aiModels();
+          const eff = this.getEffectiveCfg();
+          const res = await mc.aiModels(eff);
           if (res.error) { modelsList.textContent = 'Error: ' + res.error; return; }
           if (!res.models?.length) {
             const hints = {
@@ -310,19 +316,6 @@ const AI = {
       return 'ol-model';
     };
 
-    // event listeners para el webview de chats web
-    aiWv.addEventListener('did-navigate', () => {
-        const ctx = AI.getTabContextJSON();
-        if (ctx) aiWv.executeJavaScript(`
-          var el=document.getElementById('__mc-ctx-data');
-          if(!el){el=document.createElement('div');el.id='__mc-ctx-data';el.style.display='none';document.body.appendChild(el)}
-          el.textContent=${JSON.stringify(ctx)};el.dataset.context=${JSON.stringify(ctx)};
-        `).catch(()=>{});
-      });
-    aiWv.addEventListener('did-fail-load', e => {
-        console.error('[AI-WV] fail load:', e.errorDescription, e.errorCode);
-      });
-
     this.loadBg();
     this.initModePills();
     this.refreshMemory();
@@ -352,6 +345,11 @@ const AI = {
       if (wc) wc.classList.remove('open');
       const wcBtn = document.getElementById('chat-toggle-web');
       if (wcBtn) { wcBtn.className = 'chat-toggle closed'; wcBtn.innerHTML = '&#9664;'; wcBtn.title = 'Abrir WebChat'; }
+      // cerrar WhatsApp si está abierto
+      const wa = document.getElementById('wa-sidebar');
+      if (wa) wa.classList.remove('open');
+      const waBtn = document.getElementById('chat-toggle-wa');
+      if (waBtn) { waBtn.className = 'chat-toggle closed'; waBtn.innerHTML = '&#9664;'; waBtn.title = 'Abrir WhatsApp (Ctrl+Shift+Q)'; }
       const btn = document.querySelector('[data-panel="ai"]');
       if (btn) btn.classList.add('active');
       // Si la URL cambió, recargar sesión vinculada
@@ -369,13 +367,16 @@ const AI = {
       }
       this.updateQuickActions();
       setTimeout(() => document.getElementById('ai-inp')?.focus(), 300);
+    } else {
+      this.close();
+      return;
     }
     // sync edge toggle
     const btn = document.getElementById('chat-toggle-ai');
     if (btn) {
       btn.className = 'chat-toggle ' + (open ? 'open' : 'closed');
       btn.innerHTML = open ? '&#9654;' : '&#9664;';
-      btn.title = open ? 'Cerrar' : 'Abrir IA';
+      btn.title = open ? 'Cerrar' : 'Abrir IA (Ctrl+Shift+A)';
     }
   },
 
@@ -383,8 +384,11 @@ const AI = {
     const sb = document.getElementById('ai-sidebar');
     if (!sb) return;
     sb.classList.remove('open');
+    try { mc.aiChatAbort(); } catch {}
+    destroyEmbeddedWebview(document.getElementById('ai-wv'));
+    this._wv = null;
     const btn = document.getElementById('chat-toggle-ai');
-    if (btn) { btn.className = 'chat-toggle closed'; btn.innerHTML = '&#9664;'; btn.title = 'Abrir IA'; }
+    if (btn) { btn.className = 'chat-toggle closed'; btn.innerHTML = '&#9664;'; btn.title = 'Abrir IA (Ctrl+Shift+A)'; }
   },
 
   renderCfg() {
@@ -443,7 +447,29 @@ const AI = {
   showWebview(key) {
     const info = WEB_PROVIDERS[key];
     if (!info) return;
-    const wv = document.getElementById('ai-wv');
+    let wv = document.getElementById('ai-wv');
+    if (!wv) {
+      wv = document.createElement('webview');
+      wv.id = 'ai-wv';
+      wv.style.cssText = 'flex:0;border:none;height:0;min-height:0;';
+      wv.setAttribute('partition', 'persist:mc');
+      wv.setAttribute('allow', 'autoplay; media; encrypted-media');
+      wv.setAttribute('webpreferences', 'contextIsolation=yes');
+      const msgsEl = document.getElementById('ai-msgs');
+      if (msgsEl && msgsEl.parentNode) msgsEl.parentNode.insertBefore(wv, msgsEl);
+      else document.getElementById('ai-sidebar')?.appendChild(wv);
+      wv.addEventListener('did-navigate', () => {
+        const ctx = AI.getTabContextJSON();
+        if (ctx) wv.executeJavaScript(`
+          var el=document.getElementById('__mc-ctx-data');
+          if(!el){el=document.createElement('div');el.id='__mc-ctx-data';el.style.display='none';document.body.appendChild(el)}
+          el.textContent=${JSON.stringify(ctx)};el.dataset.context=${JSON.stringify(ctx)};
+        `).catch(() => {});
+      });
+      wv.addEventListener('did-fail-load', e => {
+        console.error('[AI-WV] fail load:', e.errorDescription, e.errorCode);
+      });
+    }
     console.log('[AI] showWebview', key, !!wv);
     if (!wv) return;
     const targetUrl = info.url;
@@ -481,6 +507,19 @@ const AI = {
         tabs: tabs.map(t => ({ id: t.id, title: t.title, url: t.url, active: t.id === activeId }))
       });
     } catch { return null; }
+  },
+
+  // Devuelve la config efectiva según lo seleccionado en el formulario (sin guardar)
+  getEffectiveCfg() {
+    const s = v => document.getElementById(v)?.value?.trim() || '';
+    const prov = s('ai-prov');
+    const cfg = { provider: prov };
+    if (prov === 'ollama') { cfg.url = s('ol-url') || 'http://localhost:11434'; cfg.model = s('ol-model') || 'phi3:mini'; }
+    else if (prov === 'gemini') { cfg.key = s('gm-key'); cfg.model = s('gm-model') || 'gemini-2.5-flash'; }
+    else if (prov === 'groq') { cfg.key = s('gq-key'); cfg.model = s('gq-model') || 'llama-3.1-8b-instant'; }
+    else if (prov === 'openai') { cfg.key = s('oa-key'); cfg.model = s('oa-model') || 'gpt-4o-mini'; }
+    else if (prov === 'opencode') { cfg.key = s('oc-key'); cfg.model = s('oc-model') || 'big-pickle'; }
+    return cfg;
   },
 
   async saveCfg() {
@@ -543,11 +582,22 @@ const AI = {
     await new Promise(r => setTimeout(r, 30));
     this._stopFlag = false;
     const inp = document.getElementById('ai-inp');
-    if (!text) { text = inp?.value?.trim(); if (!text) return; }
+    if (!text) { text = inp?.value?.trim() || ''; }
+    const imgs = this._attachedImages || [];
+    if (!text && !imgs.length) return;
     if (inp) inp.value = '';
     this.setBtnMode('stop');
-    this.msgs.push({ role: 'user', content: text });
-    this.appendMsg('user', text);
+    // Contenido multimodal: texto + imágenes adjuntas (formato OpenAI)
+    const content = [];
+    if (text) content.push({ type: 'text', text });
+    for (const img of imgs) content.push({ type: 'image_url', image_url: { url: img.dataUrl } });
+    if (content.length === 1 && content[0].type === 'image_url') {
+      content.unshift({ type: 'text', text: 'Analizá esta imagen' });
+    }
+    const userContent = content.length === 1 && content[0].type === 'text' ? content[0].text : content;
+    this.msgs.push({ role: 'user', content: userContent });
+    this.appendMsg('user', userContent);
+    this.clearAttachedImages();
     this.scheduleAutoSave();
     try {
       await this.continueChat(text);
@@ -557,6 +607,98 @@ const AI = {
     } finally {
       this.setBtnMode('send');
     }
+  },
+
+  // === Adjuntar / pegar imágenes ===
+  attachImages() {
+    const file = document.getElementById('ai-file');
+    if (file) file.click();
+  },
+
+  onFileSelected(e) {
+    const files = e.target?.files || [];
+    for (const f of files) this.addAttachedImage(f);
+    if (e.target) e.target.value = '';
+  },
+
+  onPaste(e) {
+    const items = e.clipboardData?.items || [];
+    for (const item of items) {
+      if (item.type && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) { this.addAttachedImage(file); e.preventDefault(); }
+      }
+    }
+  },
+
+  addAttachedImage(file) {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      this._attachedImages = this._attachedImages || [];
+      this._attachedImages.push({ name: file.name || 'imagen', mime: file.type, dataUrl: reader.result });
+      this.renderAttachPreview();
+      this.updateSendState();
+    };
+    reader.readAsDataURL(file);
+  },
+
+  removeAttachedImage(index) {
+    this._attachedImages = this._attachedImages || [];
+    this._attachedImages.splice(index, 1);
+    this.renderAttachPreview();
+    this.updateSendState();
+  },
+
+  clearAttachedImages() {
+    this._attachedImages = [];
+    this.renderAttachPreview();
+    this.updateSendState();
+  },
+
+  renderAttachPreview() {
+    const wrap = document.getElementById('ai-attach-preview');
+    if (!wrap) return;
+    const imgs = this._attachedImages || [];
+    wrap.innerHTML = '';
+    if (!imgs.length) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'flex';
+    imgs.forEach((img, i) => {
+      const thumb = document.createElement('div');
+      thumb.className = 'attach-thumb';
+      const pic = document.createElement('img');
+      pic.src = img.dataUrl;
+      pic.alt = img.name;
+      const rm = document.createElement('button');
+      rm.className = 'attach-remove';
+      rm.textContent = '✕';
+      rm.title = 'Quitar imagen';
+      rm.onclick = () => this.removeAttachedImage(i);
+      thumb.appendChild(pic);
+      thumb.appendChild(rm);
+      wrap.appendChild(thumb);
+    });
+  },
+
+  updateSendState() {
+    const btn = document.getElementById('ai-send');
+    if (!btn) return;
+    if (btn.dataset.mode === 'stop') return;
+    const inp = document.getElementById('ai-inp');
+    const hasText = inp?.value?.trim();
+    const hasImgs = (this._attachedImages || []).length > 0;
+    btn.disabled = !hasText && !hasImgs;
+  },
+
+  openMediaFull(src) {
+    const overlay = document.createElement('div');
+    overlay.className = 'ai-media-overlay';
+    overlay.onclick = () => overlay.remove();
+    const fullImg = document.createElement('img');
+    fullImg.src = src;
+    fullImg.className = 'ai-media-full';
+    overlay.appendChild(fullImg);
+    document.body.appendChild(overlay);
   },
 
   setBtnMode(mode) {
@@ -574,7 +716,7 @@ const AI = {
       btn.style.background = '';
       btn.style.color = '';
       btn.onclick = () => this.send();
-      btn.disabled = !document.getElementById('ai-inp')?.value?.trim();
+      this.updateSendState();
     }
   },
 
@@ -655,7 +797,9 @@ const AI = {
     const system = `Eres MC-AI, un asistente IA integrado en MC Browser.
 
 ## MODO ACTIVO: ${this.activeMode}
-${this.activeMode === 'casual' ? 'Modo conversación natural. Respondé como un amigo inteligente: claro, directo, sin vueltas. Explicá cosas fáciles de entender. Usá emojis con moderación. No uses jerga técnica innecesaria.' : ''}${this.activeMode === 'coder' ? 'Modo PROGRAMADOR WEB PROFESIONAL. Respondé como un senior dev: preciso, técnico, con arquitectura clara. Siempre usá lab:code para código web. Hablá de patrones, rendimiento, escalabilidad. Mostrá opciones (pero siempre la mejor). No expliques lo obvio — pasá al código directo.' : ''}${this.activeMode === 'gamedev' ? 'Modo GAME DEVELOPER. Especialista en juegos 2D (Canvas) y 3D (Three.js). Cuando el usuario pida un juego, generá TODO el código completo en lab:code. Conocés game loops, colisiones, shaders, física, audio, input handling, UI de juegos. Sé entusiasta y técnico.' : ''}${this.activeMode === 'private' ? 'Modo PRIVADO. Máxima protección de datos. NO guardes NADA en memoria. NO guardes bookmarks, análisis, ni datos del usuario. Respondé normal pero sin persistir nada.' : ''}${this.activeMode === 'supervised' ? 'Modo SUPERVISADO. Todas las acciones técnicas (cmd, script, fetch, scraping) requieren confirmación del usuario antes de ejecutarse. Explicá qué vas a hacer ANTES de hacerlo. Pedí permiso.' : ''}
+## MODO LABORATORIO: ${this._labMode ? 'ACTIVO' : 'INACTIVO'}
+${this._labMode ? '' : 'IMPORTANTE: El modo laboratorio está INACTIVO. NO uses el bloque lab:code. Mostrá el código HTML/CSS/JS directamente en el chat.'}
+${this.activeMode === 'casual' ? 'Modo conversación natural. Respondé como un amigo inteligente: claro, directo, sin vueltas. Explicá cosas fáciles de entender. Usá emojis con moderación. No uses jerga técnica innecesaria.' : ''}${this.activeMode === 'coder' ? 'Modo PROGRAMADOR WEB PROFESIONAL. Respondé como un senior dev: preciso, técnico, con arquitectura clara. ' + (this._labMode ? 'Siempre usá lab:code para código web.' : 'El laboratorio está INACTIVO: mostrá el código web en bloques regulares del chat.') + ' Hablá de patrones, rendimiento, escalabilidad. Mostrá opciones (pero siempre la mejor). No expliques lo obvio — pasá al código directo.' : ''}${this.activeMode === 'gamedev' ? 'Modo GAME DEVELOPER. Especialista en juegos 2D (Canvas) y 3D (Three.js). ' + (this._labMode ? 'Cuando el usuario pida un juego, generá TODO el código completo en lab:code.' : 'El laboratorio está INACTIVO: generá el código del juego en bloques regulares del chat.') + ' Conocés game loops, colisiones, shaders, física, audio, input handling, UI de juegos. Sé entusiasta y técnico.' : ''}${this.activeMode === 'private' ? 'Modo PRIVADO. Máxima protección de datos. NO guardes NADA en memoria. NO guardes bookmarks, análisis, ni datos del usuario. Respondé normal pero sin persistir nada.' : ''}${this.activeMode === 'supervised' ? 'Modo SUPERVISADO. Todas las acciones técnicas (cmd, script, fetch, scraping) requieren confirmación del usuario antes de ejecutarse. Explicá qué vas a hacer ANTES de hacerlo. Pedí permiso.' : ''}
 
 ## MONITOREO DEL LABORATORIO
 Tenés acceso a los logs de consola del laboratorio (en el contexto "LOGS DEL LABORATORIO"). Si hay errores (❌), UNDÍZALOS y ofrecé soluciones. Si el usuario dice "no funciona" o "tiene errores", revisá los logs primero. Los logs incluyen console.log, console.error, console.warn y errores de runtime.
@@ -667,22 +811,20 @@ Tenés acceso a los logs de consola del laboratorio (en el contexto "LOGS DEL LA
 **RESPUESTAS:** NO uses bloques de código a menos que se pida explícitamente o estés en modo coder/gamedev. En modo casual, respondé con texto natural.
 
 **REGLAS DE CÓDIGO:**
-- Si el usuario pide código HTML/CSS/JS: usá SIEMPRE \`\`\`lab:code para escribirlo en el laboratorio web (tiene preview en vivo).
+- ${this._labMode ? 'Lab ACTIVO: si el usuario pide código HTML/CSS/JS, usá SIEMPRE el bloque lab:code para escribirlo en el laboratorio web (preview en vivo).' : 'Lab INACTIVO: si el usuario pide código HTML/CSS/JS, mostralo en bloques regulares del chat. NO uses lab:code.'}
 - Si el usuario pide código Node.js / scripts del sistema: usá \`\`\`script.
 - Si el usuario pide comandos de terminal: usá \`\`\`cmd.
 - NUNCA pongas código ejecutable en bloques regulares del chat — siempre usá la herramienta correspondiente.
 - Hay un botón ✍ Lab que activa/desactiva el modo laboratorio. Por defecto está DESACTIVADO. Cuando lo activás, los bloques \`\`\`html, \`\`\`js, \`\`\`css se redirigen automáticamente al editor con preview en vivo. Si no está activo, el código se muestra normalmente en el chat.
 
 **REGLAS PARA CAMBIOS DE DISEÑO (CRÍTICO):**
-- Cuando el usuario pida un cambio de diseño, color, layout, tamaño, posición, o cualquier modificación visual, **SIEMPRE** usá \`\`\`lab:code con el **CÓDIGO COMPLETO MODIFICADO** (no solo describas el cambio).
-- Leé el código actual del laboratorio que te paso en el contexto, aplicá el cambio, y devolvé el HTML COMPLETO actualizado.
-- NUNCA confirmes que aplicaste un cambio si no generaste un bloque \`\`\`lab:code con el código completo. El usuario necesita ver el resultado, no solo una descripción.
+- ${this._labMode ? 'Cuando el usuario pida un cambio de diseño, color, layout, tamaño, posición, o cualquier modificación visual, **SIEMPRE** usá el bloque lab:code con el **CÓDIGO COMPLETO MODIFICADO** (no solo describas el cambio). Leé el código actual del laboratorio que te paso en el contexto, aplicá el cambio, y devolvé el HTML COMPLETO actualizado. NUNCA confirmes que aplicaste un cambio si no generaste un bloque lab:code con el código completo.' : 'Lab INACTIVO: si el usuario pide un cambio de diseño, mostrá el código completo modificado en un bloque regular del chat. NO uses lab:code.'}
 
 Cuando el usuario pida "analiza", "extrae", "descarga", "busca contenido", o preguntas de seguridad, activa el modo técnico: usa las herramientas disponibles, genera bloques de código, sé preciso.
 
 ## PATRONES DE ARQUITECTURA — GUÍA PARA GENERAR CÓDIGO COMPLETO
 
-Cuando el usuario pida crear algo (juego, app, visualización, etc.), analizá QUÉ componentes necesita ese proyecto y generá TODO el código completo en un solo bloque \`\`\`lab:code. No preguntes, no describas — generá.
+Cuando el usuario pida crear algo (juego, app, visualización, etc.), analizá QUÉ componentes necesita ese proyecto y generá TODO el código completo en un solo bloque ${this._labMode ? 'lab:code' : 'de código en el chat'}. No preguntes, no describas — generá.
 
 ### 🎮 Juegos 2D (Canvas)
 - Canvas + requestAnimationFrame loop
@@ -999,7 +1141,8 @@ Usuario: "Descarga todos los videos de esta página"
 
     let result;
     try {
-      result = await mc.aiChat({ messages: this.msgs, system });
+      const eff = this.getEffectiveCfg();
+      result = await mc.aiChat({ messages: this.msgs, system, ...eff });
     } catch (err) {
       if (thinkEl) thinkEl.remove();
       this.setBtnMode('send');
@@ -1022,8 +1165,11 @@ Usuario: "Descarga todos los videos de esta página"
 
     // Strip lab/code blocks from chat display and context
     let displayText = result.text;
-    displayText = displayText.replace(/```lab:code[\s\S]*?```/g, '').trim();
-    if (this._labMode !== false) {
+    if (this._labMode === false) {
+      // Lab inactivo: mostrar lab:code como bloque de código normal en el chat
+      displayText = displayText.replace(/```lab:code/g, '```html').trim();
+    } else {
+      displayText = displayText.replace(/```lab:code[\s\S]*?```/g, '').trim();
       displayText = displayText.replace(/```(html|javascript|js|css|xml|svg)[\s\S]*?```/g, '').trim();
     }
     this.msgs.push({ role: 'assistant', content: displayText || '(código enviado al laboratorio)' });
@@ -1536,6 +1682,11 @@ Usuario: "Descarga todos los videos de esta página"
     while ((match = labCodeRegex.exec(text)) !== null) {
       const code = match[1].trim();
       if (!code) continue;
+      // Si el modo lab NO está activo, no escribir en el laboratorio (el código se muestra en el chat)
+      if (this._labMode === false) {
+        results.push({ type: 'lab', result: '⚠ Modo Lab inactivo — el código se muestra en el chat (activá ✍ Lab para escribirlo en el laboratorio)' });
+        continue;
+      }
       // Modo supervisado: pedir permiso antes de escribir
       if (this.activeMode === 'supervised') {
         const ok = await this.showConsent(`✍ El AI quiere escribir código en el laboratorio (${code.length} chars). ¿Autorizás?`);
@@ -1703,7 +1854,27 @@ Usuario: "Descarga todos los videos de esta página"
 
     const content = document.createElement('div');
     content.className = 'message-content';
-    content.textContent = text;
+    if (Array.isArray(text)) {
+      // Contenido multimodal: texto + imágenes adjuntas
+      for (const part of text) {
+        if (!part) continue;
+        if (part.type === 'text') {
+          const t = document.createElement('div');
+          t.textContent = part.text;
+          content.appendChild(t);
+        } else if (part.type === 'image_url') {
+          const img = document.createElement('img');
+          img.src = part.image_url?.url || '';
+          img.className = 'ai-media-img';
+          img.alt = 'Imagen adjunta';
+          img.title = 'Clic para ampliar';
+          img.onclick = () => this.openMediaFull(img.src);
+          content.appendChild(img);
+        }
+      }
+    } else {
+      content.textContent = text;
+    }
 
     if (role === 'user') {
       el.classList.add('user-message');
@@ -2329,6 +2500,9 @@ const WebChat = {
   _wv: null,
   _active: null,
   _ready: false,
+  _contextTimer: null,
+  _lastAuthRefreshAt: 0,
+  _lastAuthRefreshUrl: '',
 
   _bg: { data: null },
   _bgDefault: null,
@@ -2336,6 +2510,9 @@ const WebChat = {
   init() {
     this.injectSidebar();
     this.loadBg();
+    if (typeof mc !== 'undefined' && mc?.on) {
+      mc.on('auth-session-updated', () => this.refreshSession());
+    }
   },
 
   injectSidebar() {
@@ -2370,26 +2547,28 @@ const WebChat = {
         </div>
       </details>
     `;
-    // webview must be created via createElement
-    const wv = document.createElement('webview');
-    wv.id = 'wch-wv';
-    wv.setAttribute('src', 'about:blank');
-    wv.setAttribute('partition', 'persist:mc');
-    wv.setAttribute('allowpopups', '');
-    wv.setAttribute('allow', 'autoplay; media; encrypted-media');
-    wv.setAttribute('webpreferences', 'contextIsolation=no,nodeIntegration=no');
-
-    sb.appendChild(wv);
-
     const main = document.getElementById('main');
     if (main) main.appendChild(sb);
     else document.body.appendChild(sb);
 
-    this._wv = wv;
+    this._wv = null;
     this.renderProviders();
-    this.bindEvents();
     this._active = 'copilot';
     } catch(e) { console.error('[WebChat] injectSidebar:', e); }
+  },
+
+  ensureWebview() {
+    if (this._wv) return this._wv;
+    const wv = document.createElement('webview');
+    wv.id = 'wch-wv';
+    wv.setAttribute('partition', 'persist:mc');
+    wv.setAttribute('allowpopups', '');
+    wv.setAttribute('allow', 'autoplay; media; encrypted-media');
+    wv.setAttribute('webpreferences', 'contextIsolation=no,nodeIntegration=no');
+    document.getElementById('webchat-sidebar')?.appendChild(wv);
+    this._wv = wv;
+    this.bindEvents();
+    return wv;
   },
 
   renderProviders() {
@@ -2405,7 +2584,7 @@ const WebChat = {
     if (!prov) return;
     this._active = id;
     document.querySelectorAll('.wch-prov-btn').forEach(b => b.classList.toggle('active', b.dataset.prov === id));
-    const wv = this._wv;
+    const wv = this.ensureWebview();
     if (!wv) return;
     if (this._ready) {
       wv.loadURL(prov.url);
@@ -2498,36 +2677,68 @@ const WebChat = {
       if (aiSb) aiSb.classList.remove('open');
       const aiBtn = document.getElementById('chat-toggle-ai');
       if (aiBtn) { aiBtn.className = 'chat-toggle closed'; aiBtn.innerHTML = '&#9664;'; aiBtn.title = 'Abrir IA'; }
+      const waSb = document.getElementById('wa-sidebar');
+      if (waSb) waSb.classList.remove('open');
+      const waBtn = document.getElementById('chat-toggle-wa');
+      if (waBtn) { waBtn.className = 'chat-toggle closed'; waBtn.innerHTML = '&#9664;'; waBtn.title = 'Abrir WhatsApp (Ctrl+Shift+Q)'; }
       document.querySelectorAll('.tnbtn').forEach(b => b.classList.remove('active'));
       const btn = document.getElementById('webchat-btn');
       if (btn) btn.classList.add('active');
+      this.ensureWebview();
+      if (!this._contextTimer) this._contextTimer = setInterval(() => this.injectContextElement(), 3000);
       // cargar provider activo si el webview está en about:blank
       if (this._wv && this._wv.getURL() === 'about:blank' && this._active) {
         this.setActive(this._active);
       }
     } else {
-      document.querySelectorAll('.tnbtn').forEach(b => b.classList.remove('active'));
+      this.close();
+      return;
     }
     // sync edge toggle
     const btn = document.getElementById('chat-toggle-web');
     if (btn) {
       btn.className = 'chat-toggle ' + (opening ? 'open' : 'closed');
       btn.innerHTML = opening ? '&#9654;' : '&#9664;';
-      btn.title = opening ? 'Cerrar' : 'Abrir WebChat';
+      btn.title = opening ? 'Cerrar' : 'Abrir WebChat (Ctrl+Shift+W)';
     }
   },
 
   close() {
     const sb = document.getElementById('webchat-sidebar');
     if (sb) sb.classList.remove('open');
+    destroyEmbeddedWebview(this._wv);
+    this._wv = null;
+    this._ready = false;
+    this._pendingUrl = '';
+    if (this._contextTimer) {
+      clearInterval(this._contextTimer);
+      this._contextTimer = null;
+    }
     document.querySelectorAll('.tnbtn').forEach(b => b.classList.remove('active'));
     const btn = document.getElementById('chat-toggle-web');
-    if (btn) { btn.className = 'chat-toggle closed'; btn.innerHTML = '&#9664;'; btn.title = 'Abrir WebChat'; }
+    if (btn) { btn.className = 'chat-toggle closed'; btn.innerHTML = '&#9664;'; btn.title = 'Abrir WebChat (Ctrl+Shift+W)'; }
   },
 
   reload() {
     const wv = this._wv;
     if (wv && this._ready) wv.reload();
+  },
+
+  refreshSession() {
+    const wv = this._wv;
+    if (!wv || !this._ready || !wv.getURL || typeof wv.reload !== 'function') return;
+    let currentUrl = '';
+    try { currentUrl = wv.getURL() || ''; } catch {}
+    if (!/^https?:\/\//i.test(currentUrl) || currentUrl === 'about:blank') return;
+    const isLoginPage = /\/signin|\/login|\/auth|\/oauth|\/account|\/challenge/i.test(currentUrl);
+    const now = Date.now();
+    if (isLoginPage && (now - this._lastAuthRefreshAt > 5000 || this._lastAuthRefreshUrl !== currentUrl)) {
+      this._lastAuthRefreshAt = now;
+      this._lastAuthRefreshUrl = currentUrl;
+      setTimeout(() => {
+        try { wv.reload(); } catch {}
+      }, 500);
+    }
   },
 
   // ── Background ──
@@ -2685,12 +2896,168 @@ const WebChat = {
   }
 };
 
-// ── Auto-inject context into WebChat webview every 3s ──
-setInterval(() => {
-  const sb = document.getElementById('webchat-sidebar');
-  if (!sb || !sb.classList.contains('open')) return;
-  WebChat.injectContextElement();
-}, 3000);
+//  WhatsAppChat — Sidebar dedicado a WhatsApp Web
+//  Reutiliza la compatibilidad de WhatsApp del main (UA_WHATSAPP + Client Hints)
+//  y comparte sesión persistente (partition="persist:mc").
+// ════════════════════════════════════════════════════════
+
+const WHATSAPP_URL = 'https://web.whatsapp.com';
+
+const WhatsAppChat = {
+  _wv: null,
+  _ready: false,
+  _zoomFactor: 0.8,
+
+  init() {
+    this.injectSidebar();
+  },
+
+  injectSidebar() {
+    try {
+      if (document.getElementById('wa-sidebar')) return;
+
+      const sb = document.createElement('div');
+      sb.id = 'wa-sidebar';
+      sb.innerHTML = `
+        <div class="wch-header">
+          <span class="wch-title">💬 WhatsApp Web</span>
+          <button class="wch-close" onclick="WhatsAppChat.close()" title="Cerrar">&times;</button>
+        </div>
+        <div class="wch-actions">
+          <button class="wch-action-btn" onclick="WhatsAppChat.reload()" title="Recargar WhatsApp">🔄</button>
+          <button class="wch-action-btn" onclick="WhatsAppChat.openInTab()" title="Abrir WhatsApp en una pestaña">↗ Pestaña</button>
+        </div>
+        <div class="wa-note">🔒 Sesión compartida con el navegador · Compatibilidad WhatsApp activa</div>
+      `;
+      const main = document.getElementById('main');
+      if (main) main.appendChild(sb);
+      else document.body.appendChild(sb);
+
+      this._wv = null;
+    } catch (e) {
+      console.error('[WhatsAppChat] injectSidebar:', e);
+    }
+  },
+
+  load() {
+    if (!this._wv) {
+      const wv = document.createElement('webview');
+      wv.id = 'wa-wv';
+      wv.setAttribute('src', WHATSAPP_URL);
+      wv.setAttribute('partition', 'persist:mc');
+      wv.setAttribute('allowpopups', '');
+      wv.setAttribute('allow', 'autoplay; media; encrypted-media');
+      wv.setAttribute('webpreferences', 'contextIsolation=no,nodeIntegration=no');
+      document.getElementById('wa-sidebar')?.appendChild(wv);
+      this._wv = wv;
+      this.bindEvents();
+      return;
+    }
+    try {
+      const currentUrl = this._wv.getURL();
+      if (currentUrl === 'about:blank' || !currentUrl) this._wv.loadURL(WHATSAPP_URL);
+    } catch {
+      try { this._wv.setAttribute('src', WHATSAPP_URL); } catch {}
+    }
+  },
+
+  bindEvents() {
+    const wv = this._wv;
+    if (!wv) return;
+
+    const applyLayout = () => {
+      try { wv.setZoomFactor(this._zoomFactor); } catch {}
+      wv.executeJavaScript(`(() => {
+        const style = document.getElementById('__mc-wa-layout');
+        if (style) return;
+        const el = document.createElement('style');
+        el.id = '__mc-wa-layout';
+        el.textContent = 'html,body{overflow-x:auto!important;}';
+        document.head.appendChild(el);
+      })()`).catch(() => {});
+    };
+
+    wv.addEventListener('dom-ready', () => {
+      this._ready = true;
+      applyLayout();
+      if (wv.getURL() === 'about:blank') this.load();
+    });
+
+    wv.addEventListener('did-finish-load', applyLayout);
+
+    wv.addEventListener('new-window', (e) => {
+      e.preventDefault();
+      if (e.url && this._wv) this._wv.loadURL(e.url);
+    });
+
+    wv.addEventListener('did-fail-load', (e) => {
+      if (e.errorCode !== -3) {
+        console.error('[WhatsAppChat] fail load:', e.errorDescription, e.url);
+      }
+    });
+
+    wv.addEventListener('permissionrequest', (e) => {
+      e.request.allow();
+    });
+  },
+
+  toggle() {
+    const sb = document.getElementById('wa-sidebar');
+    if (!sb) return;
+    const opening = !sb.classList.contains('open');
+    sb.classList.toggle('open');
+    if (opening) {
+      // cerrar otros paneles
+      const aiSb = document.getElementById('ai-sidebar');
+      if (aiSb) aiSb.classList.remove('open');
+      const aiBtn = document.getElementById('chat-toggle-ai');
+      if (aiBtn) { aiBtn.className = 'chat-toggle closed'; aiBtn.innerHTML = '&#9664;'; aiBtn.title = 'Abrir IA (Ctrl+Shift+A)'; }
+      const wcSb = document.getElementById('webchat-sidebar');
+      if (wcSb) wcSb.classList.remove('open');
+      const wcBtn = document.getElementById('chat-toggle-web');
+      if (wcBtn) { wcBtn.className = 'chat-toggle closed'; wcBtn.innerHTML = '&#9664;'; wcBtn.title = 'Abrir WebChat (Ctrl+Shift+W)'; }
+      document.querySelectorAll('.tnbtn').forEach(b => b.classList.remove('active'));
+      this.load();
+    } else {
+      this.close();
+      return;
+    }
+    const btn = document.getElementById('chat-toggle-wa');
+    if (btn) {
+      btn.className = 'chat-toggle ' + (opening ? 'open' : 'closed');
+      btn.innerHTML = opening ? '&#9654;' : '&#9664;';
+      btn.title = opening ? 'Cerrar' : 'Abrir WhatsApp (Ctrl+Shift+Q)';
+    }
+  },
+
+  close() {
+    const sb = document.getElementById('wa-sidebar');
+    if (sb) sb.classList.remove('open');
+    destroyEmbeddedWebview(this._wv);
+    this._wv = null;
+    this._ready = false;
+    const btn = document.getElementById('chat-toggle-wa');
+    if (btn) { btn.className = 'chat-toggle closed'; btn.innerHTML = '&#9664;'; btn.title = 'Abrir WhatsApp (Ctrl+Shift+Q)'; }
+  },
+
+  reload() {
+    const wv = this._wv;
+    if (wv && this._ready) wv.reload();
+  },
+
+  openInTab() {
+    const url = this._wv?.getURL?.() || WHATSAPP_URL;
+    if (typeof window.addTab === 'function') {
+      window.addTab(url);
+    } else if (typeof loadUrl === 'function') {
+      loadUrl(url);
+    }
+  }
+};
 
 AI.init();
 WebChat.init();
+WhatsAppChat.init();
+window.AI = AI;
+window.WebChat = WebChat;
+window.WhatsAppChat = WhatsAppChat;

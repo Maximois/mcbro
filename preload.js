@@ -11,14 +11,16 @@ const { contextBridge, ipcRenderer } = require('electron');
 const ALLOWED = new Set([
   'req-blocked','media-detected','cookie-intercepted','stats-update',
   'dl-progress','dl-complete','dl-error','new-tab','close-tab',
-  'dl-pause','dl-resume','dl-cancel',
+  'dl-pause','dl-resume','dl-cancel','dl:open-file',
+  'dl-native','dl-native-progress','dl-native-done','dl-native-tab',
   'focus-urlbar','ua-rotated','ua-changed','cookies-cleared','cache-cleared',
   'clear-all','media-cleared','show-media',
   'export-session-menu','import-session-menu',
   'popup-allowed','popup-blocked',
+  'auth-session-updated',
   'streams:found',
   'ytdlp-log',
-  'open-new-tab','page-extract-results','ai-element-selected',
+  'open-new-tab','page-extract-results','ai-element-selected','cosmetic-block-result','cosmetic-unblock-result',
   // Bookmarks
   'bookmarks:list','bookmarks:add','bookmarks:remove','bookmarks:update','bookmarks:reorder',
   // Browser history
@@ -48,6 +50,8 @@ const ALLOWED = new Set([
   'reminders:list','reminders:add','reminders:complete','reminders:delete',
   // Media save (generated images/audio/video)
   'ai:media:save',
+  // WhatsApp extractor media save
+  'wa:media:save','wa:media:download','wa:media:open','wa:media:open-file',
   // Chat sessions persistence
   'ai:chat:sessions:list','ai:chat:sessions:load','ai:chat:sessions:save',
   'ai:chat:sessions:delete','ai:chat:sessions:rename',
@@ -78,6 +82,7 @@ contextBridge.exposeInMainWorld('mc', {
   resetStats:  ()      => ipcRenderer.invoke('reset-stats'),
   getMedia:    ()      => ipcRenderer.invoke('get-media'),
   getSysinfo:  ()      => ipcRenderer.invoke('get-sysinfo'),
+  getProcesses:()      => ipcRenderer.invoke('get-processes'),
   getRealValues: ()     => getRealValues(),
   sendToHost: (channel, ...args) => {
     try { ipcRenderer.sendToHost(channel, ...args); } catch {}
@@ -88,6 +93,7 @@ contextBridge.exposeInMainWorld('mc', {
   maximize:   () => ipcRenderer.invoke('win-max'),
   close:      () => ipcRenderer.invoke('win-close'),
   isMaximized:() => ipcRenderer.invoke('win-ismax'),
+  destroyWebview: (webContentsId) => ipcRenderer.invoke('webview:destroy', webContentsId),
 
   // Descargas
   downloadHLS:  (id,url,name,pageUrl) => ipcRenderer.invoke('dl-hls',  {id,url,name,pageUrl}),
@@ -96,12 +102,14 @@ contextBridge.exposeInMainWorld('mc', {
   dlResume:     (id) => ipcRenderer.invoke('dl-resume', id),
   dlCancel:     (id) => ipcRenderer.invoke('dl-cancel', id),
   openDlFolder: ()         => ipcRenderer.invoke('open-dl-folder'),
+  openDlFile:   (path)     => ipcRenderer.invoke('dl:open-file', path),
   chooseDlDir:  ()         => ipcRenderer.invoke('choose-dl-dir'),
   openExternal: (url)      => ipcRenderer.invoke('open-external', url),
 
   // Cookies
   clearCookies:    ()               => ipcRenderer.invoke('clear-cookies'),
   clearCache:      ()               => ipcRenderer.invoke('clear-cache'),
+  clearData:       (opts={})         => ipcRenderer.invoke('clear-data', opts),
   clearAll:        ()               => ipcRenderer.invoke('clear-all'),
   addCookieRule:   (domain,policy)  => ipcRenderer.invoke('add-cookie-rule',   {domain,policy}),
   removeCookieRule:(domain)         => ipcRenderer.invoke('remove-cookie-rule', {domain}),
@@ -109,8 +117,11 @@ contextBridge.exposeInMainWorld('mc', {
   // Reglas
   addBlockRule:   (rule)    => ipcRenderer.invoke('add-block-rule',    rule),
   removeBlockRule:(pattern) => ipcRenderer.invoke('remove-block-rule', {pattern}),
+  addResourceRule: (rule) => ipcRenderer.invoke('add-resource-rule', rule),
+  removeResourceRule: (url, resourceType) => ipcRenderer.invoke('remove-resource-rule', {url, resourceType}),
+  getResourceRules: () => ipcRenderer.invoke('get-resource-rules'),
 
-  // Permisos (popups, etc.)
+  // Permisos granulares por dominio
   addPermission:   (domain,permission,value='allow') => ipcRenderer.invoke('add-permission',    {domain,permission,value}),
   removePermission:(domain,permission) => ipcRenderer.invoke('remove-permission', {domain,permission}),
   setSitePermission:(domain,permission,value='allow') => ipcRenderer.invoke('set-site-permission', {domain,permission,value}),
@@ -119,6 +130,12 @@ contextBridge.exposeInMainWorld('mc', {
   getSiteCookies:  (domain)            => ipcRenderer.invoke('get-site-cookies', {domain}),
   removeSiteCookie:(domain,name,path)   => ipcRenderer.invoke('remove-site-cookie', {domain,name,path}),
   setCookiePolicyForDomain:(domain,policy) => ipcRenderer.invoke('set-cookie-policy-for-domain',{domain,policy}),
+
+  // Adblock cosmetics (hide leftover ad slots)
+  adblockCosmetics: (url) => ipcRenderer.invoke('adblock:cosmetics', { url }),
+  adblockAddCosmetic: (opts) => ipcRenderer.invoke('adblock:add-cosmetic', opts),
+  adblockRemoveCosmetic: (opts) => ipcRenderer.invoke('adblock:remove-cosmetic', opts),
+  adblockListCosmetics: () => ipcRenderer.invoke('adblock:list-cosmetics'),
 
   // DoH
   resolveDoH: (host) => ipcRenderer.invoke('resolve-doh', host),
@@ -156,7 +173,7 @@ contextBridge.exposeInMainWorld('mc', {
    aiConfigGet:   ()     => ipcRenderer.invoke('ai:config:get'),
    aiConfigSave:  (cfg)  => ipcRenderer.invoke('ai:config:save', cfg),
    aiChat:        (opts) => ipcRenderer.invoke('ai:chat', opts),
-   aiModels:      ()     => ipcRenderer.invoke('ai:models'),
+   aiModels:      (opts) => ipcRenderer.invoke('ai:models', opts),
    aiDlUrl:       (opts) => ipcRenderer.invoke('ai:dl:url', opts),
    aiExec:        (opts) => ipcRenderer.invoke('ai:exec', opts),
    aiFetchUrl:    (opts) => ipcRenderer.invoke('ai:fetch:url', opts),
@@ -167,7 +184,12 @@ contextBridge.exposeInMainWorld('mc', {
    aiScriptRun:     (opts) => ipcRenderer.invoke('ai:script:run', opts),
    aiDecode:        (opts) => ipcRenderer.invoke('ai:decode', opts),
    aiChatAbort:     ()     => ipcRenderer.invoke('ai:chat:abort'),
-   aiMediaSave:     (opts) => ipcRenderer.invoke('ai:media:save', opts),  aiChatSessionsList:   ()        => ipcRenderer.invoke('ai:chat:sessions:list'),
+   aiMediaSave:     (opts) => ipcRenderer.invoke('ai:media:save', opts),
+  waMediaSave:     (opts) => ipcRenderer.invoke('wa:media:save', opts),
+  waMediaDownload: (opts) => ipcRenderer.invoke('wa:media:download', opts),
+  waMediaOpen:     (opts) => ipcRenderer.invoke('wa:media:open', opts),
+  waMediaOpenFile: (opts) => ipcRenderer.invoke('wa:media:open-file', opts),
+  aiChatSessionsList:   ()        => ipcRenderer.invoke('ai:chat:sessions:list'),
   aiChatSessionsLoad:   (opts)    => ipcRenderer.invoke('ai:chat:sessions:load', opts),
   aiChatSessionsSave:   (opts)    => ipcRenderer.invoke('ai:chat:sessions:save', opts),
   aiChatSessionsDelete: (opts)    => ipcRenderer.invoke('ai:chat:sessions:delete', opts),

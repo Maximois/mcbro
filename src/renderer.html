@@ -139,12 +139,13 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 
 /* ── Permissions & Cookies Panel ─────────────────── */
 #permissions-panel {
-  width: 300px; min-width: 0; flex-shrink: 0;
+  width: 360px; min-width: 0; flex-shrink: 0;
   background: var(--surface); border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
   overflow: hidden; transition: width 0.25s ease, padding 0.25s ease, border 0.25s ease;
   position: relative; z-index: 1;
 }
+#permissions-panel .perm-body { display: flex; flex-direction: column; }
 #permissions-panel.collapsed { width: 0; padding: 0; border: none; overflow: hidden; }
 #permissions-panel.has-panel-bg {
   background: var(--panel-overlay, rgba(10,12,18,.42));
@@ -157,25 +158,36 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 #permissions-panel.has-panel-bg > *:not(.panel-bg) { position: relative; z-index: 1; }
 #permissions-panel .perm-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,.08); flex-shrink: 0;
+  padding: 13px 15px 12px; border-bottom: 1px solid rgba(255,255,255,.08); flex-shrink: 0;
   background: var(--panel-header-bg, rgba(10,12,18,.24));
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
 #permissions-panel .perm-title {
-  font-size: 11px; font-weight: 700; color: var(--accent);
-  display: flex; align-items: center; gap: 6px; text-transform: uppercase; letter-spacing: .05em;
+  font-size: 12px; font-weight: 700; color: var(--text);
+  display: flex; align-items: center; gap: 7px; letter-spacing: .01em;
 }
+#permissions-panel .perm-subtitle { display: block; margin-top: 3px; color: var(--muted2); font-size: 9px; font-weight: 400; letter-spacing: 0; }
 #permissions-panel .perm-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; padding: 2px 6px; border-radius: 4px; transition: all .15s; }
 #permissions-panel .perm-close:hover { color: var(--accent); background: var(--surface2); }
-#permissions-panel .perm-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 10px; }
-#permissions-panel .perm-section { margin-bottom: 12px; }
-#permissions-panel .perm-section-title { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; display: flex; align-items: center; gap: 5px; }
+#permissions-panel .perm-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px 18px; font-family: 'Segoe UI', system-ui, sans-serif; }
+#permissions-panel .perm-section { margin-bottom: 13px; }
+#permissions-panel .perm-section-site { order: 1; }
+#permissions-panel .perm-section-cookies { order: 2; }
+#permissions-panel .perm-section-form { order: 2; }
+#permissions-panel .perm-section-cookies { order: 3; }
+#permissions-panel .perm-section-rules { order: 4; }
+#permissions-panel .perm-section-cosmetic { order: 4; }
+#permissions-panel .perm-section-block { order: 5; }
+#permissions-panel .perm-details { order: 6; }
+#permissions-panel .perm-section-title { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 7px; display: flex; align-items: center; gap: 5px; }
+#permissions-panel .perm-section-title .section-count { margin-left: auto; color: var(--muted2); font-size: 9px; font-weight: 400; letter-spacing: 0; text-transform: none; }
 #permissions-panel .perm-active-card {
-  background: var(--panel-view-bg, rgba(10,12,18,.14));
-  border: 1px solid rgba(255,255,255,.08); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;
+  background: linear-gradient(135deg, rgba(0,212,170,.12), rgba(10,12,18,.2) 58%);
+  border: 1px solid rgba(0,212,170,.25); border-radius: 8px; padding: 12px; margin-bottom: 8px;
 }
-#permissions-panel .perm-active-domain { font-size: 12px; font-weight: 700; color: var(--text); word-break: break-all; }
+#permissions-panel .perm-active-label { color: var(--muted2); font-size: 9px; margin-bottom: 4px; }
+#permissions-panel .perm-active-domain { font-size: 13px; font-weight: 700; color: var(--text); word-break: break-all; }
 #permissions-panel .perm-active-statuses { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 #permissions-panel .status-pill { padding: 2px 6px; border-radius: 10px; font-size: 9px; background: rgba(255,255,255,.08); color: var(--muted2); }
 #permissions-panel .status-pill.active { color: var(--success); background: rgba(77,220,151,.14); }
@@ -204,7 +216,7 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 #permissions-panel .rule-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 3px; border-radius: 3px; }
 #permissions-panel .rule-del:hover { color: var(--danger); background: rgba(255,82,112,.12); }
 #permissions-panel .perm-cookie-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 7px;
   background: var(--panel-view-bg, rgba(10,12,18,.1));
   border: 1px solid rgba(255,255,255,.06); border-radius: 6px; padding: 6px 8px; margin-bottom: 6px;
 }
@@ -212,9 +224,21 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 #permissions-panel .perm-cookie-main strong { font-size: 10px; color: var(--text); word-break: break-all; }
 #permissions-panel .perm-cookie-main span { font-size: 9px; color: var(--muted2); word-break: break-all; }
 #permissions-panel .perm-cookie-main small { font-size: 9px; }
+#permissions-panel .perm-cookie-more { margin-top: 4px; color: var(--muted2); font-size: 9px; }
+#permissions-panel .perm-cookie-more summary { cursor: pointer; color: var(--accent); }
+#permissions-panel .perm-cookie-data { margin-top: 4px; padding: 5px 6px; border-left: 2px solid var(--border2); color: var(--muted2); line-height: 1.45; overflow-wrap: anywhere; }
+#permissions-panel .perm-cookie-group-title { margin: 10px 0 5px; color: var(--muted2); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
 #permissions-panel .cookie-scope { color: var(--accent); }
 #permissions-panel .perm-cookie-actions { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; }
-#permissions-panel .mini-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 9px; padding: 2px 6px; border-radius: 4px; }
+#permissions-panel .perm-cosmetic-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 7px;
+  background: var(--panel-view-bg, rgba(10,12,18,.1));
+  border: 1px solid rgba(255,255,255,.06); border-radius: 6px; padding: 6px 8px; margin-bottom: 6px;
+}
+#permissions-panel .perm-cosmetic-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+#permissions-panel .perm-cosmetic-main strong { font-size: 10px; color: var(--text); word-break: break-all; }
+#permissions-panel .perm-cosmetic-main span { font-size: 9px; color: var(--muted2); word-break: break-all; }
+#permissions-panel .mini-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 9px; padding: 3px 7px; border-radius: 4px; white-space: nowrap; }
 #permissions-panel .mini-btn:hover { border-color: var(--accent); color: var(--accent); }
 #permissions-panel .mini-btn.danger { color: var(--danger); }
 #permissions-panel .mini-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
@@ -222,8 +246,40 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 #permissions-panel .perm-block-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 5px 8px; background: var(--panel-view-bg, rgba(10,12,18,.1)); border: 1px solid rgba(255,255,255,.06); border-radius: 6px; }
 #permissions-panel .perm-block-row .tog-label { font-size: 10px; color: var(--text); }
 #permissions-panel .perm-block-row .tog-sub { font-size: 9px; color: var(--muted2); }
+#permissions-panel .perm-block-summary { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid rgba(0,212,170,.18); border-radius: 7px; background: rgba(0,212,170,.06); margin-bottom: 7px; }
+#permissions-panel .perm-block-summary-icon { width: 25px; height: 25px; border-radius: 50%; display: grid; place-items: center; color: var(--accent); background: rgba(0,212,170,.14); font-size: 13px; flex-shrink: 0; }
+#permissions-panel .perm-block-summary strong { display: block; color: var(--text); font-size: 10px; }
+#permissions-panel .perm-block-summary span { display: block; color: var(--muted2); font-size: 9px; margin-top: 2px; }
 #permissions-panel .bp-empty { text-align: center; color: var(--muted); font-size: 11px; padding: 14px 0; }
 #permissions-panel .bp-empty-icon { font-size: 22px; margin-bottom: 4px; }
+#permissions-panel details.perm-details { border-top: 1px solid rgba(255,255,255,.07); padding-top: 10px; }
+#permissions-panel details.perm-details summary { cursor: pointer; list-style: none; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+#permissions-panel details.perm-details summary::-webkit-details-marker { display: none; }
+#permissions-panel details.perm-details summary::after { content: '+'; float: right; color: var(--muted2); font-size: 14px; line-height: 10px; }
+#permissions-panel details.perm-details[open] summary::after { content: '−'; }
+#permissions-panel details.perm-details > .perm-detail-body { padding-top: 10px; }
+#permissions-panel .perm-cookie-summary { color: var(--muted2); font-size: 10px; line-height: 1.45; margin: -2px 0 8px; }
+#permissions-panel .perm-section-scripts { order: 3; }
+#permissions-panel .perm-script-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 9px; margin-bottom: 5px; border: 1px solid rgba(255,255,255,.08); border-radius: 6px; background: var(--panel-view-bg, rgba(10,12,18,.1)); }
+#permissions-panel .perm-script-url { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 10px; }
+#permissions-panel .perm-script-host { display: block; margin-top: 3px; color: var(--muted2); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#permissions-panel .perm-script-actions { display: flex; gap: 4px; }
+#permissions-panel .perm-script-actions .mini-btn { min-width: 56px; }
+#permissions-panel .perm-script-actions .mini-btn.active-allow { color: var(--success); border-color: rgba(0,212,170,.4); }
+#permissions-panel .perm-script-actions .mini-btn.active-block { color: var(--danger); border-color: rgba(255,77,109,.4); }
+#permissions-panel .perm-script-group { margin-bottom: 6px; border: 1px solid rgba(255,255,255,.08); border-radius: 7px; background: var(--panel-view-bg, rgba(10,12,18,.1)); overflow: hidden; }
+#permissions-panel .perm-script-group summary { display: flex; align-items: center; gap: 8px; padding: 9px 10px; cursor: pointer; list-style: none; }
+#permissions-panel .perm-script-group summary::-webkit-details-marker { display: none; }
+#permissions-panel .perm-script-group summary::after { content: '+'; margin-left: auto; color: var(--muted2); font-size: 14px; }
+#permissions-panel .perm-script-group[open] summary::after { content: '−'; }
+#permissions-panel .perm-script-group-icon { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; color: var(--accent); background: rgba(0,212,170,.12); font-size: 10px; flex-shrink: 0; }
+#permissions-panel .perm-script-group-title { min-width: 0; flex: 1; }
+#permissions-panel .perm-script-group-title strong { display: block; color: var(--text); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#permissions-panel .perm-script-group-title span { display: block; margin-top: 2px; color: var(--muted2); font-size: 9px; }
+#permissions-panel .perm-script-group-count { color: var(--muted2); font-size: 9px; white-space: nowrap; }
+#permissions-panel .perm-script-group-body { padding: 0 7px 7px; border-top: 1px solid rgba(255,255,255,.06); }
+#permissions-panel .perm-script-group-body .perm-script-row { margin-top: 6px; margin-bottom: 0; background: rgba(255,255,255,.025); }
+#permissions-panel .perm-host-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
 #permissions-toggle { width: 18px; min-width: 18px; flex: 1; background: var(--surface); border-top: 1px solid var(--border); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 12px; transition: color .2s, background .2s; user-select: none; }
 #permissions-toggle:hover { background: var(--surface2); color: var(--accent); }
 #permissions-toggle.open { color: var(--accent); background: var(--surface2); }
@@ -376,6 +432,13 @@ input:checked + .tslider::before { transform: translateX(16px); }
 .log-entry.info .log-dot { background: var(--info); }
 .log-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 
+/* elementos bloqueados (reglas cosméticas) */
+.cosmetic-rule-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.03); }
+.cosmetic-rule-text { flex: 1; font-size: 10px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cosmetic-rule-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--danger); cursor: pointer; font-size: 9px; padding: 2px 6px; border-radius: 4px; white-space: nowrap; flex-shrink: 0; }
+.cosmetic-rule-btn:hover { border-color: var(--danger); color: var(--danger); }
+.cosmetic-empty { font-size: 10px; color: var(--muted); padding: 3px 0; }
+
 /* CONTENT */
 #content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 #extractor-overlay { display:none; position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,.68); align-items:center; justify-content:center; }
@@ -391,6 +454,25 @@ input:checked + .tslider::before { transform: translateX(16px); }
 .extractor-type { width:54px; color:var(--accent); font-size:10px; text-transform:uppercase; }
 .extractor-url { flex:1; min-width:0; color:var(--muted2); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .extractor-actions { display:flex; gap:4px; }
+/* WhatsApp extractor (módulo independiente) */
+#wa-extractor-overlay { display:none; position:fixed; top:0; left:0; bottom:0; width:min(680px,62vw); z-index:10001; background:rgba(0,0,0,.5); }
+#wa-extractor-overlay.open { display:flex; }
+#wa-extractor-dialog { flex:1; display:flex; flex-direction:column; background:var(--surface); border-right:1px solid var(--border2); box-shadow:0 0 40px rgba(0,0,0,.5); overflow:hidden; }
+.wa-extractor-head { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border); }
+.wa-extractor-head strong { flex:1; }
+.wa-extractor-filters { display:flex; gap:5px; padding:8px 12px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+.wa-extractor-filter { background:var(--surface2); color:var(--muted2); border:1px solid var(--border); border-radius:4px; padding:4px 9px; cursor:pointer; font:inherit; font-size:10px; }
+.wa-extractor-filter.active { color:var(--accent); border-color:var(--accent); }
+#wa-extractor-list { flex:1; overflow:auto; padding:10px 12px; }
+.wa-extractor-item { display:flex; align-items:center; gap:10px; padding:8px 4px; border-bottom:1px solid rgba(255,255,255,.05); }
+.wa-extractor-thumb { width:56px; height:56px; flex-shrink:0; border-radius:6px; overflow:hidden; background:var(--surface2); display:flex; align-items:center; justify-content:center; border:1px solid var(--border); }
+.wa-extractor-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.wa-extractor-thumb-icon { font-size:10px; color:var(--muted2); }
+.wa-extractor-info { flex:1; min-width:0; }
+.wa-extractor-label { color:var(--text); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wa-extractor-src { color:var(--accent); font-size:9px; text-transform:uppercase; margin-left:4px; }
+.wa-extractor-url { color:var(--muted2); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wa-extractor-actions { display:flex; gap:4px; flex-shrink:0; }
 #viewport { flex: 1; overflow: hidden; position: relative; }
 #webview-container { position: absolute; inset: 0; display: none; background: #fff; }
 #webview-container .tab-webview { position: absolute; inset: 0; width: 100%; height: 100%; display: none; }
@@ -674,7 +756,8 @@ input:checked + .tslider::before { transform: translateX(16px); }
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--accent); display: none;
 }
-#newtab-page { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100%; gap: 28px; padding: 40px 0; position: relative; }
+#panel-newtab.panel.active { padding: 0; overflow: hidden; }
+#newtab-page { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 0; box-sizing: border-box; gap: 28px; padding: 40px 24px; position: relative; overflow: hidden; }
 #newtab-page::before {
   content: '';
   position: absolute;
@@ -715,6 +798,10 @@ input:checked + .tslider::before { transform: translateX(16px); }
 .nt-sc-icon { font-size: 18px; margin-bottom: 5px; }
 .nt-sc-label { font-size: 10px; color: var(--muted); }
 .nt-privacy-badge { display: flex; align-items: center; gap: 8px; background: rgba(0,212,170,.08); border: 1px solid rgba(0,212,170,.2); border-radius: 20px; padding: 6px 16px; font-size: 11px; color: var(--accent); }
+.nt-shortcuts-ref { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 560px; }
+.nt-sc-ref-item { display: flex; align-items: center; gap: 5px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 3px 10px; font-size: 9px; color: var(--muted2); cursor: pointer; transition: all .15s; }
+.nt-sc-ref-item:hover { border-color: var(--accent); color: var(--accent); }
+.nt-sc-ref-key { background: var(--surface3); border: 1px solid var(--border2); border-radius: 4px; padding: 1px 5px; font-size: 8px; color: var(--accent); font-weight: 700; }
 
 #statusbar { background: var(--surface); border-top: 1px solid var(--border); padding: 4px 14px; display: flex; gap: 16px; align-items: center; font-size: 10px; color: var(--muted); flex-shrink: 0; }
 .st-item { display: flex; align-items: center; gap: 5px; }
@@ -754,8 +841,8 @@ input:checked + .tslider::before { transform: translateX(16px); }
 .ai-key-link:hover { background: rgba(255,169,77,.25); border-color: var(--accent); color: #fff; }
 .ai-selection-btn { background: var(--accent); color: #000; border: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-family: inherit; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.4); transition: opacity .2s; animation: fadein .15s; white-space: nowrap; }
 .ai-selection-btn:hover { opacity: .85; }
-#ai-sidebar, #webchat-sidebar { width: 0; min-width: 0; flex-shrink: 0; background: var(--surface); border-left: none; display: flex; flex-direction: column; overflow: hidden; transition: width 0.25s ease; position: relative; z-index: 0; }
-#ai-sidebar.open, #webchat-sidebar.open { width: 400px; border-left: 1px solid var(--border); box-shadow: -4px 0 12px rgba(0,0,0,0.3); }
+#ai-sidebar, #webchat-sidebar, #wa-sidebar { width: 0; min-width: 0; flex-shrink: 0; background: var(--surface); border-left: none; display: flex; flex-direction: column; overflow: hidden; transition: width 0.25s ease; position: relative; z-index: 0; }
+#ai-sidebar.open, #webchat-sidebar.open, #wa-sidebar.open { width: 400px; border-left: 1px solid var(--border); box-shadow: -4px 0 12px rgba(0,0,0,0.3); }
 #ai-sidebar .ai-header, #webchat-sidebar .ai-header { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 #ai-sidebar .ai-title-wrapper, #webchat-sidebar .ai-title-wrapper { display: flex; align-items: center; gap: 6px; }
 #ai-sidebar .ai-sparkle { color: var(--accent); font-size: 16px; }
@@ -776,6 +863,13 @@ input:checked + .tslider::before { transform: translateX(16px); }
 #ai-sidebar .send-btn, #webchat-sidebar .send-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: #000; border: none; cursor: pointer; font-size: 16px; flex-shrink: 0; transition: opacity .2s; display: flex; align-items: center; justify-content: center; }
 #ai-sidebar .send-btn:disabled { opacity: .3; cursor: default; }
 #ai-sidebar .send-btn:hover:not(:disabled) { opacity: .8; }
+#ai-sidebar .attach-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--surface2); color: var(--muted); border: 1px solid var(--border); cursor: pointer; font-size: 15px; flex-shrink: 0; transition: all .2s; display: flex; align-items: center; justify-content: center; }
+#ai-sidebar .attach-btn:hover { border-color: var(--accent); color: var(--accent); }
+#ai-sidebar .attach-preview { display: flex; gap: 6px; flex-wrap: wrap; padding: 4px 0 2px; }
+#ai-sidebar .attach-thumb { position: relative; width: 52px; height: 52px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); flex-shrink: 0; }
+#ai-sidebar .attach-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#ai-sidebar .attach-remove { position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; border-radius: 50%; background: rgba(0,0,0,.7); color: #fff; border: none; cursor: pointer; font-size: 9px; line-height: 1; display: flex; align-items: center; justify-content: center; padding: 0; }
+#ai-sidebar .attach-remove:hover { background: var(--danger); }
 #ai-sidebar .user-message, #webchat-sidebar .user-message { background: var(--accent); color: #000; align-self: flex-end; border-radius: 12px 12px 4px 12px; padding: 8px 12px; font-size: 12px; max-width: 85%; word-wrap: break-word; }
 #ai-sidebar .ai-message, #webchat-sidebar .ai-message { background: var(--surface2); color: var(--text); align-self: flex-start; border-radius: 12px 12px 12px 4px; padding: 8px 12px; font-size: 12px; max-width: 85%; word-wrap: break-word; border: 1px solid var(--border); }
 #ai-sidebar .system-message, #webchat-sidebar .system-message { background: rgba(255,169,77,.1); color: var(--warn); align-self: center; border-radius: 8px; padding: 6px 14px; font-size: 11px; border: 1px solid rgba(255,169,77,.2); text-align: center; }
@@ -802,17 +896,18 @@ input:checked + .tslider::before { transform: translateX(16px); }
 #webchat-sidebar.has-bg .wch-actions { background: rgba(0,0,0,.3); }
 #webchat-sidebar.has-bg details { background: rgba(0,0,0,.3); }
 /* WebChat specific */
-#webchat-sidebar .wch-header { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-#webchat-sidebar .wch-title { font-size: 14px; font-weight: 700; color: var(--text); }
-#webchat-sidebar .wch-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 18px; padding: 2px 6px; transition: color .2s; }
-#webchat-sidebar .wch-close:hover { color: var(--accent); }
+#webchat-sidebar .wch-header, #wa-sidebar .wch-header { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+#webchat-sidebar .wch-title, #wa-sidebar .wch-title { font-size: 14px; font-weight: 700; color: var(--text); }
+#webchat-sidebar .wch-close, #wa-sidebar .wch-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 18px; padding: 2px 6px; transition: color .2s; }
+#webchat-sidebar .wch-close:hover, #wa-sidebar .wch-close:hover { color: var(--accent); }
 #webchat-sidebar .wch-provider-row { display: flex; gap: 4px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 #webchat-sidebar .wch-prov-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--muted2); border-radius: var(--radius-sm); padding: 4px 10px; cursor: pointer; font-size: 10px; font-family: inherit; transition: all .15s; }
 #webchat-sidebar .wch-prov-btn:hover, #webchat-sidebar .wch-prov-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(0,212,170,.08); }
-#webchat-sidebar .wch-actions { display: flex; gap: 4px; padding: 6px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
-#webchat-sidebar .wch-action-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--muted2); border-radius: var(--radius-sm); padding: 4px 8px; cursor: pointer; font-size: 10px; font-family: inherit; transition: all .15s; }
-#webchat-sidebar .wch-action-btn:hover { border-color: var(--accent); color: var(--accent); }
-#ai-wv, #wch-wv { flex: 1; border: none; min-height: 0; }
+#webchat-sidebar .wch-actions, #wa-sidebar .wch-actions { display: flex; gap: 4px; padding: 6px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
+#webchat-sidebar .wch-action-btn, #wa-sidebar .wch-action-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--muted2); border-radius: var(--radius-sm); padding: 4px 8px; cursor: pointer; font-size: 10px; font-family: inherit; transition: all .15s; }
+#webchat-sidebar .wch-action-btn:hover, #wa-sidebar .wch-action-btn:hover { border-color: var(--accent); color: var(--accent); }
+#wa-sidebar .wa-note { padding: 6px 12px; font-size: 10px; color: var(--muted2); background: rgba(0,212,170,.06); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+#ai-wv, #wch-wv, #wa-wv { flex: 1; border: none; min-height: 0; }
 /* Chat edge toggle buttons (mismo formato que sidebar) */
 #chat-toggles { display: flex; flex-direction: column; flex-shrink: 0; width: 18px; min-width: 18px; background: var(--surface); border-left: 1px solid var(--border); }
 .chat-toggle { width: 18px; min-width: 18px; flex: 1; background: var(--surface); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 10px; transition: color 0.2s, background 0.2s; user-select: none; }
@@ -896,11 +991,11 @@ input:checked + .tslider::before { transform: translateX(16px); }
 <div id="topnav">
   <button class="tnbtn active" onclick="showPanel('newtab')">Inicio</button>
   <button class="tnbtn" id="history-toolbar-btn" onclick="openUtilityPanel('history')">&#128221; Historial</button>
-  <button class="tnbtn" onclick="openReader()" title="Modo Reader">&#128196; Reader</button>
+  <button class="tnbtn" onclick="openReader()" title="Modo Reader (Ctrl+Shift+E)">&#128196; Reader</button>
   <button class="tnbtn" id="streams-toolbar-btn" onclick="showPanel('streams')" title="Stream Hunter">📡</button>
   <button class="tnbtn" onclick="openUtilityPanel('downloads')" id="dl-toolbar-btn" title="Descargas" style="position:relative;">&#11015; Descargas<span class="dl-badge-dot" id="dl-badge-dot"></span></button>
-  <button class="tnbtn" onclick="showPanel('settings')">&#9881; Config</button>
-  <button class="tnbtn" onclick="showPanel('lab')" title="Laboratorio Web">⚗</button>
+  <button class="tnbtn" onclick="showPanel('settings')" title="Configuración (Ctrl+Shift+,)">&#9881; Config</button>
+  <button class="tnbtn" onclick="showPanel('lab')" title="Laboratorio Web (Ctrl+Shift+G)">⚗</button>
 </div>
   </div>
 
@@ -935,7 +1030,16 @@ input:checked + .tslider::before { transform: translateX(16px); }
       </div>
 
       <div class="sb-section">
-        <div class="sb-title">Protecciones</div>
+        <div class="sb-title">Monitor</div>
+        <div id="sidebar-process-monitor" style="display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--muted2);">
+          <div style="color:var(--muted);">Cargando...</div>
+        </div>
+      </div>
+
+      <div class="sb-section">
+        <details id="sidebar-protections-details">
+          <summary class="sb-title" style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">Protecciones <span style="font-size:10px;color:var(--muted);">▸</span></summary>
+          <div style="padding-top:8px;">
         <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap;">
           <button class="btn ghost" onclick="setPrivacyLevel('custom')" style="padding:4px 8px;font-size:10px;">Custom</button>
           <button class="btn" onclick="setPrivacyLevel('high')" style="padding:4px 8px;font-size:10px;background:var(--warn);color:#000;">Alto</button>
@@ -963,7 +1067,11 @@ input:checked + .tslider::before { transform: translateX(16px); }
          </div>
          <div class="tog-row media-detect-row"><div><div class="tog-label">Detección de Media</div></div><label class="toggle"><input type="checkbox" id="tog-media-detect" onchange="updateProtections()"><span class="tslider"></span></label></div>
          <div class="tog-row gpu-accel-row"><div><div class="tog-label">Aceleración por GPU</div><div class="tog-sub" style="font-size:9px;color:var(--muted);">Opcional · desactivada por defecto</div><div class="tog-sub" id="gpu-status" style="font-size:9px;color:var(--muted);margin-top:2px;">Estado: comprobando...</div></div><label class="toggle"><input type="checkbox" id="tog-gpu" onchange="updateGpuAcceleration()"><span class="tslider"></span></label></div>
+          </div>
+        </details>
        </div>
+
+      <!-- Elementos bloqueados: solo en panel de permisos -->
 
       <div class="sb-section" style="flex:1;">
         <div class="sb-title">Log en vivo</div>
@@ -1051,38 +1159,42 @@ input:checked + .tslider::before { transform: translateX(16px); }
     <div id="permissions-panel" class="collapsed">
       <div class="panel-bg" id="permissions-panel-bg"></div>
       <div class="perm-header">
-        <div class="perm-title">&#128737; Permisos y Cookies</div>
+        <div><div class="perm-title">&#128737; Privacidad del sitio</div><span class="perm-subtitle">Controla lo que este dominio puede hacer</span></div>
         <button class="perm-close" onclick="togglePermissionsPanel()" title="Cerrar panel">&#10005;</button>
       </div>
       <div class="perm-body">
-        <div class="perm-section">
-          <div class="perm-section-title">&#128279; Dominio activo</div>
+        <div class="perm-section perm-section-site">
+          <div class="perm-section-title">Sitio actual</div>
           <div class="perm-active-card">
+            <div class="perm-active-label">Dominio activo</div>
             <div class="perm-active-domain" id="permissions-active-domain">—</div>
             <div class="perm-active-statuses" id="permissions-active-statuses"></div>
           </div>
         </div>
 
-        <div class="perm-section">
-          <div class="perm-section-title">&#128737; Reglas de bloqueo</div>
+        <div class="perm-section perm-section-block">
+          <div class="perm-section-title">Protección del sitio</div>
+          <div class="perm-block-summary"><div class="perm-block-summary-icon">&#10003;</div><div><strong id="permissions-blocked-summary">Protección activa</strong><span>Los rastreadores y anuncios se filtran automáticamente</span></div></div>
           <div class="perm-block-toggles">
             <div class="perm-block-row">
               <div><div class="tog-label">Bloqueo leve</div><div class="tog-sub">Solo esta sesión</div></div>
-              <label class="toggle"><input type="checkbox" id="perm-block-light" onchange="setDomainBlockLevel('light')"><span class="tslider"></span></label>
+              <label class="toggle"><input type="checkbox" id="perm-block-light" onchange="setDomainBlockLevel(this.checked ? 'light' : 'none')"><span class="tslider"></span></label>
             </div>
             <div class="perm-block-row">
               <div><div class="tog-label">Bloqueo permanente</div><div class="tog-sub">Persistente para este dominio</div></div>
-              <label class="toggle"><input type="checkbox" id="perm-block-permanent" onchange="setDomainBlockLevel('permanent')"><span class="tslider"></span></label>
+              <label class="toggle"><input type="checkbox" id="perm-block-permanent" onchange="setDomainBlockLevel(this.checked ? 'permanent' : 'none')"><span class="tslider"></span></label>
             </div>
             <div class="perm-block-row">
               <div><div class="tog-label">Bloqueo global</div><div class="tog-sub">En todos los sitios</div></div>
-              <label class="toggle"><input type="checkbox" id="perm-block-global" onchange="setDomainBlockLevel('global')"><span class="tslider"></span></label>
+              <label class="toggle"><input type="checkbox" id="perm-block-global" onchange="setDomainBlockLevel(this.checked ? 'global' : 'none')"><span class="tslider"></span></label>
             </div>
           </div>
+          <button class="btn ghost perm-add-btn" onclick="clearDomainBlock()">&#10003; Desbloquear dominio</button>
         </div>
 
-        <div class="perm-section">
-          <div class="perm-section-title">&#128295; Nueva regla de permiso</div>
+        <div class="perm-section perm-section-form">
+          <div class="perm-section-title">Agregar permiso <span class="section-count">Para este dominio</span></div>
+          <div class="perm-cookie-summary">Define qué puede hacer este sitio. “Sitio confiable” permite navegación/1ª parte y no trata sus URLs como tracker heurístico; el adblock por listas sigue activo.</div>
           <div class="perm-form">
             <div class="perm-form-row">
               <input class="text-input" id="permission-domain" placeholder="dominio.com" oninput="syncPermissionsDomainField()" />
@@ -1096,6 +1208,7 @@ input:checked + .tslider::before { transform: translateX(16px); }
                 <option value="images">Imágenes</option>
                 <option value="audio">Audio</option>
                 <option value="javascript">JavaScript</option>
+                <option value="site">Sitio confiable (nav / 1ª parte)</option>
               </select>
               <select class="sel-input" id="permission-mode">
                 <option value="allow">Permitir</option>
@@ -1103,22 +1216,56 @@ input:checked + .tslider::before { transform: translateX(16px); }
               </select>
             </div>
             <button class="btn perm-add-btn" onclick="addPermissionRule()">&#43; Añadir regla</button>
+            <button class="btn ghost perm-add-btn" onclick="showPermissionHosts()">Elegir dominio o subdominio</button>
           </div>
         </div>
 
-        <div class="perm-section">
-          <div class="perm-section-title">&#128274; Permisos por dominio</div>
+        <div class="perm-section perm-section-scripts">
+          <div class="perm-section-title">Scripts individuales <span class="section-count" id="permissions-script-count">0 detectados</span></div>
+          <div class="perm-cookie-summary">Decide uno por uno qué script permitir o bloquear.</div>
+          <div id="site-script-list">
+            <div class="bp-empty"><div class="bp-empty-icon">&#128196;</div><div>Aún no se detectaron scripts</div></div>
+          </div>
+        </div>
+
+        <div class="perm-section perm-section-cookies">
+          <div class="perm-section-title">Cookies y datos del sitio</div>
+          <div class="perm-cookie-summary">Datos guardados por este sitio y dominios relacionados.</div>
+          <div id="page-cookies-list">
+            <div class="bp-empty"><div class="bp-empty-icon">&#127850;</div><div>Sin dominio activo</div></div>
+          </div>
+        </div>
+
+        <div class="perm-section perm-section-rules">
+          <div class="perm-section-title">Reglas guardadas <span class="section-count">Solo reglas activas</span></div>
           <div id="permissions-list">
             <div class="bp-empty"><div class="bp-empty-icon">&#128274;</div><div>Sin permisos por dominio</div></div>
           </div>
         </div>
 
-        <div class="perm-section">
-          <div class="perm-section-title">&#127850; Cookies del sitio</div>
-          <div id="page-cookies-list">
-            <div class="bp-empty"><div class="bp-empty-icon">&#127850;</div><div>Sin dominio activo</div></div>
+        <div class="perm-section perm-section-cosmetic">
+          <div class="perm-section-title">Elementos bloqueados <span class="section-count" id="permissions-cosmetic-count">0</span></div>
+          <div class="perm-cookie-summary">Elementos ocultos con "Bloquear este elemento" del menú contextual.</div>
+          <div id="permissions-cosmetic-list">
+            <div class="bp-empty"><div class="bp-empty-icon">&#128683;</div><div>Sin elementos bloqueados</div></div>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <button class="btn ghost perm-add-btn" onclick="reapplyCosmeticFilters()" style="flex:1;width:auto;">&#128260; Reaplicar filtros</button>
+            <button class="btn ghost perm-add-btn" onclick="unblockAllCosmeticRules()" style="flex:1;width:auto;">&#10003; Desbloquear todo</button>
           </div>
         </div>
+
+        <details class="perm-details">
+          <summary>Reglas y dominios relacionados</summary>
+          <div class="perm-detail-body">
+            <div class="perm-section">
+              <div class="perm-section-title">Hosts cargados</div>
+              <div id="detected-hosts-list">
+                <div class="bp-empty"><div class="bp-empty-icon">&#128279;</div><div>Sin hosts detectados</div></div>
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
       <div class="panel-bg-controls">
         <div class="panel-bg-row">
@@ -1134,11 +1281,11 @@ input:checked + .tslider::before { transform: translateX(16px); }
 
     <!-- LEFT PANEL TOGGLES -->
     <div id="left-toggles">
-      <div id="sidebar-toggle" onclick="toggleSidebar()" title="Colapsar sidebar">&#9664;</div>
-      <div id="bookmarks-toggle" onclick="toggleBookmarksPanel()" title="Marcadores">&#9733;</div>
-      <div id="resources-toggle" onclick="openResourceExtractor()" title="Extraer imágenes y enlaces">&#128269;</div>
-      <div id="utility-toggle" onclick="toggleUtilityPanel()" title="Historial y Descargas">&#128221;</div>
-      <div id="permissions-toggle" onclick="togglePermissionsPanel()" title="Permisos y Cookies">&#128737;</div>
+      <div id="sidebar-toggle" onclick="toggleSidebar()" title="Colapsar sidebar (Ctrl+Shift+S)">&#9664;</div>
+      <div id="bookmarks-toggle" onclick="toggleBookmarksPanel()" title="Marcadores (Ctrl+Shift+B)">&#9733;</div>
+      <div id="resources-toggle" onclick="openResourceExtractor()" title="Extraer imágenes y enlaces (Ctrl+Shift+X)">&#128269;</div>
+      <div id="utility-toggle" onclick="toggleUtilityPanel()" title="Historial y Descargas (Ctrl+Shift+H)">&#128221;</div>
+      <div id="permissions-toggle" onclick="togglePermissionsPanel()" title="Permisos y Cookies (Ctrl+Shift+P)">&#128737;</div>
     </div>
 
     <!-- HISTORY AND DOWNLOADS PANEL -->
@@ -1154,7 +1301,12 @@ input:checked + .tslider::before { transform: translateX(16px); }
       </div>
       <div class="utility-view active" data-utility-view="history">
         <div id="utility-history-list"></div>
-        <div class="utility-history-actions"><button class="btn ghost btn-sm" onclick="clearHistory()">&#128465; Limpiar historial</button></div>
+        <div class="utility-history-actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <button class="btn ghost btn-sm" onclick="clearHistory('history')">&#128465; Historial</button>
+          <button class="btn ghost btn-sm" onclick="clearHistory('history-cache')">Historial + caché</button>
+          <button class="btn ghost btn-sm" onclick="clearHistory('history-cache-cookies')">Historial + caché + cookies</button>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);"><input id="keep-sessions-clear" type="checkbox"> Mantener sesiones</label>
+        </div>
       </div>
       <div class="utility-view" data-utility-view="downloads">
         <div class="dl-overlay-body" id="download-queue">
@@ -1165,6 +1317,7 @@ input:checked + .tslider::before { transform: translateX(16px); }
           <input class="text-input" id="dl-dir" readonly style="flex:1;font-size:10px;padding:3px 6px;"/>
           <button class="btn ghost btn-sm" onclick="chooseDir()" style="font-size:10px;padding:3px 6px;">&#128193;</button>
           <button class="btn ghost btn-sm" onclick="mc.openDlFolder()" style="font-size:10px;padding:3px 6px;">Abrir</button>
+          <button class="btn ghost btn-sm" onclick="clearDownloads()" style="font-size:10px;padding:3px 6px;color:var(--danger);" title="Limpiar historial de descargas">&#128465;</button>
         </div>
       </div>
       <div class="panel-bg-controls">
@@ -1225,6 +1378,19 @@ input:checked + .tslider::before { transform: translateX(16px); }
               <!-- Los accesos directos se renderizan dinámicamente -->
             </div>
             <div class="nt-privacy-badge">&#128737; Todas las protecciones activas &mdash; Identidad en modo incógnito</div>
+            <div class="nt-shortcuts-ref">
+              <div class="nt-sc-ref-item" onclick="toggleBookmarksPanel()" title="Marcadores"><span class="nt-sc-ref-key">Ctrl+Shift+B</span> Marcadores</div>
+              <div class="nt-sc-ref-item" onclick="toggleSidebar()" title="Sidebar"><span class="nt-sc-ref-key">Ctrl+Shift+S</span> Sidebar</div>
+              <div class="nt-sc-ref-item" onclick="openResourceExtractor()" title="Recursos"><span class="nt-sc-ref-key">Ctrl+Shift+X</span> Recursos</div>
+              <div class="nt-sc-ref-item" onclick="toggleUtilityPanel()" title="Historial/Descargas"><span class="nt-sc-ref-key">Ctrl+Shift+H</span> Historial</div>
+              <div class="nt-sc-ref-item" onclick="togglePermissionsPanel()" title="Permisos"><span class="nt-sc-ref-key">Ctrl+Shift+P</span> Permisos</div>
+              <div class="nt-sc-ref-item" onclick="(window.AI?AI.toggle():toggleChatPanel('ai'))" title="Panel IA"><span class="nt-sc-ref-key">Ctrl+Shift+A</span> IA</div>
+              <div class="nt-sc-ref-item" onclick="(window.WebChat?WebChat.toggle():toggleChatPanel('web'))" title="WebChat"><span class="nt-sc-ref-key">Ctrl+Shift+W</span> WebChat</div>
+              <div class="nt-sc-ref-item" onclick="(window.WhatsAppChat?WhatsAppChat.toggle():toggleChatPanel('wa'))" title="WhatsApp Web"><span class="nt-sc-ref-key">Ctrl+Shift+Q</span> WhatsApp</div>
+              <div class="nt-sc-ref-item" onclick="openReader()" title="Reader"><span class="nt-sc-ref-key">Ctrl+Shift+E</span> Reader</div>
+              <div class="nt-sc-ref-item" onclick="showPanel('lab')" title="Laboratorio"><span class="nt-sc-ref-key">Ctrl+Shift+G</span> Lab</div>
+              <div class="nt-sc-ref-item" onclick="showPanel('settings')" title="Configuración"><span class="nt-sc-ref-key">Ctrl+Shift+,</span> Config</div>
+            </div>
           </div>
         </div>
 
@@ -1254,7 +1420,10 @@ input:checked + .tslider::before { transform: translateX(16px); }
             <div class="panel-sub">Páginas visitadas durante esta sesión</div>
           </div>
           <div style="margin-bottom:15px;display:flex;gap:8px;">
-            <button class="btn ghost btn-sm" onclick="clearHistory()">&#128465; Limpiar historial</button>
+            <button class="btn ghost btn-sm" onclick="clearHistory('history')">&#128465; Historial</button>
+            <button class="btn ghost btn-sm" onclick="clearHistory('history-cache')">Historial + caché</button>
+            <button class="btn ghost btn-sm" onclick="clearHistory('history-cache-cookies')">Historial + caché + cookies</button>
+            <label style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);"><input id="keep-sessions-clear2" type="checkbox"> Mantener sesiones</label>
           </div>
           <div id="history-list" style="font-size:12px;color:var(--text);">
             <div style="color:var(--muted);font-size:12px;text-align:center;padding:24px;border:1px dashed var(--border);border-radius:var(--radius);">
@@ -1533,11 +1702,17 @@ input:checked + .tslider::before { transform: translateX(16px); }
 
           <div class="card">
             <div class="card-title"><span class="ct-icon">&#128190;</span> Almacenamiento y datos</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="btn danger btn-sm" onclick="clearAll()">&#128465; Borrar TODOS los datos</button>
-              <button class="btn ghost btn-sm" onclick="clearCookies()">Borrar cookies</button>
-              <button class="btn ghost btn-sm" onclick="clearCache()">Borrar caché</button>
-              <button class="btn ghost btn-sm" onclick="resetStats()">Reiniciar stats</button>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                <button class="btn danger btn-sm" onclick="clearAll()">&#128465; Borrar TODOS los datos</button>
+                <button class="btn ghost btn-sm" onclick="clearHistory('history')">Historial</button>
+                <button class="btn ghost btn-sm" onclick="clearHistory('history-cache')">Historial + caché</button>
+                <button class="btn ghost btn-sm" onclick="clearHistory('history-cache-cookies')">Historial + caché + cookies</button>
+                <button class="btn ghost btn-sm" onclick="clearCookies()">Cookies</button>
+                <button class="btn ghost btn-sm" onclick="clearCache()">Caché</button>
+                <button class="btn ghost btn-sm" onclick="resetStats()">Reiniciar stats</button>
+              </div>
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);"><input id="keep-sessions-clear3" type="checkbox"> Mantener sesiones actuales al borrar cookies</label>
             </div>
           </div>
 
@@ -1546,6 +1721,16 @@ input:checked + .tslider::before { transform: translateX(16px); }
             <div style="display:flex;gap:8px;">
               <button class="btn ghost btn-sm" onclick="exportSession()">&#128190; Exportar sesión</button>
               <button class="btn ghost btn-sm" onclick="importSession()">&#128260; Importar sesión</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title"><span class="ct-icon">&#9881;</span> Procesos activos</div>
+            <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
+              <button class="btn ghost btn-sm" onclick="refreshProcessList()">&#8635; Actualizar</button>
+            </div>
+            <div id="process-list" style="font-size:10px;color:var(--muted2);display:flex;flex-direction:column;gap:4px;">
+              Cargando procesos...
             </div>
           </div>
 
@@ -1633,8 +1818,9 @@ input:checked + .tslider::before { transform: translateX(16px); }
 
     <!-- CHAT EDGE TOGGLE BUTTONS -->
     <div id="chat-toggles">
-      <div id="chat-toggle-ai" class="chat-toggle closed" onclick="(window.AI?AI.toggle():toggleChatPanel('ai'))" title="Abrir IA">&#9664;</div>
-      <div id="chat-toggle-web" class="chat-toggle closed" onclick="(window.WebChat?WebChat.toggle():toggleChatPanel('web'))" title="Abrir WebChat">&#9664;</div>
+      <div id="chat-toggle-ai" class="chat-toggle closed" onclick="(window.AI?AI.toggle():toggleChatPanel('ai'))" title="Abrir IA (Ctrl+Shift+A)">&#9664;</div>
+      <div id="chat-toggle-web" class="chat-toggle closed" onclick="(window.WebChat?WebChat.toggle():toggleChatPanel('web'))" title="Abrir WebChat (Ctrl+Shift+W)">&#9664;</div>
+      <div id="chat-toggle-wa" class="chat-toggle closed" onclick="(window.WhatsAppChat?WhatsAppChat.toggle():toggleChatPanel('wa'))" title="Abrir WhatsApp (Ctrl+Shift+Q)">&#9664;</div>
     </div>
   </div>
 
@@ -1645,6 +1831,7 @@ input:checked + .tslider::before { transform: translateX(16px); }
     <div class="st-item"><div class="st-dot" id="dot-trackers" style="background:var(--success);"></div><span>Trackers: bloqueados</span></div>
     <div class="st-item"><div class="st-dot yellow"></div><span id="st-ua">UA: Windows/Chrome</span></div>
     <div class="st-item"><div class="st-dot blue"></div><span id="st-doh">DoH: Cloudflare</span></div>
+    <div class="st-item" id="st-resources-wrap"><div class="st-dot" style="background:var(--muted);"></div><span id="st-resources">CPU 0% · GPU 0% · RAM 0 MB</span></div>
     <div id="st-spacer"></div>
     <div class="st-item"><div class="st-dot green"></div><span id="st-time"></span></div>
   </div>
@@ -1696,6 +1883,9 @@ const state = {
   bgSettings: null,
   mediaItems: new Map(),
   streamItems: new Map(),
+  blockedScripts: [],
+  downloads: [], // historial persistente de descargas
+  authReturnUrls: {},
 };
 
 // ── helpers ─────────────────────────────────────
@@ -1710,11 +1900,12 @@ function toggleSidebar() {
   const collapsed = sb.classList.toggle('collapsed');
   btn.classList.toggle('collapsed', collapsed);
   btn.innerHTML = collapsed ? '&#9654;' : '&#9664;';
-  btn.title = collapsed ? 'Abrir sidebar' : 'Colapsar sidebar';
+  btn.title = collapsed ? 'Abrir sidebar (Ctrl+Shift+S)' : 'Colapsar sidebar (Ctrl+Shift+S)';
   try { localStorage.setItem('mc_sidebar_collapsed', collapsed ? '1' : ''); } catch {}
+  if (collapsed) stopSidebarProcessMonitor();
+  else startSidebarProcessMonitor();
   if (!collapsed) {
     renderSidebarStreams();
-    setTimeout(() => scanStreams(), 2000);
   }
 }
 (function(){
@@ -1722,7 +1913,7 @@ function toggleSidebar() {
   const btn = $('sidebar-toggle');
   if (sb && btn) {
     const was = localStorage.getItem('mc_sidebar_collapsed') === '1';
-    if (was) { sb.classList.add('collapsed'); btn.classList.add('collapsed'); btn.innerHTML = '&#9654;'; btn.title = 'Abrir sidebar'; }
+    if (was) { sb.classList.add('collapsed'); btn.classList.add('collapsed'); btn.innerHTML = '&#9654;'; btn.title = 'Abrir sidebar (Ctrl+Shift+S)'; }
   }
 })();
 
@@ -2046,7 +2237,7 @@ function getTitleForUrl(url) {
 
 // ── Chat edge toggle (fallback si módulo AI no cargó) ──
 function toggleChatPanel(type) {
-  const id = type === 'ai' ? 'ai-sidebar' : 'webchat-sidebar';
+  const id = type === 'ai' ? 'ai-sidebar' : type === 'web' ? 'webchat-sidebar' : 'wa-sidebar';
   const sb = document.getElementById(id);
   const btn = document.getElementById('chat-toggle-' + type);
   if (!sb) return;
@@ -2055,20 +2246,20 @@ function toggleChatPanel(type) {
   if (btn) {
     btn.className = 'chat-toggle ' + (opening ? 'open' : 'closed');
     btn.innerHTML = opening ? '&#9654;' : '&#9664;';
-    btn.title = opening ? 'Cerrar' : 'Abrir ' + (type === 'ai' ? 'IA' : 'WebChat');
+    btn.title = opening ? 'Cerrar' : 'Abrir ' + (type === 'ai' ? 'IA (Ctrl+Shift+A)' : type === 'web' ? 'WebChat (Ctrl+Shift+W)' : 'WhatsApp (Ctrl+Shift+Q)');
   }
 }
 
 // MutationObserver: sincroniza botones edge cuando módulos cambian el panel
 const chatToggleObserver = new MutationObserver(() => {
-  ['ai', 'web'].forEach(t => {
-    const id = t === 'ai' ? 'ai-sidebar' : 'webchat-sidebar';
+  ['ai', 'web', 'wa'].forEach(t => {
+    const id = t === 'ai' ? 'ai-sidebar' : t === 'web' ? 'webchat-sidebar' : 'wa-sidebar';
     const sb = document.getElementById(id);
     const btn = document.getElementById('chat-toggle-' + t);
     if (sb && btn) {
       const open = sb.classList.contains('open');
       if (open && btn.classList.contains('closed')) { btn.className = 'chat-toggle open'; btn.innerHTML = '&#9654;'; btn.title = 'Cerrar'; }
-      if (!open && btn.classList.contains('open')) { btn.className = 'chat-toggle closed'; btn.innerHTML = '&#9664;'; btn.title = 'Abrir ' + (t === 'ai' ? 'IA' : 'WebChat'); }
+      if (!open && btn.classList.contains('open')) { btn.className = 'chat-toggle closed'; btn.innerHTML = '&#9664;'; btn.title = 'Abrir ' + (t === 'ai' ? 'IA (Ctrl+Shift+A)' : t === 'web' ? 'WebChat (Ctrl+Shift+W)' : 'WhatsApp (Ctrl+Shift+Q)'); }
     }
   });
 });
@@ -2117,13 +2308,9 @@ function showPanel(name) {
   const map = { newtab:0, history:1, reader:2, streams:3, media:4, settings:5, lab:6 };
   const btns = document.querySelectorAll('.tnbtn');
   if (btns[map[name]]) btns[map[name]].classList.add('active');
+  syncProcessRefresh(name);
   // ocultar webview cuando estamos en paneles internos
   $('webview-container').style.display = 'none';
-  
-  // Escanear streams automáticamente al abrir el panel de streams
-  if (name === 'streams') {
-    setTimeout(scanStreams, 500);
-  }
 }
 
 async function openReader() {
@@ -2200,7 +2387,13 @@ function loadUrl(url) {
   const wv = $('webview-' + state.activeTab);
   if (wv) {
     const tab = state.tabs.find(t => t.id === state.activeTab);
-    if (tab) { tab.url = final; tab.title = final.replace(/https?:\/\//,'').split('/')[0]; }
+    if (tab) {
+      const currentTabUrl = tab.url || '';
+      const targetIsAuth = /^https?:\/\/(?:accounts\.|login\.|auth\.|oauth\.)/i.test(final) || /\/signin|\/login|\/challenge|\/v3\/signin/i.test(final);
+      const currentIsNormal = /^https?:\/\//i.test(currentTabUrl) && !(/^https?:\/\/(?:accounts\.|login\.|auth\.|oauth\.)/i.test(currentTabUrl) || /\/signin|\/login|\/challenge|\/v3\/signin/i.test(currentTabUrl));
+      if (targetIsAuth && currentIsNormal) state.authReturnUrls[state.activeTab] = currentTabUrl;
+      tab.url = final; tab.title = final.replace(/https?:\/\//,'').split('/')[0];
+    }
     $('webview-container').style.display = 'block';
     showWebview();
     try {
@@ -2472,10 +2665,6 @@ window.addEventListener('message', (e) => {
 
 function labGetConsoleLogs() {
   return _labConsoleLogs.slice(-20);  // últimos 20
-}
-
-function labClearConsoleLogs() {
-  _labConsoleLogs.length = 0;
 }
 
 function runLab() {
@@ -2780,13 +2969,6 @@ async function labSaveSegment() {
   labExportBump();
 }
 
-function labResetSegments() {
-  _labSegments = 0;
-  const info = document.getElementById('lab-rec-info');
-  if (info) { info.style.display = 'none'; info.textContent = ''; }
-  addSidebarLog('info', '[LAB] Contador de segmentos reiniciado');
-}
-
 function labDiagnoseRecording() {
   const frame = document.getElementById('lab-frame');
   if (!frame) { addSidebarLog('error', '[LAB] iframe no presente'); return; }
@@ -3034,11 +3216,29 @@ function renderHistory() {
   }).join('');
   lists.forEach(list => { list.innerHTML = markup; });
 }
-async function clearHistory() {
-  state.history = [];
-  renderHistory();
-  await mc.historyClear().catch(() => {});
-  try { localStorage.removeItem('mc_history'); } catch {}
+async function clearHistory(mode = 'history') {
+  const keepSessions = !!(
+    document.getElementById('keep-sessions-clear')?.checked ||
+    document.getElementById('keep-sessions-clear2')?.checked ||
+    document.getElementById('keep-sessions-clear3')?.checked
+  );
+
+  const preset = {
+    history: { history: true, cache: false, cookies: false, keepSessions },
+    'history-cache': { history: true, cache: true, cookies: false, keepSessions },
+    'history-cache-cookies': { history: true, cache: true, cookies: true, keepSessions },
+  }[mode] || { history: true, cache: false, cookies: false, keepSessions };
+
+  if (preset.history) {
+    state.history = [];
+    renderHistory();
+  }
+
+  const result = await mc.clearData(preset).catch(() => ({ ok: false }));
+  if (result && result.ok) {
+    try { localStorage.removeItem('mc_history'); } catch {}
+    addSidebarLog('allowed', '[CLEAR] ' + (mode === 'history' ? 'historial' : mode === 'history-cache' ? 'historial + caché' : 'historial + caché + cookies') + (keepSessions ? ' (se conservaron sesiones)' : ''));
+  }
 }
 
 function goBack()    { const wv=$('webview-' + state.activeTab); if (wv && wv.canGoBack && wv.canGoBack())    wv.goBack(); }
@@ -3072,10 +3272,39 @@ function isAdUrl(url) {
   } catch { return false; }
 }
 
+// Dominio base (sin subdominios) para comparar si dos URLs pertenecen al mismo sitio
+const MULTI_LABEL_SUFFIXES = new Set(['co.uk','org.uk','ac.uk','com.au','net.au','org.au','co.jp','co.kr','com.br','com.cn','com.mx','co.in']);
+function baseDomain(host) {
+  const normalized = String(host || '').toLowerCase().replace(/^\.+/, '').replace(/\.$/, '');
+  const parts = normalized.split('.');
+  if (parts.length <= 2) return normalized;
+  const suffix = parts.slice(-2).join('.');
+  return parts.slice(-(MULTI_LABEL_SUFFIXES.has(suffix) ? 3 : 2)).join('.');
+}
+
 // ── webview events ──────────────────────────────
 const selectionPreloadPath = new URL('../preload/selection-bridge.js', document.location.href).toString();
 function bindWebviewToTab(id, wv) {
   if (!wv) return;
+  let lastPopupUrl = '';
+  let lastPopupAt = 0;
+
+  const injectMouseNav = () => {
+    wv.executeJavaScript(`(() => {
+      if (window.__mcMouseNavInstalled) return true;
+      window.__mcMouseNavInstalled = true;
+      window.addEventListener('mousedown', (e) => {
+        if (e.button === 3) {
+          e.preventDefault();
+          try { window.history.back(); } catch {}
+        } else if (e.button === 4) {
+          e.preventDefault();
+          try { window.history.forward(); } catch {}
+        }
+      }, true);
+      return true;
+    })()`).catch(() => {});
+  };
 
   const injectSelectionBridge = () => {
     wv.executeJavaScript(`(() => {
@@ -3089,16 +3318,129 @@ function bindWebviewToTab(id, wv) {
       return true;
     })()`).catch(() => {});
   };
+
+  const injectCosmeticFilters = async () => {
+    try {
+      if (!mc?.adblockCosmetics || typeof wv.insertCSS !== 'function') return;
+      let pageUrl = '';
+      try { pageUrl = wv.getURL(); } catch {}
+      if (!pageUrl || !/^https?:\/\//i.test(pageUrl)) return;
+      const result = await mc.adblockCosmetics(pageUrl);
+      if (!result?.ok || !result.css) return;
+      await wv.insertCSS(result.css);
+    } catch {}
+  };
+
+  // Salta anuncios de video de YouTube (los streams de anuncios vienen de
+  // googlevideo.com con c=WEB, indistinguibles del contenido por URL, así que
+  // se detectan en el DOM del reproductor y se saltan).
+  const injectYouTubeAdSkip = () => {
+    wv.executeJavaScript(`(() => {
+      try {
+        if (window.__mcYtAdSkipInstalled) return true;
+        if (!/youtube\\.com/i.test(location.hostname)) return false;
+        window.__mcYtAdSkipInstalled = true;
+
+        const SKIP_MS = 250;
+
+        // Elimina anuncios compañeros / overlays junto al reproductor
+        const removeCompanionAds = () => {
+          try {
+            const sel = '#player-ads, .ytp-ad-module, .ytp-ad-overlay-container, .ytp-ad-text-overlay, .ytp-ad-image-overlay, ytd-companion-slot-renderer, .ytp-ad-simple-ad-badge, .ytp-ad-badge';
+            document.querySelectorAll(sel).forEach(el => { try { el.remove(); } catch {} });
+          } catch {}
+        };
+
+        // Indica si estamos forzando 16x durante un anuncio (para restaurar la
+        // velocidad normal al terminar sin pisar la velocidad elegida por el usuario)
+        let adRateActive = false;
+
+        const trySkip = () => {
+          try {
+            const player = document.querySelector('#movie_player');
+            if (!player) return;
+            // Detectar el anuncio ANTES de eliminar los overlays (si no, la
+            // detección falla porque removeCompanionAds ya los quitó).
+            // 'ad-created' aparece en cuanto se crea el anuncio (antes de
+            // 'ad-showing'), pero puede aparecer aunque el anuncio ya se esté
+            // saltando (p. ej. porque bloqueamos el stream). Por eso se
+            // separa: 'adCreated' solo intenta saltar, y el 16x solo se aplica
+            // si el anuncio está REALMENTE mostrándose ('adShowing').
+            const adCreated = player.classList.contains('ad-created');
+            const adShowing = player.classList.contains('ad-showing')
+              || !!document.querySelector('.ytp-ad-player-overlay')
+              || !!document.querySelector('.ytp-ad-text-overlay')
+              || !!document.querySelector('.ytp-ad-image-overlay')
+              || !!document.querySelector('.ytp-ad-simple-ad-badge')
+              || !!document.querySelector('.ytp-ad-badge');
+            const isAd = adCreated || adShowing;
+            removeCompanionAds();
+
+            const video = document.querySelector('video');
+            if (!isAd) {
+              // Restaurar velocidad normal solo si la forzamos nosotros
+              if (adRateActive && video) {
+                try { video.playbackRate = 1; video.defaultPlaybackRate = 1; } catch {}
+              }
+              adRateActive = false;
+              return;
+            }
+
+            // 1) Botón de saltar (anuncios saltables)
+            const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-skip-ad-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button-modern');
+            if (skipBtn) { skipBtn.click(); return; }
+
+            // 2) API interna del reproductor
+            try { if (typeof player.skipAd === 'function') { player.skipAd(); return; } } catch {}
+
+            // 3) Anuncios no saltables: silenciar y acelerar a 16x (máximo de
+            //    Chrome). defaultPlaybackRate mantiene la velocidad aunque
+            //    cambie la fuente del video (p. ej. entre anuncios de un pod);
+            //    se restaura a 1 al terminar. (el seek al final congela o
+            //    reinicia el anuncio, y ocultar el video lo pausa; por eso se
+            //    usa solo playbackRate). SOLO si el anuncio está mostrándose:
+            //    si solo hay 'ad-created' (stream bloqueado, YouTube lo salta
+            //    solo), NO hay que acelerar el video de contenido.
+            if (adShowing && video) {
+              video.muted = true;
+              try { video.playbackRate = 16; video.defaultPlaybackRate = 16; } catch {}
+              adRateActive = true;
+              const p = video.play();
+              if (p && p.catch) p.catch(() => {});
+            }
+          } catch {}
+        };
+
+        setInterval(trySkip, SKIP_MS);
+        const obs = new MutationObserver(() => trySkip());
+        obs.observe(document.documentElement, { childList: true, subtree: true });
+        return true;
+      } catch { return false; }
+    })()`).catch(() => {});
+  };
+
   wv.addEventListener('ipc-message', (event) => {
     if (event.channel !== 'mc-selection') return;
     const text = String(event.args?.[0] || '').trim();
     if (text) window.dispatchEvent(new CustomEvent('mc-selection', { detail: text }));
   });
-  wv.addEventListener('did-finish-load', injectSelectionBridge);
+  wv.addEventListener('dom-ready', () => {
+    injectMouseNav();
+    injectSelectionBridge();
+    injectCosmeticFilters();
+    injectYouTubeAdSkip();
+  });
+  wv.addEventListener('did-finish-load', () => {
+    injectMouseNav();
+    injectSelectionBridge();
+    injectCosmeticFilters();
+    injectYouTubeAdSkip();
+  });
 
   // Navegación completa (cambio de página)
   wv.addEventListener('did-navigate', (e) => {
     if (!e.url || e.url === 'about:blank') return;
+    injectCosmeticFilters();
     if (isAdUrl(e.url)) {
       addSidebarLog('blocked', '[URL-AD bloqueada en barra] ' + (e.url||'').replace(/https?:\/\//,'').substring(0,60));
       return;
@@ -3143,8 +3485,39 @@ function bindWebviewToTab(id, wv) {
   });
 
   wv.addEventListener('new-window', (e) => {
-    e.preventDefault();
-    addTab(e.url);
+    if (!e.url || e.url === 'about:blank') return;
+    try {
+      const host = new URL(e.url).hostname.toLowerCase();
+      const authDomains = ['x.com', 'twitter.com', 'x.ai', 'google.com', 'googleusercontent.com', 'grok.com', 'accounts.google.com', 'oauth.googleusercontent.com'];
+      const isAuth = authDomains.some(domain => host === domain || host.endsWith('.' + domain));
+      if (isAuth) {
+        e.preventDefault();
+        addTab(e.url, null, true);
+        return;
+      }
+      const currentUrl = wv.getURL();
+      const sameSite = (() => {
+        try {
+          const cur = new URL(currentUrl);
+          const pop = new URL(e.url);
+          if (!/^https?:$/.test(cur.protocol) || !/^https?:$/.test(pop.protocol)) return false;
+          return baseDomain(cur.hostname) === baseDomain(pop.hostname);
+        } catch { return false; }
+      })();
+      if (!sameSite) {
+        addSidebarLog('blocked', '[Popup externo bloqueado] ' + (e.url||'').replace(/https?:\/\//,'').substring(0,60));
+        return;
+      }
+      const now = Date.now();
+      if (e.url === lastPopupUrl && now - lastPopupAt < 1500) return;
+      lastPopupUrl = e.url;
+      lastPopupAt = now;
+      e.preventDefault();
+      addTab(e.url, null, true);
+    } catch {
+      // Si no se puede analizar la URL, no abrir pestañas de terceros
+      return;
+    }
   });
 
   wv.addEventListener('page-title-updated', (e) => {
@@ -3157,7 +3530,7 @@ function bindWebviewToTab(id, wv) {
   });
 
   wv.addEventListener('did-finish-load', () => {
-    setTimeout(() => { scanStreams(); renderSidebarStreams(); }, 4000);
+    renderSidebarStreams();
   });
 
   wv.addEventListener('did-start-loading', () => {
@@ -3180,15 +3553,11 @@ function bindWebviewToTab(id, wv) {
   });
 }
 
-function bindWebview() {
-  // Ya no se usa, los webviews se bindean individualmente con bindWebviewToTab
-}
-
 // ── tabs ────────────────────────────────────────
-function addTab(url, pageUrl) {
+function addTab(url, pageUrl, isPopup) {
   state.tabCounter++;
   const id = state.tabCounter;
-  state.tabs.push({ id, title: 'Nueva pestaña', url: url || 'mc://newtab', pageUrl: pageUrl || '' });
+  state.tabs.push({ id, title: 'Nueva pestaña', url: url || 'mc://newtab', pageUrl: pageUrl || '', isPopup: !!isPopup, popupAt: isPopup ? Date.now() : 0 });
   const bar = $('tabbar');
   const btn = $('newtab-btn');
   const colors = ['var(--accent)','var(--accent2)','var(--warn)','var(--danger)','var(--info)'];
@@ -3209,12 +3578,14 @@ function addTab(url, pageUrl) {
   wv.className = 'tab-webview';
   wv.setAttribute('partition', 'persist:mc');
   wv.setAttribute('preload', selectionPreloadPath);
-  wv.setAttribute('src', url || 'about:blank');
   wv.setAttribute('allow', 'autoplay; media; encrypted-media');
+  wv.setAttribute('allowpopups', '');
   container.appendChild(wv);
   bindWebviewToTab(id, wv);
   if (url && pageUrl && /^https?:\/\//i.test(url) && /^https?:\/\//i.test(pageUrl)) {
     wv.loadURL(url, { httpReferrer: pageUrl }).catch(() => {});
+  } else {
+    wv.setAttribute('src', url || 'about:blank');
   }
 
   switchTab(id);
@@ -3240,6 +3611,8 @@ function switchTab(id) {
     if (wv && (wv.getURL() === 'about:blank' || !wv.getURL()) && tab.url !== 'mc://newtab' && tab.url !== 'mc://lab') {
       wv.src = tab.url;
     }
+    // Actualizar reglas cosméticas para el dominio de la pestaña activa
+    renderCosmeticRules();
   }
 }
 
@@ -3251,7 +3624,13 @@ function closeTab(e, id) {
   if (el) el.remove();
   // Eliminar el webview asociado
   const wv = $('webview-' + id);
-  if (wv) wv.remove();
+  if (wv) {
+    let webContentsId = 0;
+    try { webContentsId = Number(wv.getWebContentsId?.()) || 0; } catch {}
+    if (webContentsId && typeof mc !== 'undefined' && typeof mc.destroyWebview === 'function') mc.destroyWebview(webContentsId).catch(() => {});
+    try { wv.removeAttribute('src'); } catch {}
+    wv.remove();
+  }
   if (state.activeTab === id) switchTab(state.tabs[state.tabs.length-1].id);
 }
 
@@ -3269,11 +3648,12 @@ function ntSearchBtn() {
 
 window.addEventListener('mc-selection', (event) => {
   const text = String(event.detail || '').trim();
-  if (!text || !window.AI) return;
+  const ai = window.AI || (typeof AI !== 'undefined' ? AI : null);
+  if (!text || !ai) return;
   const sb = document.getElementById('ai-sidebar');
-  if (sb && !sb.classList.contains('open') && typeof AI.toggle === 'function') AI.toggle();
+  if (sb && !sb.classList.contains('open') && typeof ai.toggle === 'function') ai.toggle();
   setTimeout(() => {
-    if (typeof AI.send === 'function') AI.send(`Sobre este texto seleccionado: "${text.slice(0, 500)}"\n\nExplicame, analizame, o lo que consideres relevante.`);
+    if (typeof ai.send === 'function') ai.send(`Sobre este texto seleccionado: "${text.slice(0, 500)}"\n\nExplicame, analizame, o lo que consideres relevante.`);
   }, 300);
 });
 
@@ -3297,6 +3677,97 @@ function addSidebarLog(type, msg) {
   if (msg.startsWith('[MEDIA]')) mediaLogEl = el;
 
   while (log.children.length > 60) log.lastChild.remove();
+}
+
+// ── elementos bloqueados (reglas cosméticas) ───
+async function reapplyCosmeticFilters() {
+  const wv = $('webview-' + state.activeTab);
+  if (!wv || typeof wv.insertCSS !== 'function') return;
+  try {
+    const pageUrl = wv.getURL();
+    if (!pageUrl || !/^https?:\/\//i.test(pageUrl)) return;
+    const result = await mc.adblockCosmetics(pageUrl);
+    if (result?.ok && result.css) {
+      await wv.insertCSS(result.css);
+      addSidebarLog('modified', '[ELEMENT] Filtros cosméticos reaplicados (' + (result.count || 0) + ' reglas)');
+    } else {
+      addSidebarLog('info', '[ELEMENT] Sin filtros cosméticos que aplicar');
+    }
+  } catch {}
+}
+
+function renderCosmeticRules() {
+  const allRules = Array.isArray(state.cfg?.userCosmeticRules) ? state.cfg.userCosmeticRules : [];
+  // Obtener dominio de la página activa
+  let currentDomain = '';
+  try {
+    const wv = $('webview-' + state.activeTab);
+    if (wv && typeof wv.getURL === 'function') {
+      const url = wv.getURL();
+      if (url && /^https?:\/\//i.test(url)) {
+        currentDomain = new URL(url).hostname.replace(/^www\./i, '').toLowerCase();
+      }
+    }
+  } catch {}
+  // Filtrar reglas aplicables al dominio actual
+  const rules = allRules.filter(rule => {
+    const domain = String(rule).split('##')[0].trim().toLowerCase();
+    if (!domain) return true; // reglas globales
+    return currentDomain && (currentDomain === domain || currentDomain.endsWith('.' + domain));
+  });
+  // Panel de permisos (solo se muestra si hay página activa)
+  const permList = $('permissions-cosmetic-list');
+  if (permList) {
+    const permCount = $('permissions-cosmetic-count');
+    if (permCount) permCount.textContent = rules.length + ' elemento(s)';
+    if (!rules.length) {
+      permList.innerHTML = '<div class="bp-empty"><div class="bp-empty-icon">&#128683;</div><div>Sin elementos bloqueados en esta página</div></div>';
+    } else {
+      permList.innerHTML = rules.map((rule, i) => {
+        const [domain, selector] = String(rule).split('##');
+        const safeRule = escapeHtml(String(rule));
+        const globalIndex = allRules.indexOf(rule);
+        return '<div class="perm-cosmetic-row">'
+          + '<div class="perm-cosmetic-main">'
+          + '<strong title="' + safeRule + '">' + escapeHtml(selector || rule) + '</strong>'
+          + '<span>' + escapeHtml(domain || 'todos los sitios') + '</span>'
+          + '</div>'
+          + '<div class="perm-cookie-actions"><button class="mini-btn danger" onclick="unblockCosmeticRule(' + globalIndex + ')" title="Quitar este bloqueo">Desbloquear</button></div>'
+          + '</div>';
+      }).join('');
+    }
+  }
+}
+
+async function unblockCosmeticRule(index) {
+  const rules = Array.isArray(state.cfg?.userCosmeticRules) ? state.cfg.userCosmeticRules : [];
+  const rule = rules[index];
+  if (!rule) return;
+  const r = await mc.adblockRemoveCosmetic({ raw: rule });
+  if (r?.ok) {
+    state.cfg.userCosmeticRules = rules.filter((_, i) => i !== index);
+    renderCosmeticRules();
+    addSidebarLog('allowed', '[ELEMENT] Desbloqueado: ' + rule);
+    const wv = $('webview-' + state.activeTab);
+    if (wv && typeof wv.reload === 'function') wv.reload();
+  } else {
+    addSidebarLog('blocked', '[ELEMENT] No se pudo desbloquear: ' + (r?.error || 'error'));
+  }
+}
+
+async function unblockAllCosmeticRules() {
+  const rules = Array.isArray(state.cfg?.userCosmeticRules) ? [...state.cfg.userCosmeticRules] : [];
+  if (!rules.length) return;
+  let removed = 0;
+  for (const rule of rules) {
+    const r = await mc.adblockRemoveCosmetic({ raw: rule });
+    if (r?.ok) removed++;
+  }
+  state.cfg.userCosmeticRules = [];
+  renderCosmeticRules();
+  addSidebarLog('allowed', '[ELEMENT] Desbloqueados ' + removed + ' elemento(s)');
+  const wv = $('webview-' + state.activeTab);
+  if (wv && typeof wv.reload === 'function') wv.reload();
 }
 
 // ── req log ─────────────────────────────────────
@@ -3354,6 +3825,105 @@ function refreshStats() {
   const pill = $('blocked-pill');
   pill.textContent = total + ' bloqueados';
   pill.className = 'blocked-pill' + (total > 50 ? ' danger' : '');
+}
+
+async function refreshProcessList() {
+  const container = $('process-list');
+  if (!container || typeof mc === 'undefined' || typeof mc.getProcesses !== 'function') return;
+  try {
+    const processes = await mc.getProcesses();
+    container.innerHTML = processes.map(process => {
+      const detail = `${process.type} · PID ${process.pid} · ${process.memory} MB · ${process.cpu}% CPU · ${process.state}`;
+      const url = process.url ? `<div style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(process.url)}</div>` : '';
+      return `<div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--border);padding:4px 0;">
+        <div style="min-width:0;">
+          <div style="color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(process.role)}</div>
+          ${url}
+        </div>
+        <span style="white-space:nowrap;color:var(--muted);">${escapeHtml(detail)}</span>
+      </div>`;
+    }).join('') || 'No hay procesos Electron disponibles.';
+  } catch (error) {
+    container.textContent = 'No se pudieron consultar los procesos: ' + (error.message || 'error');
+  }
+}
+
+let _sidebarProcessTimer = null;
+async function refreshSidebarProcessMonitor() {
+  const container = $('sidebar-process-monitor');
+  if (!container || typeof mc === 'undefined' || typeof mc.getProcesses !== 'function') return;
+  try {
+    const processes = await mc.getProcesses();
+    const tabs = processes.filter(p => /^Pestaña:/.test(p.role));
+    const groups = [
+      { label: 'Browser', items: processes.filter(p => p.type === 'Browser') },
+      { label: 'GPU', items: processes.filter(p => p.type === 'GPU') },
+      { label: 'Utility', items: processes.filter(p => p.type === 'Utility') },
+    ];
+    const row = (label, items, detail = '') => {
+      const memory = items.reduce((total, item) => total + (Number(item.memory) || 0), 0);
+      const cpu = items.reduce((total, item) => total + (Number(item.cpu) || 0), 0);
+      return `<div style="display:flex;justify-content:space-between;gap:6px;line-height:1.4;">
+        <span style="color:var(--accent);">${escapeHtml(label)}${detail}</span>
+        <span style="white-space:nowrap;color:var(--muted);">${memory} MB · ${cpu.toFixed(1)}%</span>
+      </div>`;
+    };
+    const tabRows = tabs.map((tab, index) => row('Tab ' + (index + 1), [tab])).join('');
+    // Preservar el estado abierto/cerrado del <details> de Tabs entre re-renders
+    const prevDetails = container.querySelector('details');
+    const wasOpen = prevDetails ? prevDetails.open : false;
+    container.innerHTML = groups.map(group => row(group.label, group.items)).join('') +
+      `<details style="margin-top:1px;" ${wasOpen ? 'open' : ''}><summary style="cursor:pointer;color:var(--accent);list-style:none;">Tabs (${tabs.length}) <span style="color:var(--muted);">▸</span></summary><div style="padding:3px 0 0 8px;display:flex;flex-direction:column;gap:2px;">${tabRows || '<span style="color:var(--muted);">0 MB · 0.0%</span>'}</div></details>`;
+  } catch {
+    container.textContent = 'Monitor no disponible';
+  }
+}
+
+function startSidebarProcessMonitor() {
+  if (_sidebarProcessTimer) return;
+  refreshSidebarProcessMonitor();
+  _sidebarProcessTimer = setInterval(refreshSidebarProcessMonitor, 2000);
+}
+
+function stopSidebarProcessMonitor() {
+  if (!_sidebarProcessTimer) return;
+  clearInterval(_sidebarProcessTimer);
+  _sidebarProcessTimer = null;
+}
+
+// ── Status bar resources monitor ──────────────
+let _statusBarResourceTimer = null;
+function startStatusBarResources() {
+  if (_statusBarResourceTimer) return;
+  async function update() {
+    if (typeof mc === 'undefined' || typeof mc.getProcesses !== 'function') return;
+    try {
+      const processes = await mc.getProcesses();
+      const browserItems = processes.filter(p => p.type === 'Browser');
+      const gpuItems = processes.filter(p => p.type === 'GPU');
+
+      const browserMemory = browserItems.reduce((sum, item) => sum + (Number(item.memory) || 0), 0);
+      const browserCpu = browserItems.reduce((sum, item) => sum + (Number(item.cpu) || 0), 0);
+      const gpuCpu = gpuItems.reduce((sum, item) => sum + (Number(item.cpu) || 0), 0);
+
+      const el = $('st-resources');
+      if (el) el.textContent = `CPU ${browserCpu.toFixed(0)}% \u00b7 GPU ${gpuCpu.toFixed(0)}% \u00b7 RAM ${browserMemory} MB`;
+    } catch {}
+  }
+  update();
+  _statusBarResourceTimer = setInterval(update, 3000);
+}
+
+let _processRefreshTimer = null;
+function syncProcessRefresh(name) {
+  if (_processRefreshTimer) {
+    clearInterval(_processRefreshTimer);
+    _processRefreshTimer = null;
+  }
+  if (name === 'settings') {
+    refreshProcessList();
+    _processRefreshTimer = setInterval(refreshProcessList, 2000);
+  }
 }
 
 async function resetStats() {
@@ -3495,7 +4065,7 @@ function filterExtractor(type) {
   if (!list) return;
   const items = extractedResources.map((item, index) => ({ item, index })).filter(({ item }) => type === 'all' || item.type === type);
   if (!items.length) { list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);">No se encontraron recursos de este tipo.</div>'; return; }
-  list.innerHTML = items.map(({ item, index }) => `<div class="extractor-item"><span class="extractor-type">${escapeHtml(item.type)}</span><span class="extractor-url">${escapeHtml(item.label || describeResource(item.url, item.type).title)}</span><div class="extractor-actions"><button class="btn ghost btn-sm" onclick="openExtracted(${index})" title="Abrir en nueva pestaña">↗</button><button class="btn ghost btn-sm" onclick="copyExtracted(${index})" title="Copiar URL completa">⧉</button></div></div>`).join('');
+  list.innerHTML = items.map(({ item, index }) => `<div class="extractor-item"><span class="extractor-type">${escapeHtml(item.type)}</span><span class="extractor-url">${escapeHtml(item.label || describeResource(item.url, item.type).title)}</span><div class="extractor-actions"><button class="btn ghost btn-sm" onclick="openExtracted(${index})" title="Abrir en nueva pestaña">↗</button><button class="btn ghost btn-sm" onclick="copyExtracted(${index})" title="Copiar URL completa">⧉</button><button class="btn warn btn-sm" onclick="downloadExtracted(${index})" title="Descargar recurso">⬇</button></div></div>`).join('');
 }
 function openExtracted(index) {
   const item = extractedResources[index];
@@ -3504,6 +4074,14 @@ function openExtracted(index) {
   addSidebarLog('info', '[EXTRACT] Abriendo: ' + item.url.substring(0, 60));
 }
 function copyExtracted(index) { const item = extractedResources[index]; if (item?.url) navigator.clipboard?.writeText(item.url); }
+function downloadExtracted(index) {
+  const item = extractedResources[index];
+  if (!item?.url) return;
+  const type = item.type === 'image' ? 'image' : item.type === 'video' ? 'video' : item.type === 'audio' ? 'audio' : 'file';
+  const pageUrl = getActivePageUrl();
+  dlMedia(item.url, type, pageUrl, item.label || describeResource(item.url, item.type).title);
+  addSidebarLog('info', '[EXTRACT] Descargando: ' + item.url.substring(0, 60));
+}
 function renderExtractedResources(error) {
   const list = $('resources-extract-list');
   if (!list) return;
@@ -3517,7 +4095,7 @@ function filterResourceList(query) {
   const q = String(query || '').trim().toLowerCase();
   const items = extractedResources.map((item, index) => ({ item, index })).filter(({ item }) => !q || [item.type, item.label, item.url].some(value => String(value || '').toLowerCase().includes(q)));
   if (!items.length) { list.innerHTML = '<div style="padding:18px;text-align:center;color:var(--muted);">No hay coincidencias.</div>'; return; }
-  list.innerHTML = items.map(({ item, index }) => `<div class="resource-row" onmouseenter="previewResource(${index}, event)" onmouseleave="hideResourcePreview()"><span class="resource-kind">${escapeHtml(item.type)}</span><span class="resource-url">${escapeHtml(item.label || describeResource(item.url, item.type).title)}</span><div class="resource-actions"><button class="btn ghost btn-sm" onclick="openExtracted(${index})" title="Abrir en pestaña">↗</button><button class="btn ghost btn-sm" onclick="copyExtracted(${index})" title="Copiar URL completa">⧉</button></div></div>`).join('');
+  list.innerHTML = items.map(({ item, index }) => `<div class="resource-row" onmouseenter="previewResource(${index}, event)" onmouseleave="hideResourcePreview()"><span class="resource-kind">${escapeHtml(item.type)}</span><span class="resource-url">${escapeHtml(item.label || describeResource(item.url, item.type).title)}</span><div class="resource-actions"><button class="btn ghost btn-sm" onclick="openExtracted(${index})" title="Abrir en pestaña">↗</button><button class="btn ghost btn-sm" onclick="copyExtracted(${index})" title="Copiar URL completa">⧉</button><button class="btn warn btn-sm" onclick="downloadExtracted(${index})" title="Descargar recurso">⬇</button></div></div>`).join('');
 }
 function previewResource(index, event) {
   const item = extractedResources[index];
@@ -3620,7 +4198,7 @@ function setPrivacyLevel(lvl) {
 // ── custom blocks ───────────────────────────────
 async function addCustomBlock() {
   const v = $('custom-block-input').value.trim();
-  if (!v || state.customBlocks.includes(v)) return;
+  if (!v || state.customBlocks.some(b => patternMatchesHost(b, v))) return;
   state.customBlocks.push(v);
   await mc.addBlockRule({ pattern: v, action: 'block' });
   $('custom-block-input').value = '';
@@ -3629,6 +4207,7 @@ async function addCustomBlock() {
 }
 async function removeCustomBlock(v) {
   state.customBlocks = state.customBlocks.filter(b => b !== v);
+  delete state.siteBlockMap[v];
   await mc.removeBlockRule(v);
   renderCustomBlocks();
 }
@@ -3638,9 +4217,11 @@ function renderCustomBlocks() {
     list.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:12px 0;">Sin reglas custom aún</div>';
     return;
   }
-  list.innerHTML = state.customBlocks.map(b =>
-    '<div class="rule-item"><span class="ri-name">'+escapeHtml(b)+'</span><span class="badge red">block</span><button class="rule-del" onclick="removeCustomBlock(\''+b.replace(/'/g,"\\'")+'\')">&#215;</button></div>'
-  ).join('');
+  list.innerHTML = state.customBlocks.map(b => {
+    const site = state.siteBlockMap && state.siteBlockMap[b];
+    const siteTag = site ? ' <span class="badge orange" title="Solo en '+escapeHtml(site)+'">'+escapeHtml(site)+'</span>' : ' <span class="badge red">global</span>';
+    return '<div class="rule-item"><span class="ri-name">'+escapeHtml(b)+'</span>' + siteTag + '<button class="rule-del" onclick="removeCustomBlock(\''+b.replace(/'/g,"\\'")+'\')">&#215;</button></div>';
+  }).join('');
 }
 
 // ── cookie rules ────────────────────────────────
@@ -3730,7 +4311,8 @@ const MC_HOST_LABELS = [
   ['streamwish', 'StreamWish'], ['vidhide', 'VidHide'], ['mixdrop', 'MixDrop'], ['upstream', 'UpStream'],
   ['uqload', 'Uqload'], ['clicknupload', 'ClicknUpload'], ['vidoza', 'Vidoza'], ['mp4upload', 'MP4Upload'],
   ['lulustream', 'LuluStream'], ['savefiles', 'SaveFiles'], ['streamruby', 'StreamRuby'],
-  ['supervideo', 'SuperVideo'], ['vidguard', 'VidGuard'], ['embeds', 'Embed'], ['workers.dev', 'Worker']
+  ['supervideo', 'SuperVideo'], ['vidguard', 'VidGuard'], ['embeds', 'Embed'], ['workers.dev', 'Worker'],
+  ['x.com', 'X'], ['twitter.com', 'X']
 ];
 let _mcStreamSeq = 0;
 
@@ -3752,6 +4334,12 @@ function detectStreamContainer(pageUrl) {
   return '';
 }
 
+function detectStreamOrigin(pageUrl) {
+  // La etiqueta es la URL literal de la barra, pero sin protocolo para que quede legible.
+  if (typeof pageUrl !== 'string' || !/^https?:\/\//i.test(pageUrl)) return '';
+  return pageUrl.replace(/^https?:\/\//i, '');
+}
+
 function classifyStreamUrl(url) {
   const u = String(url || '').toLowerCase();
   const path = (() => { try { return new URL(url).pathname.toLowerCase(); } catch { return u; } })();
@@ -3763,9 +4351,30 @@ function classifyStreamUrl(url) {
   return 'other';
 }
 
+// Detectar fragmentos de streaming (ruido): segmentos HLS/DASH que el reproductor
+// descarga continuamente mientras reproduce. No abren nada por sí solos.
+function isStreamFragment(url) {
+  const u = String(url || '').toLowerCase();
+  const path = (() => { try { return new URL(url).pathname.toLowerCase(); } catch { return u; } })();
+  // Segmentos .ts y .m4s (DASH)
+  if (/\.ts(\?|#|$)/.test(u)) return true;
+  if (/\.m4s(\?|#|$)/.test(u)) return true;
+  // Segmento init (init.mp4 / init.m4s)
+  if (/init[\w.-]*\.(mp4|m4s)(\?|#|$)/.test(path)) return true;
+  // Fragmentos numerados: seg-0.mp4, chunk-1.mp4, part-2.mp4, frag-3.mp4, etc.
+  if (/\/(?:seg|chunk|part|frag|fragment|segment|piece|media)[\w.-]*[-_]\d+\.(?:mp4|m4s|ts)(\?|#|$)/i.test(path)) return true;
+  // Archivos numerados sueltos: /0.mp4, /1.mp4, /2.mp4
+  if (/\/\d+\.(?:mp4|m4s|ts)(\?|#|$)/.test(path)) return true;
+  // Parámetros de rango (byte ranges)
+  if (/[?&](?:range|byterange|start|end)=/i.test(u)) return true;
+  return false;
+}
+
 function shouldShowStreamItem(item) {
   const role = classifyStreamUrl(item.url);
   if (role === 'segment') return false;
+  // Segmentos .m4s (DASH) nunca son útiles por sí solos
+  if (/\.m4s(\?|#|$)/i.test(item.url)) return false;
   return true;
 }
 
@@ -3779,29 +4388,17 @@ function getActivePageUrl() {
 }
 
 function enrichStreamItem(item) {
-  if (!item.pageUrl || !/^https?:/i.test(item.pageUrl)) item.pageUrl = getActivePageUrl();
-  const container = detectStreamContainer(item.pageUrl);
+  const activePage = getActivePageUrl();
+  item.pageUrl = (item.pageUrl && /^https?:/i.test(item.pageUrl)) ? item.pageUrl : activePage;
+  if (activePage && /^https?:/i.test(activePage)) item.pageUrl = activePage;
+  const literalPage = detectStreamOrigin(item.pageUrl) || item.pageUrl || 'URL no disponible';
   const role = classifyStreamUrl(item.url);
-  if (!item.displayId) item.displayId = ++_mcStreamSeq;
-  const n = item.displayId;
-  let displayName;
-  if (container) {
-    if (role === 'master') displayName = container + ' — Principal';
-    else if (role === 'playlist') displayName = container + ' — Calidad';
-    else if (role === 'dash') displayName = container + ' — DASH';
-    else if (role === 'file') displayName = container + ' — Video';
-    else displayName = container + ' — Stream';
-  } else {
-    if (role === 'master') displayName = 'mcdownload-' + n + ' — Principal';
-    else if (role === 'playlist') displayName = 'mcdownload-' + n + ' — HLS';
-    else if (role === 'dash') displayName = 'mcdownload-' + n + ' — DASH';
-    else if (role === 'file') displayName = 'mcdownload-' + n;
-    else displayName = 'mcdownload-' + n;
-  }
-  item.container = container;
-  item.displayName = displayName;
-  item.subtitle = container || 'Stream detectado';
+  item.container = '';
+  item.origin = literalPage;
+  item.displayName = literalPage;
+  item.subtitle = literalPage;
   item.hlsRole = role;
+  if (!item.detectedAt) item.detectedAt = Date.now();
   return item;
 }
 
@@ -3819,25 +4416,51 @@ function clearStreams() {
 }
 
 function addStreamItem(item) {
-  if (state.streamItems.has(item.url)) return;
+  const activePage = getActivePageUrl();
+  const currentPage = (activePage && /^https?:/i.test(activePage)) ? activePage : (item.pageUrl && /^https?:/i.test(item.pageUrl) ? item.pageUrl : '');
+  item.pageUrl = currentPage || item.pageUrl || '';
+  item.displayName = currentPage || item.displayName || item.pageUrl || '';
+  const key = item.url + '|' + currentPage;
+  const existing = state.streamItems.get(key) || state.streamItems.get(item.url);
+  if (existing) {
+    if (currentPage && existing.pageUrl !== currentPage) {
+      existing.pageUrl = currentPage;
+      existing.displayName = currentPage;
+      enrichStreamItem(existing);
+      renderStreams();
+      renderSidebarStreams();
+      addSidebarLog('modified', '[STREAM] Origen actualizado → ' + (existing.displayName || existing.subtitle) + ' [' + existing.pageUrl + ']');
+    }
+    return;
+  }
   enrichStreamItem(item);
   if (!shouldShowStreamItem(item)) return;
-  state.streamItems.set(item.url, item);
+  state.streamItems.set(key, item);
   while (state.streamItems.size > 200) state.streamItems.delete(state.streamItems.keys().next().value);
   renderStreams();
   renderSidebarStreams();
   setText('streams-count-badge', state.streamItems.size + ' streams');
-  addSidebarLog('modified', '[STREAM] ' + (item.displayName || item.subtitle) + ': ' + item.url.substring(0, 40) + '...');
+  addSidebarLog('modified', '[STREAM] ' + (item.displayName || item.subtitle) + ' [' + (item.pageUrl || '') + ']: ' + item.url.substring(0, 40) + '...');
 }
 
 function describeResource(url, type, ctx) {
   const pageUrl = (ctx && ctx.pageUrl) || '';
   const displayName = ctx && ctx.displayName;
+  const literalTitle = detectStreamOrigin(pageUrl) || (typeof displayName === 'string' && /^https?:\/\//i.test(displayName) ? displayName : '');
+  if (literalTitle) {
+    return {
+      title: literalTitle,
+      host: literalTitle,
+      badges: type ? [{ text: type, className: '' }] : [],
+      expiry: null
+    };
+  }
   if (displayName) {
+    const origin = (ctx && ctx.origin) || detectStreamOrigin(pageUrl);
     const container = (ctx && ctx.container) || detectStreamContainer(pageUrl);
     return {
       title: displayName,
-      host: container || 'Stream detectado',
+      host: origin || container || 'Stream detectado',
       badges: type ? [{ text: type, className: '' }] : [],
       expiry: null
     };
@@ -3864,15 +4487,17 @@ function describeResource(url, type, ctx) {
     }
     if (hasToken) badges.push({ text: 'Requiere token', className: 'warn' });
     if (type) badges.push({ text: type, className: '' });
+    const origin = detectStreamOrigin(pageUrl);
     const container = detectStreamContainer(pageUrl);
     const role = classifyStreamUrl(url);
     let title = cleanName || parsed.hostname;
     if (/^(master|index|playlist|stream|video|media|seg|segment|chunk|part)$/i.test(title) || title.length < 3) {
-      title = container
-        ? (role === 'master' ? container + ' — Principal' : role === 'playlist' ? container + ' — Calidad' : container + ' — Video')
+      const label = origin || container;
+      title = label
+        ? (role === 'master' ? label + ' — Principal' : role === 'playlist' ? label + ' — Calidad' : label + ' — Video')
         : ('mcdownload-' + (++_mcStreamSeq));
     }
-    return { title, host: container || parsed.hostname.replace(/^www\./i, ''), badges, expiry: expSeconds ? new Date(expSeconds * 1000) : null };
+    return { title, host: origin || container || parsed.hostname.replace(/^www\./i, ''), badges, expiry: expSeconds ? new Date(expSeconds * 1000) : null };
   } catch {
     return { title: 'Recurso detectado', host: '', badges: type ? [{ text: type, className: '' }] : [] };
   }
@@ -3886,6 +4511,33 @@ function formatExpiry(remaining, expiry) {
   return expiry.toLocaleString('es', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+function formatStreamTime(ts) {
+  if (!ts) return '';
+  try { return new Date(ts).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); } catch { return ''; }
+}
+
+function renderSidebarStreamItemHtml(item) {
+  const icon = item.type === 'HLS' ? '📺' : item.type === 'DASH' ? '💾' : '🎥';
+  const info = describeResource(item.url, item.type, item);
+  const visibleTitle = item.pageUrl || item.origin || info.title || item.url || 'URL no disponible';
+  const label = visibleTitle.length > 36 ? visibleTitle.substring(0, 33) + '...' : visibleTitle;
+  const host = item.pageUrl || item.origin || info.host || '';
+  const badges = info.badges.map(b => '<span class="resource-badge '+b.className+'">'+escapeHtml(b.text)+'</span>').join('');
+  const fragBadge = isStreamFragment(item.url) ? '<span class="resource-badge warn">Frag</span>' : '';
+  const timeBadge = item.detectedAt ? '<span class="resource-badge" title="Detectado a las ' + formatStreamTime(item.detectedAt) + '">🕐 ' + formatStreamTime(item.detectedAt) + '</span>' : '';
+  const safeUrl = item.url.replace(/'/g,"\\'");
+  const dlName = friendlyFileName(item.url, item.type, item.pageUrl || item.origin || item.displayName, visibleTitle).replace(/'/g, "\\'");
+  return '<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);">' +
+    '<span style="flex-shrink:0;">' + icon + '</span>' +
+    '<span class="resource-summary"><span class="resource-name" title="'+escapeHtml(item.url)+'">' + escapeHtml(label) + '</span>' +
+    (host ? '<span class="resource-host" style="display:block;font-size:8px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+escapeHtml(item.pageUrl||'')+'">' + escapeHtml(host) + '</span>' : '') +
+    '<span class="resource-details">' + badges + fragBadge + timeBadge + '</span></span>' +
+    '<button class="btn ghost btn-sm" onclick="openStreamResource(\'' + safeUrl + '\',\'' + (item.type||'') + '\',\'' + (item.pageUrl||'').replace(/'/g,"\\'") + '\')" style="padding:1px 4px;font-size:9px;" title="Abrir recurso">Abrir</button>' +
+    '<button class="btn warn btn-sm" onclick="dlMedia(\'' + safeUrl + '\',\'' + (item.type||'MP4') + '\',\'' + (item.pageUrl||'').replace(/'/g,"\\'") + '\',\'' + dlName + '\')" style="padding:1px 4px;font-size:9px;" title="Descargar">⬇ DL</button>' +
+    '<button class="btn ghost btn-sm" onclick="askStreamToAI(\'' + safeUrl + '\',\'' + (item.type||'Stream') + '\')" style="padding:1px 4px;font-size:9px;" title="Analizar con IA">✦</button>' +
+  '</div>';
+}
+
 function renderSidebarStreams() {
   const containers = [$('resources-streams-list')].filter(Boolean);
   if (!containers.length) return;
@@ -3893,24 +4545,17 @@ function renderSidebarStreams() {
     containers.forEach(container => { container.innerHTML = '<div style="color:var(--muted);text-align:center;padding:8px 0;">Sin streams detectados</div>'; });
     return;
   }
-  const markup = Array.from(state.streamItems.values()).map(item => {
-    const icon = item.type === 'HLS' ? '📺' : item.type === 'DASH' ? '💾' : '🎥';
-    const info = describeResource(item.url, item.type, item);
-    const label = info.title.length > 36 ? info.title.substring(0, 33) + '...' : info.title;
-    const host = info.host || '';
-    const badges = info.badges.map(b => '<span class="resource-badge '+b.className+'">'+escapeHtml(b.text)+'</span>').join('');
-    const safeUrl = item.url.replace(/'/g,"\\'");
-    const dlName = (item.displayName || info.title).replace(/'/g, "\\'");
-    return '<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);">' +
-      '<span style="flex-shrink:0;">' + icon + '</span>' +
-      '<span class="resource-summary"><span class="resource-name" title="'+escapeHtml(item.url)+'">' + escapeHtml(label) + '</span>' +
-      (host ? '<span class="resource-host" style="display:block;font-size:8px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(host) + '</span>' : '') +
-      '<span class="resource-details">' + badges + '</span></span>' +
-      '<button class="btn ghost btn-sm" onclick="openStreamResource(\'' + safeUrl + '\',\'' + (item.type||'') + '\',\'' + (item.pageUrl||'').replace(/'/g,"\\'") + '\')" style="padding:1px 4px;font-size:9px;" title="Abrir recurso">Abrir</button>' +
-      '<button class="btn warn btn-sm" onclick="dlMedia(\'' + safeUrl + '\',\'' + (item.type||'MP4') + '\',\'' + (item.pageUrl||'').replace(/'/g,"\\'") + '\',\'' + dlName + '\')" style="padding:1px 4px;font-size:9px;" title="Descargar">⬇ DL</button>' +
-      '<button class="btn ghost btn-sm" onclick="askStreamToAI(\'' + safeUrl + '\',\'' + (item.type||'Stream') + '\')" style="padding:1px 4px;font-size:9px;" title="Analizar con IA">✦</button>' +
-    '</div>';
-  }).join('');
+  const items = Array.from(state.streamItems.values()).reverse();
+  const primary = items.filter(i => /^(HLS|DASH)$/i.test(i.type || '') || /\.(m3u8|mpd)(\?|#|$)/i.test(i.url));
+  const secondary = items.filter(i => !primary.includes(i));
+  let markup = primary.map(renderSidebarStreamItemHtml).join('');
+  if (secondary.length) {
+    const fragCount = secondary.filter(i => isStreamFragment(i.url)).length;
+    markup += '<details class="stream-mp4-group" style="margin-top:6px;">' +
+      '<summary style="cursor:pointer;font-size:10px;color:var(--muted);padding:4px;border:1px solid var(--border);border-radius:var(--radius);">🎥 MP4 / Otros (' + secondary.length + ')' + (fragCount ? ' · ' + fragCount + ' fragmentos' : '') + '</summary>' +
+      '<div style="margin-top:4px;">' + secondary.map(renderSidebarStreamItemHtml).join('') + '</div>' +
+    '</details>';
+  }
   containers.forEach(container => { container.innerHTML = markup; });
 }
 
@@ -3938,12 +4583,30 @@ function askStreamToAI(url, type) {
   }
 }
 
-function clearSidebarStreams() {
-  state.streamItems.clear();
-  renderStreams();
-  renderSidebarStreams();
-  setText('streams-count-badge','0 streams');
-  addSidebarLog('info', '[STREAM] Lista limpiada');
+function renderStreamItemHtml(item) {
+  const icon = item.type === 'HLS' ? '📺' : item.type === 'DASH' ? '💾' : '🎥';
+  const tag = item.via ? `<div class="media-via" title="${item.via}">via: ${item.via}</div>` : '';
+  const info = describeResource(item.url, item.type, item);
+  const visibleTitle = item.pageUrl || item.origin || info.title || item.url || 'URL no disponible';
+  const badges = info.badges.map(b => `<span class="resource-badge ${b.className}">${escapeHtml(b.text)}</span>`).join('');
+  const fragBadge = isStreamFragment(item.url) ? '<span class="resource-badge warn">Fragmento</span>' : '';
+  const timeBadge = item.detectedAt ? `<span class="resource-badge" title="Detectado a las ${formatStreamTime(item.detectedAt)}">🕐 ${formatStreamTime(item.detectedAt)}</span>` : '';
+  const dlName = friendlyFileName(item.url, item.type, item.pageUrl || item.origin || item.displayName, visibleTitle).replace(/'/g, "\\'");
+  return `
+    <div class="media-item">
+      <div class="media-icon">${icon}</div>
+      <div class="media-info">
+        <div class="media-url-lbl">${escapeHtml(visibleTitle)}</div>
+        <div class="resource-details">${badges}${fragBadge}${timeBadge}</div>
+        <div class="media-meta" title="${escapeHtml(item.pageUrl || '')}">${escapeHtml(info.host)}</div>
+        ${item.type ? `<div class="media-type-row"><span class="media-type-lbl">${item.type} Stream</span>${tag}</div>` : ''}
+        <div class="media-actions">
+          <button class="btn ghost btn-sm" onclick="openStreamResource('${item.url.replace(/'/g,"\\'")}','${item.type||''}','${(item.pageUrl||'').replace(/'/g,"\\'")}')">Abrir</button>
+          <button class="btn warn btn-sm" onclick="dlMedia('${item.url.replace(/'/g,"\\'")}','${item.type||'MP4'}','${(item.pageUrl||'').replace(/'/g,"\\'")}','${dlName}')">⬇ DL</button>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function renderStreams() {
@@ -3955,28 +4618,19 @@ function renderStreams() {
     return;
   }
   
-  list.innerHTML = Array.from(state.streamItems.values()).map(item => {
-    const icon = item.type === 'HLS' ? '📺' : item.type === 'DASH' ? '💾' : '🎥';
-    const tag = item.via ? `<div class="media-via" title="${item.via}">via: ${item.via}</div>` : '';
-    const info = describeResource(item.url, item.type, item);
-    const badges = info.badges.map(b => `<span class="resource-badge ${b.className}">${escapeHtml(b.text)}</span>`).join('');
-    const dlName = (item.displayName || info.title).replace(/'/g, "\\'");
-    return `
-      <div class="media-item">
-        <div class="media-icon">${icon}</div>
-        <div class="media-info">
-          <div class="media-url-lbl">${escapeHtml(info.title)}</div>
-          <div class="resource-details">${badges}</div>
-          <div class="media-meta">${escapeHtml(info.host)}</div>
-          ${item.type ? `<div class="media-type-row"><span class="media-type-lbl">${item.type} Stream</span>${tag}</div>` : ''}
-          <div class="media-actions">
-            <button class="btn ghost btn-sm" onclick="openStreamResource('${item.url.replace(/'/g,"\\'")}','${item.type||''}','${(item.pageUrl||'').replace(/'/g,"\\'")}')">Abrir</button>
-            <button class="btn warn btn-sm" onclick="dlMedia('${item.url.replace(/'/g,"\\'")}','${item.type||'MP4'}','${(item.pageUrl||'').replace(/'/g,"\\'")}','${dlName}')">⬇ DL</button>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
+  const items = Array.from(state.streamItems.values()).reverse();
+  const primary = items.filter(i => /^(HLS|DASH)$/i.test(i.type || '') || /\.(m3u8|mpd)(\?|#|$)/i.test(i.url));
+  const secondary = items.filter(i => !primary.includes(i));
+  
+  let html = primary.map(renderStreamItemHtml).join('');
+  if (secondary.length) {
+    const fragCount = secondary.filter(i => isStreamFragment(i.url)).length;
+    html += `<details class="stream-mp4-group" style="margin-top:8px;">
+      <summary style="cursor:pointer;font-size:12px;color:var(--muted);padding:6px;border:1px solid var(--border);border-radius:var(--radius);">🎥 MP4 / Otros (${secondary.length})${fragCount ? ` · ${fragCount} fragmentos` : ''}</summary>
+      <div style="margin-top:6px;">${secondary.map(renderStreamItemHtml).join('')}</div>
+    </details>`;
+  }
+  list.innerHTML = html;
 }
 
 function copyStreams() {
@@ -3991,15 +4645,21 @@ function copyStreams() {
 
 async function scanStreams() {
   if (!state.activeTab) return;
+  state.streamItems.clear();
+  renderStreams();
+  renderSidebarStreams();
   addSidebarLog('info', '[STREAM] Escaneando streams...');
   try {
+    const currentPage = getActivePageUrl();
     const result = await mc.scanStreams(state.activeTab);
     if (result && Array.isArray(result)) {
       result.forEach(item => {
         addStreamItem({
           url: item.url,
           via: item.via,
-          pageUrl: item.pageUrl || getActivePageUrl(),
+          pageUrl: currentPage || item.pageUrl || getActivePageUrl(),
+          displayName: currentPage || item.displayName || item.pageUrl || getActivePageUrl(),
+          author: item.author || null,
           type: item.url.includes('.m3u8') ? 'HLS' : item.url.includes('.mpd') ? 'DASH' : 'MP4'
         });
       });
@@ -4008,10 +4668,15 @@ async function scanStreams() {
       // Reintento tras un breve retardo (los recursos pueden tardar en registrarse)
       setTimeout(async () => {
         const retry = await mc.scanStreams(state.activeTab).catch(() => []);
-        if (Array.isArray(retry)) retry.forEach(item => addStreamItem({
-          url: item.url, via: item.via, pageUrl: item.pageUrl || getActivePageUrl(),
-          type: item.url.includes('.m3u8') ? 'HLS' : item.url.includes('.mpd') ? 'DASH' : 'MP4'
-        }));
+        if (Array.isArray(retry)) {
+          const retryPage = getActivePageUrl();
+          retry.forEach(item => addStreamItem({
+            url: item.url, via: item.via, pageUrl: retryPage || item.pageUrl || getActivePageUrl(),
+            displayName: retryPage || item.displayName || item.pageUrl || getActivePageUrl(),
+            author: item.author || null,
+            type: item.url.includes('.m3u8') ? 'HLS' : item.url.includes('.mpd') ? 'DASH' : 'MP4'
+          }));
+        }
         if (!retry?.length) addSidebarLog('info', '[STREAM] No se detectaron streams en esta página');
       }, 1500);
     } else {
@@ -4086,10 +4751,6 @@ function installYtDlp() {
 window.checkYtDlpStatus = checkYtDlpStatus;
 window.installYtDlp = installYtDlp;
 
-function openInNewTab(url) {
-  addTab(url);
-}
-
 function copyUrl(url) {
   if (navigator.clipboard) navigator.clipboard.writeText(url).catch(()=>{});
   addSidebarLog('info','[CLIP] URL copiada');
@@ -4129,33 +4790,50 @@ function toggleDlOverlay() {
 }
 // Extraer un nombre de archivo legible de una URL multimedia
 function friendlyFileName(url, type, pageUrl, displayName) {
-  if (displayName) {
-    return String(displayName).replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_').slice(0, 80);
+  const literalPage = (pageUrl && /^https?:\/\//i.test(pageUrl)) ? pageUrl :
+    (typeof displayName === 'string' && /^https?:\/\//i.test(displayName)) ? displayName : '';
+
+  if (literalPage) {
+    return String(literalPage)
+      .replace(/^https?:\/\//i, '')
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .replace(/\s+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 80) || 'page_url';
   }
+
+  const origin = detectStreamOrigin(pageUrl || getActivePageUrl());
+  if (origin) {
+    return String(origin)
+      .replace(/^https?:\/\//i, '')
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .replace(/\s+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 80) || 'page_url';
+  }
+
   const container = detectStreamContainer(pageUrl || getActivePageUrl());
   if (container) {
     const role = classifyStreamUrl(url);
     const suffix = role === 'master' ? 'principal' : role === 'playlist' ? 'hls' : role === 'file' ? 'video' : 'media';
-    return (container + '_' + suffix).replace(/[\\/:*?"<>|]/g, '_');
+    return ((container) + '_' + suffix).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
   }
+
   try {
     const parsed = new URL(url);
     const pathParts = parsed.pathname.split('/').filter(Boolean);
     let file = pathParts.pop() || '';
-    // Si no hay nombre de archivo, usar el host
     if (!file || file === '/' || /^[a-z0-9]+$/i.test(file) && !/\./.test(file)) {
       file = parsed.hostname.replace(/^www\./i, '').split('.')[0] || 'media';
     }
-    // Decodificar y limpiar
     let name = decodeURIComponent(file).replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[_-]+/g, ' ').trim();
-    // Si el nombre es muy corto o genérico, añadir el host (truncado) para contexto
     if (name.length < 3 || /^(index|master|playlist|stream|video|media|seg|segment|chunk|part)$/i.test(name)) {
       let host = parsed.hostname.replace(/^www\./i, '').split('.')[0];
-      // Truncar hosts muy largos (CDNs con subdominios largos)
       if (host.length > 20) host = host.substring(0, 20);
       name = (host + ' ' + name).trim();
     }
-    // Limpiar caracteres inválidos para nombre de archivo
     name = name.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80);
     return name || 'media';
   } catch {
@@ -4206,6 +4884,76 @@ function startMediaDownload(dlId, url, type, name, pageUrl) {
   else mc.downloadFile(dlId, url, name, pageUrl);
 }
 
+// ── Persistencia del historial de descargas ──
+function saveDownloadsLS() {
+  try { localStorage.setItem('mc_downloads', JSON.stringify(state.downloads)); } catch {}
+}
+function loadDownloadsLS() {
+  try {
+    const raw = localStorage.getItem('mc_downloads');
+    if (raw) state.downloads = JSON.parse(raw);
+    if (!Array.isArray(state.downloads)) state.downloads = [];
+  } catch { state.downloads = []; }
+}
+function trackDownload(entry) {
+  // Actualiza o añade una entrada al historial persistente
+  const idx = state.downloads.findIndex(d => d.id === entry.id);
+  if (idx >= 0) state.downloads[idx] = { ...state.downloads[idx], ...entry };
+  else state.downloads.unshift(entry);
+  if (state.downloads.length > 500) state.downloads.length = 500;
+  saveDownloadsLS();
+}
+function renderPersistedDownloads() {
+  // Renderiza el historial persistente en la cola de descargas
+  const queue = $('download-queue');
+  if (!queue) return;
+  const ph = queue.querySelector('.dl-empty-msg') || queue.querySelector('div[style*="center"]'); if (ph) ph.remove();
+  // Solo renderizar las que no están ya en el DOM (las activas se renderizan en vivo)
+  state.downloads.forEach(d => {
+    if (document.getElementById(d.id)) return;
+    if (d.state === 'active') return; // las activas se renderizan en vivo
+    const el = document.createElement('div');
+    el.className = 'dl-item'; el.id = d.id;
+    el.dataset.url = d.url || '';
+    el.dataset.type = d.type || 'MP4';
+    el.dataset.page = d.page || '';
+    el.dataset.name = d.name || '';
+    el.dataset.state = d.state || 'done';
+    el.dataset.file = d.file || '';
+    const dom = (d.url || '').replace(/https?:\/\//, '').split('/')[0] || '';
+    const friendly = d.name ? d.name.replace(/_\d+$/, '') : (d.filename || 'descarga');
+    const stateLabel = d.state === 'done' ? '✓ ' + (d.size || '') + ' MB' :
+                       d.state === 'error' ? '✗ ERROR' :
+                       d.state === 'cancelled' ? '✕ Cancelado' : '—';
+    const stateColor = d.state === 'done' ? 'var(--success)' :
+                       d.state === 'error' ? 'var(--danger)' :
+                       d.state === 'cancelled' ? 'var(--danger)' : 'var(--warn)';
+    const metaHtml = d.state === 'done' && d.file
+      ? escapeHtml(d.filename || d.file.split('\\').pop().split('/').pop()) + ' &mdash; <a href="#" onclick="openDlFile(\'' + d.id + '\');return false;" style="color:var(--accent);text-decoration:underline;">Abrir archivo</a> &middot; <a href="#" onclick="mc.openDlFolder();return false;" style="color:var(--accent);text-decoration:underline;">Abrir carpeta</a>'
+      : escapeHtml(d.filename || friendly);
+    el.innerHTML =
+      '<div class="dl-header"><span class="dl-name">⬇ '+escapeHtml(friendly)+' — '+(d.type||'MP4')+'</span><span class="dl-pct" id="pct-'+d.id+'" style="color:'+stateColor+'">'+stateLabel+'</span></div>'
+     +'<div class="dl-url">'+escapeHtml(dom)+'</div>'
+     +'<div class="pbar"><div class="pfill" id="fill-'+d.id+'" style="width:'+(d.state==='done'?'100%':'0%')+'"'+(d.state==='error'||d.state==='cancelled'?' class="error"':'')+'></div></div>'
+     +'<div class="dl-meta"><span id="meta-'+d.id+'">'+metaHtml+'</span><span id="speed-'+d.id+'">— KB/s</span></div>'
+     +'<div class="dl-actions">'
+     +  (d.state === 'error' || d.state === 'cancelled'
+         ? '<button class="dl-btn" data-act="retry" onclick="dlAction(\'retry\',\''+d.id+'\')" title="Reintentar">↻</button>'
+         : '')
+     +'</div>';
+    queue.appendChild(el);
+  });
+}
+function clearDownloads() {
+  state.downloads = [];
+  saveDownloadsLS();
+  const queue = $('download-queue');
+  if (queue) queue.innerHTML = '<div class="dl-empty-msg">Sin descargas activas</div>';
+  setText('dl-count-badge', '0 activas');
+  const dot = $('dl-badge-dot'); if (dot) dot.style.display = 'none';
+  addSidebarLog('info', '[DL] Historial de descargas limpiado');
+}
+
 function dlMedia(url, type, pageUrl, displayName) {
   if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
     addSidebarLog('blocked', '[DL] URL multimedia inválida o vacía');
@@ -4244,6 +4992,11 @@ function dlMedia(url, type, pageUrl, displayName) {
   queue.appendChild(el);
 
   const name = el.dataset.name;
+  // Registrar en historial persistente
+  trackDownload({
+    id: dlId, url, type, page: resolvedPage || '', name,
+    filename: friendly, state: 'active', ts: Date.now()
+  });
   startMediaDownload(dlId, url, type, name, resolvedPage);
 }
 
@@ -4271,17 +5024,20 @@ async function dlAction(action, id) {
     item.dataset.state = 'paused';
     setDlButtons(item, 'paused');
     if (p) { p.textContent = '⏸ Pausado'; p.style.color = 'var(--warn)'; }
+    trackDownload({ id, state: 'paused', ts: Date.now() });
   } else if (action === 'resume') {
     await mc.dlResume(id);
     item.dataset.state = 'active';
     setDlButtons(item, 'active');
     if (p) { p.textContent = '0%'; p.style.color = 'var(--accent)'; }
+    trackDownload({ id, state: 'active', ts: Date.now() });
   } else if (action === 'cancel') {
     await mc.dlCancel(id);
     item.dataset.state = 'cancelled';
     setDlButtons(item, 'cancelled');
     if (p) { p.textContent = '✕ Cancelado'; p.style.color = 'var(--danger)'; }
     if (f) { f.style.width='100%'; f.classList.add('error'); }
+    trackDownload({ id, state: 'cancelled', ts: Date.now() });
     // El evento dl-error del proceso principal actualiza el contador
   } else if (action === 'retry') {
     item.dataset.state = 'active';
@@ -4293,6 +5049,7 @@ async function dlAction(action, id) {
     dlActive++;
     setText('dl-count-badge', dlActive+' activas');
     const dot = $('dl-badge-dot'); if (dot) dot.style.display = 'block';
+    trackDownload({ id, state: 'active', ts: Date.now() });
     if (type === 'DASH' || /\.mpd(\?|#|$)/i.test(url)) startMediaDownload(id, url, type, item.dataset.name || '', page);
     else if (type === 'HLS' || /\.m3u8(\?|#|$)/i.test(url)) mc.downloadHLS(id, url, item.dataset.name || '', page);
     else mc.downloadFile(id, url, item.dataset.name || '', page);
@@ -4330,8 +5087,14 @@ function bindDownloadEvents() {
       const p = $('pct-'+id); if (p){ p.textContent='✓ '+d.size+' MB'; p.style.color='var(--success)'; }
       const f = $('fill-'+id); if (f) f.style.width='100%';
       const meta = $('meta-'+id);
-      if (meta) meta.innerHTML = escapeHtml(fn) + ' &mdash; <a href="#" onclick="mc.openDlFolder();return false;" style="color:var(--accent);text-decoration:underline;">Abrir carpeta</a>';
+      if (meta) meta.innerHTML = escapeHtml(fn) + ' &mdash; <a href="#" onclick="openDlFile(\'' + id + '\');return false;" style="color:var(--accent);text-decoration:underline;">Abrir archivo</a> &middot; <a href="#" onclick="mc.openDlFolder();return false;" style="color:var(--accent);text-decoration:underline;">Abrir carpeta</a>';
     }
+    // Persistir en historial
+    trackDownload({
+      id: d.id, url: d.url || '', file: d.file || '',
+      filename: d.filename || (d.file ? d.file.split('\\').pop().split('/').pop() : ''),
+      size: d.size, state: 'done', ts: Date.now()
+    });
     dlActive = Math.max(0, dlActive-1);
     setText('dl-count-badge', dlActive+' activas');
     const dot = $('dl-badge-dot'); if (dot) dot.style.display = dlActive > 0 ? 'block' : 'none';
@@ -4350,11 +5113,136 @@ function bindDownloadEvents() {
       item.dataset.state = d.cancelled ? 'cancelled' : 'error';
       setDlButtons(item, item.dataset.state);
     }
+    // Persistir en historial
+    trackDownload({
+      id: d.id, url: d.url || '',
+      state: d.cancelled ? 'cancelled' : 'error',
+      error: d.error || '', ts: Date.now()
+    });
     dlActive = Math.max(0, dlActive-1);
     setText('dl-count-badge', dlActive+' activas');
     const dot = $('dl-badge-dot'); if (dot) dot.style.display = dlActive > 0 ? 'block' : 'none';
     addSidebarLog('blocked','[DL] '+(d.cancelled?'Cancelado: ':'Error: ')+d.error);
   });
+
+  // ── Descargas nativas del navegador (will-download) ──
+  mc.on('dl-native', d => {
+    // Nueva descarga nativa iniciada
+    const queue = $('download-queue');
+    if (!queue) return;
+    const ph = queue.querySelector('.dl-empty-msg') || queue.querySelector('div[style*="center"]'); if (ph) ph.remove();
+    const ov = $('dl-overlay');
+    if (ov && !ov.classList.contains('open')) ov.classList.add('open');
+    const dlId = d.id;
+    const dom = (d.url || '').replace(/https?:\/\//, '').split('/')[0] || '';
+    const friendly = (d.filename || 'descarga').replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[_-]+/g, ' ').trim() || 'descarga';
+    dlActive++;
+    setText('dl-count-badge', dlActive+' activas');
+    const dot = $('dl-badge-dot'); if (dot) dot.style.display = 'block';
+    const el = document.createElement('div');
+    el.className = 'dl-item'; el.id = dlId;
+    el.dataset.url = d.url || '';
+    el.dataset.type = 'FILE';
+    el.dataset.page = d.pageUrl || '';
+    el.dataset.name = d.filename || 'descarga';
+    el.dataset.state = 'active';
+    el.innerHTML =
+      '<div class="dl-header"><span class="dl-name">⬇ '+escapeHtml(friendly)+' — FILE</span><span class="dl-pct" id="pct-'+dlId+'">0%</span></div>'
+     +'<div class="dl-url">'+escapeHtml(dom)+'</div>'
+     +'<div class="pbar"><div class="pfill" id="fill-'+dlId+'" style="width:0%"></div></div>'
+     +'<div class="dl-meta"><span id="meta-'+dlId+'">0 B / '+fmtBytes(d.totalBytes||0)+'</span><span id="speed-'+dlId+'">— KB/s</span></div>'
+     +'<div class="dl-actions">'
+     +  '<button class="dl-btn" data-act="cancel" onclick="dlNativeCancel(\''+dlId+'\')" title="Cancelar">✕</button>'
+     +'</div>';
+    queue.appendChild(el);
+    // Registrar en historial persistente
+    trackDownload({
+      id: dlId, url: d.url || '', type: 'FILE', page: d.pageUrl || '',
+      name: d.filename || 'descarga', filename: d.filename || 'descarga',
+      state: 'active', ts: Date.now()
+    });
+  });
+
+  // Cerrar automáticamente la pestaña popup que solo sirvió para iniciar
+  // una descarga (comportamiento de navegadores normales: la pestaña de
+  // descarga se abre y se cierra sola). No afecta al flujo OAuth, que usa
+  // ventanas nativas y nunca se convierte en pestaña.
+  mc.on('dl-native-tab', ({ wcId }) => {
+    if (!wcId) return;
+    const wv = [...document.querySelectorAll('webview')].find(w => {
+      try { return w.getWebContentsId() === wcId; } catch { return false; }
+    });
+    if (!wv) return;
+    const tabId = Number((wv.id || '').replace('webview-', ''));
+    if (!tabId) return;
+    const tab = state.tabs.find(t => t.id === tabId);
+    // Solo cerrar pestañas abiertas como popup recientemente (no las manuales)
+    if (tab && tab.isPopup && Date.now() - (tab.popupAt || 0) < 30000) {
+      closeTab(null, tabId);
+    }
+  });
+
+  mc.on('dl-native-progress', d => {
+    const item = document.getElementById(d.id);
+    if (!item || item.dataset.state !== 'active') return;
+    const id = item.id;
+    const f = $('fill-'+id); if (f) f.style.width = d.pct + '%';
+    const p = $('pct-'+id); if (p) p.textContent = d.pct + '%';
+    const m = $('meta-'+id);
+    if (m) m.textContent = fmtBytes(d.received||0)+' / '+fmtBytes(d.totalBytes||0);
+  });
+
+  mc.on('dl-native-done', d => {
+    const item = document.getElementById(d.id);
+    if (item) {
+      const id = item.id;
+      item.dataset.file = d.file || '';
+      item.dataset.state = d.cancelled ? 'cancelled' : 'done';
+      const f = $('fill-'+id); if (f) f.style.width = '100%';
+      const p = $('pct-'+id);
+      if (p) {
+        if (d.cancelled) { p.textContent = '✕ Cancelado'; p.style.color = 'var(--danger)'; }
+        else { p.textContent = '✓ '+d.size+' MB'; p.style.color = 'var(--success)'; }
+      }
+      if (!d.cancelled) {
+        const meta = $('meta-'+id);
+        if (meta) meta.innerHTML = escapeHtml(d.filename || '') + ' &mdash; <a href="#" onclick="openDlFile(\'' + id + '\');return false;" style="color:var(--accent);text-decoration:underline;">Abrir archivo</a> &middot; <a href="#" onclick="mc.openDlFolder();return false;" style="color:var(--accent);text-decoration:underline;">Abrir carpeta</a>';
+      }
+    }
+    // Persistir en historial
+    trackDownload({
+      id: d.id, url: d.url || '', file: d.file || '',
+      filename: d.filename || '', size: d.size,
+      state: d.cancelled ? 'cancelled' : 'done', ts: Date.now()
+    });
+    dlActive = Math.max(0, dlActive-1);
+    setText('dl-count-badge', dlActive+' activas');
+    const dot = $('dl-badge-dot'); if (dot) dot.style.display = dlActive > 0 ? 'block' : 'none';
+    if (!d.cancelled) addSidebarLog('allowed', '[DL] Descarga nativa completada: ' + (d.filename || ''));
+  });
+}
+
+// Abre el archivo descargado con la app predeterminada del sistema
+function openDlFile(id) {
+  const el = document.getElementById(id);
+  const file = el ? el.dataset.file : '';
+  if (file) mc.openDlFile(file);
+}
+
+// Cancelar una descarga nativa del navegador
+function dlNativeCancel(id) {
+  // Las descargas nativas de Chromium no se pueden cancelar desde el renderer fácilmente;
+  // marcamos el item como cancelado en la UI
+  const item = document.getElementById(id);
+  if (item) {
+    item.dataset.state = 'cancelled';
+    const p = $('pct-'+id); if (p) { p.textContent = '✕ Cancelado'; p.style.color = 'var(--danger)'; }
+    const f = $('fill-'+id); if (f) { f.style.width = '100%'; f.classList.add('error'); }
+  }
+  trackDownload({ id, state: 'cancelled', ts: Date.now() });
+  dlActive = Math.max(0, dlActive-1);
+  setText('dl-count-badge', dlActive+' activas');
+  const dot = $('dl-badge-dot'); if (dot) dot.style.display = dlActive > 0 ? 'block' : 'none';
 }
 
 async function chooseDir() {
@@ -4387,15 +5275,30 @@ async function testDoH() {
 }
 
 // ── clear / data ────────────────────────────────
-async function clearCookies() { await mc.clearCookies(); addSidebarLog('allowed','[CK] cookies eliminadas'); }
-async function clearCache()   { await mc.clearCache();   addSidebarLog('allowed','[CACHE] limpio'); }
+async function clearCookies() {
+  const keepSessions = !!(document.getElementById('keep-sessions-clear')?.checked || document.getElementById('keep-sessions-clear2')?.checked || document.getElementById('keep-sessions-clear3')?.checked);
+  const result = await mc.clearData({ history: false, cache: false, cookies: true, keepSessions });
+  if (result && result.ok) addSidebarLog('allowed', '[CK] cookies eliminadas' + (keepSessions ? ' (se conservaron sesiones)' : ''));
+}
+async function clearCache()   {
+  const result = await mc.clearData({ history: false, cache: true, cookies: false, keepSessions: false });
+  if (result && result.ok) addSidebarLog('allowed','[CACHE] limpio');
+}
 async function clearAll() {
   if (!confirm('Borrar TODOS los datos (cookies, caché, storage, stats)?')) return;
   await mc.clearAll();
+  state.history = [];
+  renderHistory();
+  try { localStorage.removeItem('mc_history'); } catch {}
   state.stats = await mc.getStats();
   refreshStats();
   state.reqLog = []; renderReqLog();
   clearMedia();
+  // Recargar la pestaña activa para que el storage limpiado surta efecto
+  // (p. ej. el historial local de YouTube vive en localStorage/IndexedDB y
+  // la página en memoria lo seguiría mostrando sin recargar)
+  const wv = state.activeTab >= 0 ? $('webview-' + state.activeTab) : null;
+  if (wv && wv.reload) { try { wv.reload(); } catch {} }
   addSidebarLog('allowed','[CLEAR] todos los datos eliminados');
 }
 
@@ -4449,10 +5352,15 @@ function syncCfgToUI() {
     setText('st-doh', 'DoH: ' + txt);
   }
   state.customBlocks = (state.cfg.customRules || []).map(r => r.pattern);
+  state.siteBlockMap = {};
+  for (const r of (state.cfg.customRules || [])) {
+    if (r.pattern && r.site) state.siteBlockMap[r.pattern] = r.site;
+  }
   renderCustomBlocks();
   state.cookieRules = { ...(state.cfg.allowlist || {}) };
   renderCookieRules();
   refreshIdentity();
+  renderCosmeticRules();
 }
 
 // ── clock ───────────────────────────────────────
@@ -4461,17 +5369,58 @@ function tickClock() { setText('st-time', new Date().toLocaleTimeString('es',{ho
 // ── keyboard ────────────────────────────────────
 document.addEventListener('keydown', e => {
   const k = e.key;
-  if ((e.ctrlKey || e.metaKey) && k === 'l') { e.preventDefault(); $('urlinput').focus(); $('urlinput').select(); }
-  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (k === 'l' || k === 'L')) { e.preventDefault(); addTab('mc://lab'); }
-  if ((e.ctrlKey || e.metaKey) && k === 't') { e.preventDefault(); addTab(); }
-  if ((e.ctrlKey || e.metaKey) && k === 'w') { e.preventDefault(); closeTab({stopPropagation:()=>{}}, state.activeTab); }
-  if ((e.ctrlKey || e.metaKey) && k === 'r') { e.preventDefault(); reloadPage(); }
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && k === 'l') { e.preventDefault(); $('urlinput').focus(); $('urlinput').select(); }
+  if (mod && e.shiftKey && (k === 'l' || k === 'L')) { e.preventDefault(); addTab('mc://lab'); }
+  if (mod && k === 't') { e.preventDefault(); addTab(); }
+  if (mod && k === 'w') { e.preventDefault(); closeTab({stopPropagation:()=>{}}, state.activeTab); }
+  if (mod && k === 'r') { e.preventDefault(); reloadPage(); }
   if (k === 'F5') { e.preventDefault(); reloadPage(); }
   if (k === 'F11') { e.preventDefault(); if (document.fullscreenElement || document.webkitFullscreenElement) { document.exitFullscreen?.() || document.webkitExitFullscreen?.(); } else { document.documentElement.requestFullscreen?.() || document.documentElement.webkitRequestFullscreen?.(); } }
-  if ((k === 'F12') || ((e.ctrlKey || e.metaKey) && e.shiftKey && (k === 'i' || k === 'I'))) {
+  if ((k === 'F12') || (mod && e.shiftKey && (k === 'i' || k === 'I'))) {
     e.preventDefault();
     const wv = $('webview-' + state.activeTab);
     if (wv && wv.openDevTools) wv.openDevTools();
+  }
+
+  // ── Atajos de teclado para paneles (Ctrl+Shift+<tecla>) ──
+  if (mod && e.shiftKey) {
+    const kk = k.toLowerCase();
+    switch (kk) {
+      case 'b': // Marcadores
+        e.preventDefault(); toggleBookmarksPanel(); break;
+      case 's': // Sidebar (privacidad/estadísticas)
+        e.preventDefault(); toggleSidebar(); break;
+      case 'x': // Recursos / Extractor
+        e.preventDefault(); openResourceExtractor(); break;
+      case 'h': // Historial y Descargas
+        e.preventDefault(); toggleUtilityPanel(); break;
+      case 'p': // Permisos y Cookies
+        e.preventDefault(); togglePermissionsPanel(); break;
+      case 'a': // Panel IA
+        e.preventDefault();
+        if (window.AI && typeof AI.toggle === 'function') AI.toggle();
+        else toggleChatPanel('ai');
+        break;
+      case 'w': // WebChat
+        e.preventDefault();
+        if (window.WebChat && typeof WebChat.toggle === 'function') WebChat.toggle();
+        else toggleChatPanel('web');
+        break;
+      case 'q': // WhatsApp Web
+        e.preventDefault();
+        if (window.WhatsAppChat && typeof WhatsAppChat.toggle === 'function') WhatsAppChat.toggle();
+        else toggleChatPanel('wa');
+        break;
+      case 'e': // Modo Reader
+        e.preventDefault(); openReader(); break;
+      case 'g': // Laboratorio Web
+        e.preventDefault(); showPanel('lab'); break;
+      case ',': // Configuración
+        e.preventDefault(); showPanel('settings'); break;
+      case 'n': // Inicio / Nueva pestaña
+        e.preventDefault(); showPanel('newtab'); break;
+    }
   }
 });
 
@@ -4573,11 +5522,6 @@ function renderShortcuts() {
   ).join('');
 }
 
-function shortcutIconError(img) {
-  img.style.display = 'none';
-  if (img.nextElementSibling) img.nextElementSibling.style.display = 'inline';
-}
-
 function getShortcutIconHtml(s, size) {
   size = size || 18;
   if (!s.icon) {
@@ -4662,6 +5606,9 @@ function resetShortcuts() {
   loadShortcuts();
   loadBookmarks();
   updateBookmarkStar();
+  // Cargar historial persistente de descargas
+  loadDownloadsLS();
+  renderPersistedDownloads();
 
   // Crear webview para la primera pestaña
   const firstTab = state.tabs[0];
@@ -4674,6 +5621,7 @@ function resetShortcuts() {
     wv.setAttribute('preload', selectionPreloadPath);
     wv.setAttribute('src', 'about:blank');
     wv.setAttribute('allow', 'autoplay; media; encrypted-media');
+    wv.setAttribute('allowpopups', '');
     // No se establece display inline; la clase .tab-webview controla la visibilidad
     container.appendChild(wv);
     bindWebviewToTab(firstTab.id, wv);
@@ -4683,6 +5631,10 @@ function resetShortcuts() {
 
   // events from main
   mc.on('req-blocked', d => {
+    if (d.resourceType === 'script' && d.url) {
+      state.blockedScripts = [...state.blockedScripts.filter(item => item.url !== d.url), { url: d.url, blocked: d.blocked === true }].slice(-200);
+      renderSiteScripts();
+    }
     const lbl = (d.type||'request').toUpperCase();
     const color = d.type === 'request' ? 'var(--accent)' : 'var(--danger)';
     addSidebarLog(d.type === 'request' ? 'info' : 'blocked', '['+lbl+'] '+ (d.url.replace(/https?:\/\//,'').split('/')[0]));
@@ -4700,18 +5652,28 @@ function resetShortcuts() {
     if (d.action === 'blocked') addSidebarLog('blocked', '[CK-BLOQ] '+d.domain);
   });
   mc.on('stats-update', s => { state.stats = s; refreshStats(); });
+  mc.on('auth-session-updated', () => {
+    // No forzar el regreso a la página anterior mientras Google/X están en
+    // medio del OAuth. Esa re-dirección interrumpe la petición de login del
+    // segundo usuario y provoca el 400. Dejar que el provider complete el flujo
+    // es la única acción segura.
+  });
   mc.on('new-tab',      ()=> addTab());
   mc.on('open-new-tab',  url => addTab(url));
   mc.on('page-extract-results', showExtractor);
   mc.on('ai-element-selected', element => {
-    if (!window.AI) return;
+    const ai = window.AI || (typeof AI !== 'undefined' ? AI : null);
+    if (!ai) {
+      addSidebarLog('blocked', '[AI] Módulo IA no disponible para diagnosticar el elemento');
+      return;
+    }
     if (element?.error) {
-      if (!document.getElementById('ai-sidebar')?.classList.contains('open')) AI.toggle();
-      setTimeout(() => AI.appendMsg('system', 'No se pudo investigar el elemento: ' + element.error), 300);
+      if (!document.getElementById('ai-sidebar')?.classList.contains('open')) ai.toggle();
+      setTimeout(() => ai.appendMsg('system', 'No se pudo investigar el elemento: ' + element.error), 300);
       return;
     }
     const details = JSON.stringify(element, null, 2);
-    if (!document.getElementById('ai-sidebar')?.classList.contains('open')) AI.toggle();
+    if (!document.getElementById('ai-sidebar')?.classList.contains('open')) ai.toggle();
     const isAdblock = element?.mode === 'adblock-diagnosis';
     const prompt = isAdblock
       ? `Diagnóstico de elemento molesto para pulir el adblock de MC Browser.
@@ -4734,7 +5696,29 @@ ${details}`
       : `Investiga este elemento del DOM de la página. Explica qué función cumple, qué contenido representa, si contiene enlaces, formularios, publicidad, tracking o datos sensibles, y qué riesgos o acciones relevantes ves. No ejecutes código ni supongas información que no esté en los datos.
 
 ${details}`;
-    setTimeout(() => AI.send(prompt), 300);
+    setTimeout(() => ai.send(prompt), 300);
+  });
+  mc.on('cosmetic-block-result', result => {
+    if (result?.ok) {
+      addSidebarLog('blocked', '[ELEMENT] Bloqueado: ' + (result.rule || result.selector || 'selector'));
+      if (state.cfg) {
+        state.cfg.userCosmeticRules = Array.isArray(state.cfg.userCosmeticRules) ? state.cfg.userCosmeticRules : [];
+        if (result.rule && !state.cfg.userCosmeticRules.includes(result.rule)) {
+          state.cfg.userCosmeticRules.push(result.rule);
+        }
+      }
+      renderCosmeticRules();
+      reapplyCosmeticFilters();
+    } else {
+      addSidebarLog('blocked', '[ELEMENT] No se pudo bloquear: ' + (result?.error || 'error'));
+    }
+  });
+  mc.on('cosmetic-unblock-result', result => {
+    if (result?.ok && result.rule && state.cfg) {
+      state.cfg.userCosmeticRules = (state.cfg.userCosmeticRules || []).filter(r => r !== result.rule);
+      renderCosmeticRules();
+      addSidebarLog('allowed', '[ELEMENT] Desbloqueado: ' + result.rule);
+    }
   });
   mc.on('close-tab',    ()=> closeTab({stopPropagation(){}}, state.activeTab));
   mc.on('clear-all',   ()=> clearAll());
@@ -4764,6 +5748,8 @@ ${details}`;
   setText('ab-mem',      info.mem);
   setText('ab-datadir',  info.dataDir);
   $('dl-dir').value = info.dlDir;
+  refreshProcessList();
+  if (!$('sidebar')?.classList.contains('collapsed')) startSidebarProcessMonitor();
 
   // Real values for fingerprinting
   const real = await mc.getRealValues();
@@ -4781,9 +5767,10 @@ ${details}`;
   const m = await mc.getMedia();
   m.forEach(addMediaItem);
 
-  // clock
+  // clock + statusbar resources
   tickClock();
   setInterval(tickClock, 1000);
+  startStatusBarResources();
 
   // boot logs
   ['[BOOT] MC Browser iniciado', '[BOOT] Motor de privacidad activo', '[BOOT] Listas: ads + trackers + crypto', '[DoH] DNS cifrado: '+(state.cfg.dohServer||'cloudflare'), '[FP] Anti-fingerprint activado'].forEach((m,i) =>
@@ -4855,6 +5842,29 @@ function normalizeDomainInput(value) {
   } catch {
     return cleaned;
   }
+}
+
+/** Verifica si un patrón de bloqueo (host bare, wildcard, o URL completa) coincide con un host dado. */
+function patternMatchesHost(pattern, host) {
+  if (!pattern || !host) return false;
+  const p = String(pattern).toLowerCase();
+  const h = String(host).toLowerCase();
+  if (p === h) return true;
+  if (p.startsWith('*.')) {
+    const base = p.slice(2);
+    return h === base || h.endsWith('.' + base);
+  }
+  try {
+    if (/^https?:\/\//i.test(p)) {
+      const urlHost = new URL(p).hostname.replace(/^www\./i, '').toLowerCase();
+      if (urlHost === h) return true;
+      if (urlHost.startsWith('*.')) {
+        const base = urlHost.slice(2);
+        return h === base || h.endsWith('.' + base);
+      }
+    }
+  } catch {}
+  return false;
 }
 
 function getCurrentPageDomain() {
@@ -4930,43 +5940,60 @@ function togglePermissionsPanel() {
   if (btn) btn.classList.toggle('open', !collapsed);
   try { localStorage.setItem('mc_permissions_collapsed', collapsed ? '1' : ''); } catch {}
   if (!collapsed) {
+    const body = panel.querySelector('.perm-body');
+    if (body) body.scrollTop = 0;
     syncPermissionsDomainField();
-    renderPermissionsList();
+    renderPermissionsList().catch(error => addSidebarLog('blocked', '[PERM] No se pudo actualizar el panel: ' + (error.message || error)));
   }
 }
 
 function refreshPermissionsForActivePage() {
   syncPermissionsDomainField();
-  renderPermissionsList();
+  renderPermissionsList().catch(error => addSidebarLog('blocked', '[PERM] No se pudo actualizar el panel: ' + (error.message || error)));
 }
 
 async function loadPermissionsList() {
   const list = $('permissions-list');
+  const hostList = $('detected-hosts-list');
   if (!list) return;
-  const perms = await mc.getPermissions();
+  const perms = await mc.getPermissions().catch(() => ({}));
   const activeDomain = normalizeDomainInput($('permission-domain')?.value || getCurrentPageDomain());
-  const discoveredPageHosts = await collectPageRelatedHosts();
+  const discoveredPageHosts = await collectPageRelatedHosts().catch(() => []);
   const discoveredStreamHosts = Array.from(state.streamItems.values()).map(item => normalizeDomainInput(item?.url || '')).filter(Boolean);
+  const allDiscoveredHosts = [...new Set([...discoveredPageHosts, ...discoveredStreamHosts, ...(activeDomain ? [activeDomain] : [])])];
   const domainMap = new Map();
   for (const [domain, rules] of Object.entries(perms || {})) {
     const normalized = normalizeDomainInput(domain) || String(domain || '').trim().replace(/^\.+/, '').toLowerCase();
     if (!normalized) continue;
     if (!domainMap.has(normalized)) domainMap.set(normalized, { raw: domain, rules: rules && typeof rules === 'object' ? rules : {} });
   }
-  for (const host of [...discoveredPageHosts, ...discoveredStreamHosts, ...(activeDomain ? [activeDomain] : [])]) {
+  for (const host of allDiscoveredHosts) {
     if (!host) continue;
     if (!domainMap.has(host)) domainMap.set(host, { raw: host, rules: {} });
   }
-  const entries = Array.from(domainMap.entries()).map(([domain, value]) => ({ domain, raw: value.raw || domain, rules: value.rules || {} }));
+  const entries = Array.from(domainMap.entries())
+    .filter(([, value]) => Object.keys(value.rules || {}).length > 0)
+    .map(([domain, value]) => ({ domain, raw: value.raw || domain, rules: value.rules || {} }));
 
   const activeDomainCard = $('permissions-active-domain');
   const activeStatus = $('permissions-active-statuses');
+  const blockedSummary = $('permissions-blocked-summary');
+  if (blockedSummary) {
+    const blockedTotal = Number(state.stats?.blockedAds || 0) + Number(state.stats?.blockedTrackers || 0) + Number(state.stats?.blockedThird || 0) + Number(state.stats?.blockedCrypto || 0);
+    blockedSummary.textContent = blockedTotal ? blockedTotal + ' elementos bloqueados' : 'Protección activa';
+  }
   if (activeDomainCard) activeDomainCard.textContent = activeDomain || '—';
+  const blockLight = $('perm-block-light');
+  const blockPermanent = $('perm-block-permanent');
+  const blockGlobal = $('perm-block-global');
+  if (blockLight) blockLight.checked = activeDomain && state.cfg?.allowlist?.[activeDomain] === 'session';
+  if (blockPermanent) blockPermanent.checked = activeDomain && state.customBlocks.some(b => patternMatchesHost(b, activeDomain));
+  if (blockGlobal) blockGlobal.checked = activeDomain && state.customBlocks.some(b => patternMatchesHost(b, '*.' + activeDomain));
   if (activeStatus) {
     const activeRules = activeDomain && perms && (perms[activeDomain] || perms[activeDomain.replace(/^www\./i, '')]) ? (perms[activeDomain] || perms[activeDomain.replace(/^www\./i, '')]) : {};
     const badges = [];
     if (activeDomain) badges.push('<span class="status-pill active">Activo</span>');
-    if (discoveredPageHosts.length || discoveredStreamHosts.length) badges.push('<span class="status-pill muted">' + (new Set([...discoveredPageHosts, ...discoveredStreamHosts]).size) + ' hosts detectados</span>');
+    if (allDiscoveredHosts.length) badges.push('<span class="status-pill muted">' + allDiscoveredHosts.length + ' hosts detectados</span>');
     if (Object.keys(activeRules).length) {
       const allowCount = Object.values(activeRules).filter(v => v === 'allow').length;
       const denyCount = Object.values(activeRules).filter(v => v === 'deny' || v === 'block').length;
@@ -4981,11 +6008,37 @@ async function loadPermissionsList() {
     activeStatus.innerHTML = badges.join('');
   }
 
+  if (hostList) {
+    const hostRows = [...new Set(allDiscoveredHosts)].filter(Boolean).sort((a, b) => a.localeCompare(b));
+    if (!hostRows.length) {
+      hostList.innerHTML = '<div class="bp-empty"><div class="bp-empty-icon">&#128279;</div><div>Sin hosts detectados</div></div>';
+    } else {
+      hostList.innerHTML = hostRows.map(host => {
+        const safeHost = String(host).replace(/'/g, "\\'");
+        const matchedPatterns = state.customBlocks.filter(b => patternMatchesHost(b, host));
+        const hasGlobalBlock = matchedPatterns.some(b => !state.siteBlockMap[b]);
+        const currentSite = normalizeDomainInput(getCurrentPageDomain());
+        const hasSiteBlock = currentSite && matchedPatterns.some(b => state.siteBlockMap[b] === currentSite);
+        const isBlocked = hasGlobalBlock || hasSiteBlock || state.cfg?.allowlist?.[host] === 'block' || state.cfg?.allowlist?.[host] === 'session';
+        const blockPill = isBlocked ? (hasGlobalBlock ? 'Bloqueado' : 'Bloqueado aquí') : 'Activo';
+        const currentSiteLabel = currentSite ? escapeHtml(currentSite) : '';
+        return '<div class="perm-domain"><div class="perm-domain-head"><strong>' + escapeHtml(host) + '</strong><span class="status-pill ' + (isBlocked ? 'deny' : 'muted') + '">' + blockPill + '</span></div>' +
+          '<div class="perm-host-actions">' +
+          '<button class="mini-btn" onclick="choosePermissionDomain(\'' + safeHost + '\')">Permisos</button>' +
+          '<button class="mini-btn danger" onclick="blockHost(\'' + safeHost + '\', \'domain\')">Bloquear</button>' +
+          '<button class="mini-btn warn" onclick="blockHostSite(\'' + safeHost + '\')" title="Bloquear solo en ' + currentSiteLabel + '">En sitio</button>' +
+          '<button class="mini-btn" onclick="blockHost(\'' + safeHost + '\', \'subdomain\')">Subdominios</button>' +
+          '<button class="mini-btn ghost" onclick="unblockHost(\'' + safeHost + '\')">' + (isBlocked ? 'Permitir' : 'Desbloquear') + '</button>' +
+          '</div></div>';
+      }).join('');
+    }
+  }
+
   if (!entries.length) {
-    list.innerHTML = '<div class="bp-empty"><div class="bp-empty-icon">&#128274;</div><div>Sin permisos por dominio</div></div>';
+    list.innerHTML = '<div class="bp-empty"><div class="bp-empty-icon">&#128274;</div><div>Sin reglas guardadas</div><small style="display:block;margin-top:4px;color:var(--muted2);">Usa “Agregar permiso” para crear una.</small></div>';
     return;
   }
-  const relatedHosts = new Set([...discoveredPageHosts, ...discoveredStreamHosts]);
+  const relatedHosts = new Set(allDiscoveredHosts);
   entries.sort((a, b) => {
     const aPriority = (a.domain === activeDomain ? 0 : relatedHosts.has(a.domain) ? 1 : 2);
     const bPriority = (b.domain === activeDomain ? 0 : relatedHosts.has(b.domain) ? 1 : 2);
@@ -4994,13 +6047,14 @@ async function loadPermissionsList() {
   });
 
   list.innerHTML = entries.map(({ domain, raw, rules }) => {
+    const host = normalizeDomainInput(domain) || domain;
     const isActive = !!activeDomain && normalizeDomainInput(domain) === activeDomain;
-    const isRelated = !!domain && relatedHosts.has(domain);
+    const isRelated = !!host && relatedHosts.has(host);
     const items = Object.entries(rules).map(([permission, mode]) => {
       const label = permission === 'camera' ? 'Cámara' : permission === 'microphone' ? 'Micrófono' :
         permission === 'notifications' ? 'Notificaciones' : permission === 'geolocation' ? 'Ubicación' :
         permission === 'images' ? 'Imágenes' : permission === 'audio' ? 'Audio' :
-        permission === 'javascript' ? 'JavaScript' :
+        permission === 'javascript' ? 'JavaScript' : permission === 'site' ? 'Sitio confiable' :
         permission === 'media' ? 'Media (legacy)' : permission;
       const safeDomain = String(raw || domain).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const safePermission = String(permission).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -5015,7 +6069,7 @@ async function loadPermissionsList() {
           </div>
         </div>`;
     }).join('');
-    const safeDomain = String(raw || domain);
+    const safeDomain = String(raw || domain).replace(/'/g, "\\'");
     let domainStatus = '<span class="status-pill muted">Permiso</span>';
     if (isActive) domainStatus = '<span class="status-pill active">Activo</span>';
     else if (isRelated) domainStatus = '<span class="status-pill muted">Relacionado</span>';
@@ -5023,9 +6077,99 @@ async function loadPermissionsList() {
   }).join('');
 }
 
+function choosePermissionDomain(domain) {
+  const input = $('permission-domain');
+  if (!input || !domain) return;
+  input.value = normalizeDomainInput(domain);
+  input.focus();
+  input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function showPermissionHosts() {
+  const details = document.querySelector('#permissions-panel .perm-details');
+  if (details) details.open = true;
+  const hosts = $('detected-hosts-list');
+  if (hosts) hosts.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 async function renderPermissionsList() {
   await loadPermissionsList();
-  await refreshPageCookies();
+  await renderSiteScripts();
+  await refreshPageCookies().catch(() => {
+    const list = $('page-cookies-list');
+    if (list) list.innerHTML = '<div class="bp-empty"><div class="bp-empty-icon">&#127850;</div><div>No se pudieron cargar las cookies ahora</div></div>';
+  });
+  renderCosmeticRules();
+}
+
+async function renderSiteScripts() {
+  const list = $('site-script-list');
+  const count = $('permissions-script-count');
+  if (!list) return;
+  const activeDomain = normalizeDomainInput($('permission-domain')?.value || getCurrentPageDomain());
+  if (!activeDomain) {
+    list.innerHTML = '<div class="bp-empty"><div class="bp-empty-icon">&#128196;</div><div>Sin dominio activo</div></div>';
+    if (count) count.textContent = '0 detectados';
+    return;
+  }
+  const rules = await mc.getResourceRules().catch(() => []);
+  const related = host => host === activeDomain || host.endsWith('.' + activeDomain) || activeDomain.endsWith('.' + host);
+  const scripts = new Map();
+  for (const item of state.blockedScripts) {
+    const url = String(item?.url || '');
+    const host = normalizeDomainInput(url);
+    if (url && related(host)) scripts.set(url, { url, observedBlocked: item.blocked === true });
+  }
+  for (const rule of Array.isArray(rules) ? rules : []) {
+    const url = String(rule?.url || '');
+    const host = normalizeDomainInput(url);
+    if (url && rule.resourceType === 'script' && related(host)) scripts.set(url, { url });
+  }
+  const rows = Array.from(scripts.values()).sort((a, b) => a.url.localeCompare(b.url));
+  if (count) count.textContent = rows.length + ' scripts · ' + new Set(rows.map(row => normalizeDomainInput(row.url))).size + ' orígenes';
+  if (!rows.length) {
+    list.innerHTML = '<div class="bp-empty"><div class="bp-empty-icon">&#128196;</div><div>Aún no se detectaron scripts</div></div>';
+    return;
+  }
+  const ruleMap = new Map((Array.isArray(rules) ? rules : []).filter(rule => rule?.resourceType === 'script').map(rule => [rule.url, rule.action]));
+  const groups = new Map();
+  rows.forEach(row => {
+    const host = normalizeDomainInput(row.url) || 'origen desconocido';
+    if (!groups.has(host)) groups.set(host, []);
+    groups.get(host).push(row);
+  });
+  const sortedGroups = Array.from(groups.entries()).sort((a, b) => {
+    const aActive = a[0] === activeDomain ? 0 : 1;
+    const bActive = b[0] === activeDomain ? 0 : 1;
+    return aActive - bActive || a[0].localeCompare(b[0]);
+  });
+  const renderScriptRow = ({ url, observedBlocked }) => {
+    const action = ruleMap.get(url) || '';
+    const encoded = JSON.stringify(url);
+    const status = action === 'allow' ? 'Permitido' : action === 'block' ? 'Bloqueado' : observedBlocked ? 'Bloqueado por protección' : 'Sin regla';
+    const statusClass = action === 'allow' ? 'allow' : action === 'block' || observedBlocked ? 'deny' : 'muted';
+    return '<div class="perm-script-row">'
+      + '<div><span class="perm-script-url" title="' + escapeHtml(url) + '">' + escapeHtml(url.replace(/^https?:\/\//i, '')) + '</span>'
+      + '<span class="perm-script-host"><span class="perm-state ' + statusClass + '">' + status + '</span></span></div>'
+      + '<div class="perm-script-actions"><button class="mini-btn ' + (action === 'allow' ? 'active-allow' : '') + '" onclick="setScriptRule(' + encoded + ', \'allow\')">Permitir</button>'
+      + '<button class="mini-btn danger ' + (action === 'block' ? 'active-block' : '') + '" onclick="setScriptRule(' + encoded + ', \'block\')">Bloquear</button></div>'
+      + '</div>';
+  };
+  list.innerHTML = sortedGroups.map(([host, group]) => {
+    const isActive = host === activeDomain;
+    const allowed = group.filter(row => ruleMap.get(row.url) === 'allow').length;
+    const blocked = group.filter(row => ruleMap.get(row.url) === 'block' || row.observedBlocked).length;
+    const stateLabel = allowed || blocked ? (allowed + ' permitidos · ' + blocked + ' bloqueados') : 'Sin reglas individuales';
+    return '<details class="perm-script-group"><summary><span class="perm-script-group-icon">&#60;/&#62;</span><span class="perm-script-group-title"><strong>' + escapeHtml(host) + '</strong><span>' + (isActive ? 'Dominio activo · ' : 'Dominio relacionado · ') + stateLabel + '</span></span><span class="perm-script-group-count">' + group.length + ' scripts</span></summary><div class="perm-script-group-body">' + group.map(renderScriptRow).join('') + '</div></details>';
+  }).join('');
+}
+
+async function setScriptRule(url, action) {
+  if (!url || !['allow', 'block'].includes(action)) return;
+  await mc.addResourceRule({ url, action, resourceType: 'script' });
+  await renderSiteScripts();
+  const wv = $('webview-' + state.activeTab);
+  if (wv && typeof wv.reload === 'function') wv.reload();
 }
 
 async function refreshPageCookies() {
@@ -5052,12 +6196,10 @@ async function refreshPageCookies() {
     return 'dominio relacionado';
   };
 
-  const summary = '<div class="bp-empty" style="margin-bottom:8px;padding:6px 8px;min-height:auto;">'
-    + '<div class="bp-empty-icon" style="font-size:12px;">&#127850;</div>'
-    + '<div style="font-size:11px;line-height:1.4;">Mostrando cookies del sitio activo y los dominios relacionados a <strong>' + escapeHtml(domain) + '</strong>. El dominio de la cookie y el dominio de la página se muestran por separado para evitar confusiones.</div>'
-    + '</div>';
-
-  list.innerHTML = summary + cookies.map(cookie => {
+  const summary = '<div class="perm-cookie-summary" style="margin-bottom:8px;">' + cookies.length + ' datos encontrados para <strong>' + escapeHtml(domain) + '</strong>.</div>';
+  const currentCookies = cookies.filter(cookie => normalizeDomainInput(cookie.domain || domain) === domain);
+  const insertedCookies = cookies.filter(cookie => normalizeDomainInput(cookie.domain || domain) !== domain);
+  const renderCookie = cookie => {
     const name = String(cookie.name || 'cookie').replace(/'/g, "\\'");
     const domainName = String(cookie.domain || domain).replace(/'/g, "\\'");
     const path = String(cookie.path || '/').replace(/'/g, "\\'");
@@ -5069,7 +6211,8 @@ async function refreshPageCookies() {
       + '<div class="perm-cookie-main">'
       + '<strong>'+escapeHtml(cookie.name || 'cookie')+'</strong>'
       + '<span>Dominio cookie: '+escapeHtml(cookieHost)+' · Ruta: '+escapeHtml(path)+'</span>'
-      + '<small><span class="cookie-scope">'+escapeHtml(cookieScope)+'</span></small>'
+      + '<small><span class="cookie-scope">'+escapeHtml(cookieScope)+'</span> · '+(cookie.session ? 'sesión' : 'persistente')+'</small>'
+      + '<details class="perm-cookie-more"><summary>Ver datos insertados</summary><div class="perm-cookie-data">Valor: '+escapeHtml(cookie.value || '(vacío)')+'<br>Secure: '+(cookie.secure ? 'sí' : 'no')+' · HttpOnly: '+(cookie.httpOnly ? 'sí' : 'no')+' · SameSite: '+escapeHtml(cookie.sameSite || 'unspecified')+'<br>Expira: '+(cookie.expirationDate ? new Date(cookie.expirationDate * 1000).toLocaleString() : 'al cerrar la sesión')+'</div></details>'
       + '</div>'
       + '<div class="perm-cookie-actions">'
       + '<button class="mini-btn" onclick="allowCookie(' + allowArgs + ')">Permitir</button>'
@@ -5077,7 +6220,9 @@ async function refreshPageCookies() {
       + '<button class="mini-btn danger" onclick="banCookieDomain(' + JSON.stringify(domainName) + ')">Bloquear cookies</button>'
       + '</div>'
       + '</div>';
-  }).join('');
+  };
+  const renderGroup = (title, group) => group.length ? '<div class="perm-cookie-group-title">' + title + ' (' + group.length + ')</div>' + group.map(renderCookie).join('') : '';
+  list.innerHTML = summary + renderGroup('Datos del sitio', currentCookies) + renderGroup('Datos insertados por otros dominios', insertedCookies);
 }
 
 async function allowCookie(domain, name, path) {
@@ -5099,6 +6244,63 @@ async function banCookieDomain(domain) {
   await renderPermissionsList();
 }
 
+async function blockHost(domain, mode = 'domain', site) {
+  const host = normalizeDomainInput(domain);
+  if (!host) return;
+  const pattern = mode === 'subdomain' ? '*.' + host : host;
+  // Verificar si ya existe esta regla (global o misma sitio)
+  const exists = state.customBlocks.some(b => {
+    if (!patternMatchesHost(b, host)) return false;
+    if (site) return state.siteBlockMap[b] === site;
+    return !state.siteBlockMap[b];
+  });
+  if (!exists) {
+    state.customBlocks.push(pattern);
+    if (site) state.siteBlockMap[pattern] = site;
+    await mc.addBlockRule({ pattern, action: 'block', site: site || undefined });
+  }
+  await mc.setCookiePolicyForDomain(host, 'block');
+  if (state.cfg) state.cfg.allowlist = { ...(state.cfg.allowlist || {}), [host]: 'block' };
+  await renderPermissionsList();
+  renderCustomBlocks();
+
+  const wv = $('webview-' + state.activeTab);
+  if (wv && typeof wv.reload === 'function') {
+    wv.reload();
+    const scopeLabel = site ? ' (solo en ' + site + ')' : '';
+    addSidebarLog('blocked', '[HOST] ' + host + ' bloqueado' + scopeLabel + ' — recargando página');
+  }
+}
+
+async function blockHostSite(domain) {
+  const host = normalizeDomainInput(domain);
+  const site = normalizeDomainInput(getCurrentPageDomain());
+  if (!host || !site || host === site) return;
+  await blockHost(domain, 'domain', site);
+}
+
+async function unblockHost(domain) {
+  const host = normalizeDomainInput(domain);
+  if (!host) return;
+  // Remover todas las reglas que coincidan con este host (globales y site-scoped)
+  const toRemove = state.customBlocks.filter(b => patternMatchesHost(b, host));
+  for (const pattern of toRemove) {
+    state.customBlocks = state.customBlocks.filter(v => v !== pattern);
+    delete state.siteBlockMap[pattern];
+    await mc.removeBlockRule(pattern);
+  }
+  await mc.setCookiePolicyForDomain(host, 'allow');
+  if (state.cfg) state.cfg.allowlist = { ...(state.cfg.allowlist || {}), [host]: 'allow' };
+  await renderPermissionsList();
+  renderCustomBlocks();
+
+  const wv = $('webview-' + state.activeTab);
+  if (wv && typeof wv.reload === 'function') {
+    wv.reload();
+    addSidebarLog('allowed', '[HOST] ' + host + ' desbloqueado — recargando página');
+  }
+}
+
 async function addPermissionRule() {
   const domain = normalizeDomainInput($('permission-domain')?.value || getCurrentPageDomain());
   const permission = ($('permission-permission')?.value || 'camera');
@@ -5107,6 +6309,8 @@ async function addPermissionRule() {
   const result = await mc.setSitePermission(domain, permission, mode);
   if (result && result.ok) {
     $('permission-domain').value = domain;
+    const wv = $('webview-' + state.activeTab);
+    if (wv && state.currentPanel === 'webview' && typeof wv.reload === 'function') wv.reload();
     await loadPermissionsList();
   }
 }
@@ -5132,6 +6336,11 @@ async function setDomainBlockLevel(level) {
   const global = $('perm-block-global');
   if (!light || !permanent || !global) return;
 
+  if (level === 'none') {
+    await clearDomainBlock();
+    return;
+  }
+
   // Reset all toggles, then set the selected one
   light.checked = false;
   permanent.checked = false;
@@ -5141,14 +6350,17 @@ async function setDomainBlockLevel(level) {
   else if (level === 'global') global.checked = true;
 
   try {
+    await clearDomainBlock(false);
     if (level === 'light') {
       // Bloqueo leve: solo cookies de sesión para este dominio
       await mc.setCookiePolicyForDomain(domain, 'session');
+      if (state.cfg) state.cfg.allowlist = { ...(state.cfg.allowlist || {}), [domain]: 'session' };
       addSidebarLog('modified', '[PERM] '+domain+' → bloqueo leve (sesión)');
     } else if (level === 'permanent') {
       // Bloqueo permanente: bloquear cookies + regla de bloqueo para el dominio
       await mc.setCookiePolicyForDomain(domain, 'block');
-      if (!state.customBlocks.includes(domain)) {
+      if (state.cfg) state.cfg.allowlist = { ...(state.cfg.allowlist || {}), [domain]: 'block' };
+      if (!state.customBlocks.some(b => patternMatchesHost(b, domain))) {
         state.customBlocks.push(domain);
         await mc.addBlockRule({ pattern: domain, action: 'block' });
         renderCustomBlocks();
@@ -5157,8 +6369,9 @@ async function setDomainBlockLevel(level) {
     } else if (level === 'global') {
       // Bloqueo global: bloquear cookies + regla de bloqueo para dominio y subdominios
       await mc.setCookiePolicyForDomain(domain, 'block');
+      if (state.cfg) state.cfg.allowlist = { ...(state.cfg.allowlist || {}), [domain]: 'block' };
       const wildcard = '*.' + domain;
-      if (!state.customBlocks.includes(wildcard)) {
+      if (!state.customBlocks.some(b => patternMatchesHost(b, wildcard))) {
         state.customBlocks.push(wildcard);
         await mc.addBlockRule({ pattern: wildcard, action: 'block' });
         renderCustomBlocks();
@@ -5168,6 +6381,33 @@ async function setDomainBlockLevel(level) {
     await renderPermissionsList();
   } catch (e) {
     addSidebarLog('blocked', '[PERM] Error al aplicar bloqueo: '+e.message);
+  }
+}
+
+async function clearDomainBlock(refresh = true) {
+  const domain = normalizeDomainInput($('permission-domain')?.value || getCurrentPageDomain());
+  if (!domain) return;
+  const light = $('perm-block-light');
+  const permanent = $('perm-block-permanent');
+  const global = $('perm-block-global');
+  if (light) light.checked = false;
+  if (permanent) permanent.checked = false;
+  if (global) global.checked = false;
+  // Remover todas las reglas que coincidan con este dominio (incluye globales y site-scoped)
+  const toRemove = state.customBlocks.filter(b => patternMatchesHost(b, domain));
+  for (const pattern of toRemove) {
+    state.customBlocks = state.customBlocks.filter(v => v !== pattern);
+    delete state.siteBlockMap[pattern];
+    await mc.removeBlockRule(pattern);
+  }
+  await mc.setCookiePolicyForDomain(domain, 'allow');
+  if (state.cfg) state.cfg.allowlist = { ...(state.cfg.allowlist || {}), [domain]: 'allow' };
+  renderCustomBlocks();
+  if (refresh) {
+    const wv = $('webview-' + state.activeTab);
+    if (wv && state.currentPanel === 'webview' && typeof wv.reload === 'function') wv.reload();
+    await renderPermissionsList();
+    addSidebarLog('allowed', '[PERM] ' + domain + ' → desbloqueado');
   }
 }
 
@@ -5203,5 +6443,7 @@ hookPermissionsRefresh();
 <script src="../modules/ai-assistant/renderer.js"></script>
 <!-- Stream Enhancer module: botones IA en media/streams -->
 <script src="../modules/stream-enhancer/renderer.js"></script>
+<!-- WhatsApp extractor module: extracción de multimedia de WhatsApp Web -->
+<script src="../modules/whatsapp-extractor/renderer.js"></script>
 </body>
 </html>

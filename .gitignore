@@ -27,6 +27,9 @@ validate_renderer_syntax.js
 *.backup
 *.broken-backup
 
+# Comparación temporal con asar portable
+.asar-compare/
+
 # Sistema
 .DS_Store
 Thumbs.db

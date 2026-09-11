@@ -11,11 +11,32 @@ function nextId() { return ++ruleIdSeq; }
 function parseRule(line) {
   line = line.trim();
   if (!line || line.startsWith('!') || line.startsWith('[')) return null;
-  if (line.startsWith('#')) return null;
-  const ci = line.indexOf('##');
-  if (ci >= 0) {
-    return { id: nextId(), type: T_COSMETIC, raw: line, domain: ci > 0 ? line.substring(0, ci) : '', selector: line.substring(ci + 2), exception: line.includes('#@#') };
+
+  // Element hiding exception: domain#@#selector or #@#selector
+  const exceptionIdx = line.indexOf('#@#');
+  if (exceptionIdx >= 0) {
+    const selector = line.substring(exceptionIdx + 3).trim();
+    if (!selector || selector.startsWith('+js')) return null;
+    return {
+      id: nextId(), type: T_COSMETIC, raw: line,
+      domain: line.substring(0, exceptionIdx).trim().toLowerCase(),
+      selector, exception: true
+    };
   }
+
+  // Element hiding: domain##selector or ##selector (antes se descartaban los ## globales)
+  const ci = line.indexOf('##');
+  if (ci >= 0 && !line.includes('#$#')) {
+    const selector = line.substring(ci + 2).trim();
+    if (!selector || selector.startsWith('+js')) return null;
+    return {
+      id: nextId(), type: T_COSMETIC, raw: line,
+      domain: line.substring(0, ci).trim().toLowerCase(),
+      selector, exception: false
+    };
+  }
+
+  if (line.startsWith('#')) return null;
   let isException = false;
   let rule = line;
   if (rule.startsWith('@@')) { isException = true; rule = rule.substring(2); }
@@ -228,24 +249,80 @@ class Engine {
     this._cache.clear();
   }
 
-  getCosmetics(url) {
+  getCosmetics(url, opts = {}) {
     try {
       const urlObj = new URL(url);
       const hostname = urlObj.hostname.toLowerCase();
-      const styles = [];
+      const maxDomain = Number(opts.maxDomain) > 0 ? Number(opts.maxDomain) : 2500;
+      const maxGeneric = Number(opts.maxGeneric) > 0 ? Number(opts.maxGeneric) : 900;
+      const domainSpecific = [];
+      const generic = [];
+      const exceptions = new Set();
+
       for (const rule of this.cosmeticRules) {
-        if (!rule.domain || matchDomain(hostname, rule.domain)) {
-          if (!rule.exception) styles.push(rule.selector);
+        const domain = String(rule.domain || '').toLowerCase();
+        let applies = !domain;
+        if (domain) {
+          const parts = domain.split(',').map(d => d.trim()).filter(Boolean);
+          let included = false;
+          let excluded = false;
+          for (const part of parts) {
+            if (part.startsWith('~')) {
+              if (matchDomain(hostname, part.slice(1))) excluded = true;
+            } else if (matchDomain(hostname, part)) {
+              included = true;
+            }
+          }
+          const hasPositive = parts.some(p => !p.startsWith('~'));
+          applies = !excluded && (included || !hasPositive);
         }
+        if (!applies) continue;
+        if (rule.exception) {
+          exceptions.add(rule.selector);
+          continue;
+        }
+        if (domain) domainSpecific.push(rule.selector);
+        else generic.push(rule.selector);
       }
-      return styles;
+
+      const selected = [];
+      const seen = new Set();
+      const pushUnique = (selector, limit) => {
+        if (selected.length >= limit) return false;
+        if (!selector || exceptions.has(selector) || seen.has(selector)) return true;
+        seen.add(selector);
+        selected.push(selector);
+        return true;
+      };
+      for (const selector of domainSpecific) {
+        if (!pushUnique(selector, maxDomain)) break;
+      }
+      const domainCount = selected.length;
+      for (const selector of generic) {
+        if (!pushUnique(selector, domainCount + maxGeneric)) break;
+      }
+      return selected;
     } catch { return []; }
   }
 
-  serialize() { return JSON.stringify({ rules: this.rules, ruleCount: this.ruleCount }); }
+  buildCosmeticCss(url, opts = {}) {
+    const selectors = this.getCosmetics(url, opts);
+    if (!selectors.length) return { selectors, css: '' };
+    const chunks = [];
+    for (let i = 0; i < selectors.length; i += 40) {
+      chunks.push(selectors.slice(i, i + 40).join(',\n'));
+    }
+    const css = chunks
+      .map(chunk => `${chunk}{display:none!important;visibility:hidden!important;height:0!important;max-height:0!important;overflow:hidden!important;}`)
+      .join('\n');
+    return { selectors, css };
+  }
+
+  serialize() { return JSON.stringify({ version: 2, rules: this.rules, ruleCount: this.ruleCount }); }
 
   static deserialize(json) {
     const data = JSON.parse(json);
+    if (data.version !== 2) throw new Error('stale-engine-cache');
     const engine = new Engine();
     const serializedRules = data.rules || [];
     for (const serializedRule of serializedRules) {

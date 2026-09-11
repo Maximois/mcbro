@@ -57,6 +57,13 @@ function getPageCache(url) { return PAGE_CACHE[url]; }
 let _abortController = null;
 function abortAI() { if (_abortController) { try { _abortController.abort(); } catch {} _abortController = null; } }
 
+// Convierte una data URL (data:mime;base64,...) a { mimeType, data }
+function parseDataUrl(url) {
+  const m = /^data:([^;,]+);base64,(.*)$/s.exec(url || '');
+  if (m) return { mimeType: m[1], data: m[2] };
+  return { mimeType: 'image/png', data: url || '' };
+}
+
 const PROVIDERS = {
   ollama: {
     name: 'Ollama (local)',
@@ -64,7 +71,18 @@ const PROVIDERS = {
       const res = await fetch(`${url || 'http://localhost:11434'}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: model || 'phi3:mini', messages, stream: false }),
+        body: JSON.stringify({
+          model: model || 'phi3:mini',
+          messages: messages.map(m => {
+            if (Array.isArray(m.content)) {
+              const text = m.content.filter(p => p.type === 'text').map(p => p.text).join('\n');
+              const images = m.content.filter(p => p.type === 'image_url').map(p => parseDataUrl(p.image_url?.url || '').data);
+              return { role: m.role, content: text, images };
+            }
+            return m;
+          }),
+          stream: false
+        }),
         signal
       });
       const data = await res.json();
@@ -80,7 +98,16 @@ const PROVIDERS = {
       const sysMsg = messages.find(m => m.role === 'system');
       const parts = messages.filter(m => m.role !== 'system').map(m => ({
         role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
+        parts: Array.isArray(m.content)
+          ? m.content.map(p => {
+              if (p.type === 'text') return { text: p.text };
+              if (p.type === 'image_url') {
+                const { mimeType, data } = parseDataUrl(p.image_url?.url || '');
+                return { inlineData: { mimeType, data } };
+              }
+              return { text: '' };
+            }).filter(p => p.text !== undefined || p.inlineData)
+          : [{ text: m.content }]
       }));
       if (sysMsg) parts.unshift({ role: 'user', parts: [{ text: sysMsg.content }] });
 
@@ -200,28 +227,34 @@ function setup(ctx) {
   ipcMain.handle('ai:chat', async (_e, opts) => {
     _abortController = new AbortController();
     try {
-      const { messages, system } = opts || {};
+      const { messages, system, provider, key, model, url } = opts || {};
       if (!messages || !messages.length) return { error: 'Sin mensajes' };
 
-      const prov = PROVIDERS[_aiCfg.provider];
-      if (!prov) return { error: `Proveedor "${_aiCfg.provider}" no soportado` };
+      const provName = provider || _aiCfg.provider;
+      const prov = PROVIDERS[provName];
+      if (!prov) return { error: `Proveedor "${provName}" no soportado` };
 
       const full = system
         ? [{ role: 'system', content: system }, ...messages]
         : messages;
 
+      const k = key || (provName === 'gemini' ? _aiCfg.geminiKey
+          : provName === 'groq' ? _aiCfg.groqKey
+          : provName === 'opencode' ? _aiCfg.opencodeKey
+          : _aiCfg.openaiKey);
+      if (provName !== 'ollama' && !k) {
+        return { error: `API key de ${prov.name} no configurada — agregala en ⚙ Configuración` };
+      }
+
       const result = await prov.chat({
         signal: _abortController.signal,
-        url: _aiCfg.ollamaUrl,
-        model: _aiCfg.provider === 'ollama' ? _aiCfg.ollamaModel
-             : _aiCfg.provider === 'gemini' ? _aiCfg.geminiModel
-             : _aiCfg.provider === 'groq' ? _aiCfg.groqModel
-             : _aiCfg.provider === 'opencode' ? _aiCfg.opencodeModel
-             : _aiCfg.openaiModel,
-        key: _aiCfg.provider === 'gemini' ? _aiCfg.geminiKey
-            : _aiCfg.provider === 'groq' ? _aiCfg.groqKey
-            : _aiCfg.provider === 'opencode' ? _aiCfg.opencodeKey
-            : _aiCfg.openaiKey,
+        url: url || _aiCfg.ollamaUrl,
+        model: model || (provName === 'ollama' ? _aiCfg.ollamaModel
+             : provName === 'gemini' ? _aiCfg.geminiModel
+             : provName === 'groq' ? _aiCfg.groqModel
+             : provName === 'opencode' ? _aiCfg.opencodeModel
+             : _aiCfg.openaiModel),
+        key: k,
         messages: full
       });
       // Detectar respuesta multimodal (JSON con type: 'multimodal')
@@ -381,50 +414,51 @@ function setup(ctx) {
     return { ok: true, frameCount: count };
   });
 
-  ipcMain.handle('ai:models', async () => {
+  ipcMain.handle('ai:models', async (_e, opts) => {
     try {
-      const prov = _aiCfg.provider;
+      const { provider, key, url } = opts || {};
+      const prov = provider || _aiCfg.provider;
       if (prov === 'opencode') {
-        const key = _aiCfg.opencodeKey;
-        if (!key) return { error: 'API key de OpenCode Zen no configurada' };
+        const k = key || _aiCfg.opencodeKey;
+        if (!k) return { error: 'API key de OpenCode Zen no configurada' };
         const res = await fetch('https://opencode.ai/zen/v1/models', {
-          headers: { 'Authorization': `Bearer ${key}` }
+          headers: { 'Authorization': `Bearer ${k}` }
         });
         if (!res.ok) return { error: `HTTP ${res.status}: ${res.statusText}` };
         const data = await res.json();
         return { models: Array.isArray(data) ? data : data.data || [] };
       }
       if (prov === 'groq') {
-        const key = _aiCfg.groqKey;
-        if (!key) return { error: 'API key de Groq no configurada' };
+        const k = key || _aiCfg.groqKey;
+        if (!k) return { error: 'API key de Groq no configurada' };
         const res = await fetch('https://api.groq.com/openai/v1/models', {
-          headers: { 'Authorization': `Bearer ${key}` }
+          headers: { 'Authorization': `Bearer ${k}` }
         });
         if (!res.ok) return { error: `HTTP ${res.status}: ${res.statusText}` };
         const data = await res.json();
         return { models: (data.data || []).map(m => ({ id: m.id, owned_by: m.owned_by })) };
       }
       if (prov === 'ollama') {
-        const url = _aiCfg.ollamaUrl || 'http://localhost:11434';
-        const res = await fetch(`${url}/api/tags`);
+        const u = url || _aiCfg.ollamaUrl || 'http://localhost:11434';
+        const res = await fetch(`${u}/api/tags`);
         if (!res.ok) return { error: `HTTP ${res.status}: ${res.statusText}` };
         const data = await res.json();
         return { models: (data.models || []).map(m => ({ id: m.name })) };
       }
       if (prov === 'openai') {
-        const key = _aiCfg.openaiKey;
-        if (!key) return { error: 'API key de OpenAI no configurada' };
+        const k = key || _aiCfg.openaiKey;
+        if (!k) return { error: 'API key de OpenAI no configurada' };
         const res = await fetch('https://api.openai.com/v1/models', {
-          headers: { 'Authorization': `Bearer ${key}` }
+          headers: { 'Authorization': `Bearer ${k}` }
         });
         if (!res.ok) return { error: `HTTP ${res.status}: ${res.statusText}` };
         const data = await res.json();
         return { models: (data.data || []).filter(m => m.id.startsWith('gpt-') || m.id.startsWith('o')).map(m => ({ id: m.id })) };
       }
       if (prov === 'gemini') {
-        const key = _aiCfg.geminiKey;
-        if (!key) return { error: 'API key de Gemini no configurada' };
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+        const k = key || _aiCfg.geminiKey;
+        if (!k) return { error: 'API key de Gemini no configurada' };
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${k}`);
         if (!res.ok) return { error: `HTTP ${res.status}: ${res.statusText}` };
         const data = await res.json();
         return { models: (data.models || []).filter(m => m.supportedGenerationMethods?.includes('generateContent')).map(m => ({ id: m.name.replace('models/', '') })) };
