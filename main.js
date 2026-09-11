@@ -157,14 +157,30 @@ function resolvePermissionDecision(host, permissionKey) {
   return false;
 }
 
-function setupSessionPermissionHandlers(sess) {
-  const decide = (host, permission) => resolvePermissionDecision(host, String(permission || '').trim());
-  sess.setPermissionRequestHandler((webContents, permission, callback) => {
-    callback(decide(normalizeSiteHost(webContents?.getURL?.() || ''), permission));
+// Electron entrega los pedidos de camara/microfono bajo un unico tipo
+// 'media' (no 'camera' / 'microphone'); para distinguirlos hay que mirar
+// details.mediaTypes ('video' | 'audio'). Esta funcion traduce ese pedido
+// a las claves granulares que sí guarda la UI (camera / microphone).
+function resolveMediaPermissionDecision(host, mediaTypes) {
+  const types = Array.isArray(mediaTypes) && mediaTypes.length ? mediaTypes : ['video', 'audio'];
+  return types.every(type => {
+    const key = type === 'audio' ? 'microphone' : type === 'video' ? 'camera' : 'media';
+    return resolvePermissionDecision(host, key);
   });
-  sess.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+}
+
+function setupSessionPermissionHandlers(sess) {
+  const decide = (host, permission, details) => {
+    const key = String(permission || '').trim();
+    if (key === 'media') return resolveMediaPermissionDecision(host, details?.mediaTypes);
+    return resolvePermissionDecision(host, key);
+  };
+  sess.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    callback(decide(normalizeSiteHost(webContents?.getURL?.() || ''), permission, details));
+  });
+  sess.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
     const host = normalizeSiteHost(requestingOrigin || webContents?.getURL?.() || '');
-    return decide(host, permission);
+    return decide(host, permission, details);
   });
 }
 
@@ -412,6 +428,104 @@ function applyDoH() {
   } catch (e) { console.error('[DoH]', e.message); }
 }
 
+// ── Cookie guard para document.cookie (vía CDP) ──────────────────────────
+// onHeadersReceived (más abajo) solo ve cookies puestas por el header HTTP
+// Set-Cookie. Las que un sitio setea desde su propio JS (document.cookie =
+// "...") nunca generan esa respuesta de red, así que la política de
+// bloqueo/sesión no se entera.
+//
+// Un Object.defineProperty(document, 'cookie', ...) hecho desde preload.js
+// NO sirve acá: con contextIsolation:true (como está configurada esta app),
+// el "document" que ve el preload es un wrapper de un mundo aislado,
+// distinto del que ve el script de la propia página — el override quedaría
+// invisible para ella.
+//
+// La forma confiable de intervenir el mundo principal de cada página, antes
+// de que corra cualquier script propio, es CDP: Page.addScriptToEvaluateOnNewDocument
+// (la misma técnica que usan Puppeteer/Playwright). Se re-registra cada vez
+// que cambia la política de cookies para que quede al día.
+const cookieGuardIds = new WeakMap(); // webContents -> identifier del script CDP registrado
+
+function buildCookieGuardScript() {
+  const policySnapshot = { cookiePolicy: CFG.cookiePolicy, allowlist: CFG.allowlist || {} };
+  return `(() => {
+    try {
+      const POLICY = ${JSON.stringify(policySnapshot)};
+      const norm = (h) => String(h || '').replace(/^\\.+/, '').replace(/^www\\./i, '').toLowerCase();
+      const policyFor = (host) => {
+        const h = norm(host);
+        if (!h) return null;
+        if (POLICY.allowlist[h]) return POLICY.allowlist[h];
+        const keys = Object.keys(POLICY.allowlist)
+          .map(norm)
+          .filter(k => k && (h === k || h.endsWith('.' + k)))
+          .sort((a, b) => b.length - a.length);
+        return keys.length ? POLICY.allowlist[keys[0]] : null;
+      };
+      const rule = policyFor(location.hostname);
+      const effective = rule || (POLICY.cookiePolicy === 'session' ? 'session' : 'allow');
+      if (effective === 'allow') return; // sin override: comportamiento nativo intacto
+      const desc = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie');
+      if (!desc || !desc.get || !desc.set) return;
+      Object.defineProperty(document, 'cookie', {
+        configurable: true,
+        enumerable: true,
+        get() { return desc.get.call(document); },
+        set(value) {
+          if (effective === 'block') return; // no-op: la cookie nunca llega a escribirse
+          const stripped = String(value)
+            .replace(/;\\s*expires=[^;]*/gi, '')
+            .replace(/;\\s*max-age=[^;]*/gi, '');
+          desc.set.call(document, stripped);
+        }
+      });
+    } catch (e) { /* fail-open: nunca romper la página por esto */ }
+  })();`;
+}
+
+async function registerCookieGuardScript(wc) {
+  if (!wc || wc.isDestroyed() || !wc.debugger.isAttached()) return;
+  try {
+    const prevId = cookieGuardIds.get(wc);
+    if (prevId != null) {
+      await wc.debugger.sendCommand('Page.removeScriptToEvaluateOnNewDocument', { identifier: prevId }).catch(() => {});
+    }
+    const { identifier } = await wc.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', {
+      source: buildCookieGuardScript()
+    });
+    cookieGuardIds.set(wc, identifier);
+  } catch (e) { console.error('[cookie-guard] registro fallido', e.message); }
+}
+
+function attachCookieGuard(wc) {
+  if (!wc || wc.isDestroyed() || wc.debugger.isAttached()) return;
+  try {
+    wc.debugger.attach('1.3');
+  } catch (e) {
+    // Puede fallar si algo más (p.ej. DevTools) ya está debuggeando este target.
+    console.error('[cookie-guard] attach fallido', e.message);
+    return;
+  }
+  wc.debugger.sendCommand('Page.enable').catch(() => {});
+  registerCookieGuardScript(wc);
+  wc.debugger.on('detach', () => cookieGuardIds.delete(wc));
+  wc.once('destroyed', () => {
+    try { if (wc.debugger.isAttached()) wc.debugger.detach(); } catch {}
+    cookieGuardIds.delete(wc);
+  });
+}
+
+// Se llama cada vez que cambia CFG.cookiePolicy o el allowlist por dominio,
+// para que las pestañas ya abiertas apliquen la política nueva desde su
+// próxima navegación (no reescribe cookies ya seteadas en la página actual).
+function refreshCookieGuards() {
+  try {
+    for (const wc of require('electron').webContents.getAllWebContents()) {
+      if (!wc.isDestroyed() && wc.getType() === 'webview') registerCookieGuardScript(wc);
+    }
+  } catch (e) { console.error('[cookie-guard] refresh fallido', e.message); }
+}
+
 function applyCookiePolicy(policy) {
   if (policy === 'session') {
     try {
@@ -627,6 +741,7 @@ ipcMain.handle('update-cfg', (e, patch) => {
   }
   if (patch.cookiePolicy !== undefined) {
     applyCookiePolicy(CFG.cookiePolicy);
+    refreshCookieGuards();
   }
   saveCfg();
   return cfgSnapshot();
@@ -1477,13 +1592,14 @@ ipcMain.handle('clear-all', async () => {
     return { ok: true };
   } catch (e) { return { error: e.message }; }
 });
-ipcMain.handle('add-cookie-rule', (e, { domain, policy }) => { CFG.allowlist[domain] = policy; saveCfg(); return { ok: true }; });
-ipcMain.handle('remove-cookie-rule', (e, { domain }) => { delete CFG.allowlist[domain]; saveCfg(); return { ok: true }; });
+ipcMain.handle('add-cookie-rule', (e, { domain, policy }) => { CFG.allowlist[domain] = policy; saveCfg(); refreshCookieGuards(); return { ok: true }; });
+ipcMain.handle('remove-cookie-rule', (e, { domain }) => { delete CFG.allowlist[domain]; saveCfg(); refreshCookieGuards(); return { ok: true }; });
 ipcMain.handle('set-cookie-policy-for-domain', (e, { domain, policy }) => {
   const host = String(domain || '').trim().replace(/^\.+/, '').toLowerCase();
   if (!host) return { ok: false, error: 'dominio obligatorio' };
   CFG.allowlist[host] = policy;
   saveCfg();
+  refreshCookieGuards();
   return { ok: true, domain: host, policy };
 });
 ipcMain.handle('get-site-cookies', async (e, { domain }) => {
@@ -2549,6 +2665,10 @@ if (!gotTheLock) {
   });
 }
 
+app.on('web-contents-created', (_event, contents) => {
+  if (contents.getType() === 'webview') attachCookieGuard(contents);
+});
+
 app.whenReady().then(() => {
   if (!gotTheLock) return;
   createWindow();
@@ -2694,12 +2814,15 @@ app.whenReady().then(() => {
             }
             STATS.cookiesBlocked += Array.isArray(setCookie) ? setCookie.length : 1;
           }
-          if (thirdParty || allowPolicy === 'session' || (CFG.cookiePolicy === 'session' && allowPolicy !== 'allow')) {
+          if (blocked) {
+            // 'block' explicito (o 3ra parte con aislamiento) → el header
+            // Set-Cookie no debe llegar nunca al navegador.
+            delete responseHeaders[cookieKey];
+          } else if (allowPolicy === 'session' || (CFG.cookiePolicy === 'session' && allowPolicy !== 'allow')) {
             const sessionCookies = (value) => String(value)
               .replace(/;\s*expires=[^;]*/gi, '')
               .replace(/;\s*max-age=[^;]*/gi, '');
-            if (thirdParty) delete responseHeaders[cookieKey];
-            else responseHeaders[cookieKey] = Array.isArray(setCookie)
+            responseHeaders[cookieKey] = Array.isArray(setCookie)
               ? setCookie.map(sessionCookies)
               : sessionCookies(setCookie);
           }
@@ -2710,6 +2833,18 @@ app.whenReady().then(() => {
     cb({});
   });
   sess.cookies.on('changed', (event, cookie, removed, cause) => {
+    // Mitigacion parcial: onHeadersReceived solo ve cookies puestas via el
+    // header HTTP Set-Cookie. Las que un sitio setea por JS (document.cookie)
+    // no pasan por ahi y saltean la politica de bloqueo/sesion. No podemos
+    // impedir que existan por un instante, pero sí borrarlas apenas Chromium
+    // las confirma, para que la política de bloqueo se sostenga igual.
+    if (!removed && cause === 'explicit') {
+      const domain = String(cookie.domain || '').replace(/^\./, '').toLowerCase();
+      const policy = getAllowlistPolicyForHost(domain);
+      if (policy === 'block' && !isAuthDomain(domain)) {
+        sess.cookies.remove(cookieRemovalUrl(cookie, domain), cookie.name).catch(() => {});
+      }
+    }
     if (!mainWin || mainWin.isDestroyed()) return;
     const action = removed ? 'removed' : 'allowed';
     const summary = `${cookie.name || 'cookie'}=${cookie.value || ''}`.substring(0, 160);
