@@ -25,12 +25,14 @@
     "files": [
       "main.js",
       "preload.js",
+      "lib/**/*",
       "src/**/*",
       "modules/**/*",
       "preload/**/*",
       "assets/**/*",
       "favicon/**/*",
-      "package.json"
+      "package.json",
+      "package-lock.json"
     ],
     "win": {
       "target": [
@@ -38,6 +40,34 @@
       ],
       "icon": "assets/icon.png"
     },
+    "protocols": [
+      {
+        "name": "MC Browser HTTP",
+        "schemes": [
+          "http"
+        ],
+        "role": "Viewer"
+      },
+      {
+        "name": "MC Browser HTTPS",
+        "schemes": [
+          "https"
+        ],
+        "role": "Viewer"
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "html",
+        "description": "HTML Web Page",
+        "role": "Viewer"
+      },
+      {
+        "ext": "htm",
+        "description": "HTML Web Page",
+        "role": "Viewer"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

@@ -57,6 +57,12 @@ describe('resolvePermissionDecision', () => {
       assert.equal(resolvePermissionDecision('example.com', key, cfg), false, key);
     }
   });
+  test('clipboard-read/clipboard-write/clipboard-sanitized-write deben pasar por la política de permisos del panel de IA web', () => {
+    const cfg = { permissions: {} };
+    assert.equal(resolvePermissionDecision('example.com', 'clipboard-read', cfg), true);
+    assert.equal(resolvePermissionDecision('example.com', 'clipboard-write', cfg), true);
+    assert.equal(resolvePermissionDecision('example.com', 'clipboard-sanitized-write', cfg), true);
+  });
 });
 
 // ── resolveMediaPermissionDecision: el bug de cámara/micrófono ───────────

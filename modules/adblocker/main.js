@@ -60,7 +60,7 @@ const AD_PATH_TOKENS = [
   'adsbygoogle', 'pagead', 'prebid', 'adservice', 'adsystem',
   'doubleclick', 'googlesyndication', 'googleadservices'
 ];
-const TRACKER_TOKENS = /analytics|tracking|tracker|telemetry|pixel|beacon|scorecardresearch|quantserve|demdex|hotjar|clarity\.ms|connect\.facebook/i;
+const TRACKER_TOKENS = /analytics|tracking|tracker|telemetry|pixel|beacon|scorecardresearch|quantserve|demdex|hotjar|clarity\.ms/i;
 
 function isAggressiveAdNavigation(rawUrl) {
   try {
@@ -111,8 +111,12 @@ const TRUSTED_CROSS_ORIGINS = {
   'twitter.com': ['x.com', 'google.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com', 'twimg.com', 'api.x.com', 'oauth.x.com'],
   'x.ai': ['x.com', 'twitter.com', 'google.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com', 'accounts.x.ai', 'oauth.x.ai', 'auth.x.ai'],
   'grok.com': ['x.com', 'twitter.com', 'google.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com', 'x.ai', 'accounts.x.ai'],
+  'perplexity.ai': ['pplx-next-static-public.perplexity.ai', 'pplx-next-public.perplexity.ai', 'www.perplexity.ai', 'api.perplexity.ai'],
+  'deepseek.com': ['api.deepseek.com', 'www.deepseek.com'],
   'whatsapp.com': ['whatsapp.net', 'whatsapp.org', 'fbcdn.net'],
-  'whatsapp.net': ['whatsapp.com', 'whatsapp.org', 'fbcdn.net']
+  'whatsapp.net': ['whatsapp.com', 'whatsapp.org', 'fbcdn.net'],
+  'facebook.com': ['instagram.com', 'facebook.net', 'connect.facebook.net', 'fbcdn.net', 'accountscenter.facebook.com', 'graph.facebook.com', 'api.instagram.com', 'cdninstagram.com'],
+  'instagram.com': ['facebook.com', 'facebook.net', 'connect.facebook.net', 'fbcdn.net', 'accountscenter.facebook.com', 'graph.facebook.com', 'api.instagram.com', 'cdninstagram.com']
 };
 
 // En Electron 30: subFrame = iframe/frame, object = embed/object.

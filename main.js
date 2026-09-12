@@ -13,6 +13,21 @@ const Permissions = require('./lib/permissions');
 const DATA_DIR = app.isPackaged ? 'MC Browser' : 'mc-browser-v2-dev';
 app.setPath('userData', path.join(app.getPath('appData'), DATA_DIR));
 
+function registerBrowserSystemProtocols() {
+  try {
+    // En Windows: registrar http/https como protocolos de navegación y dejar
+    // la app visible en el selector de navegador predeterminado.
+    if (process.platform === 'win32' && app.isPackaged) {
+      app.setAsDefaultProtocolClient('http');
+      app.setAsDefaultProtocolClient('https');
+    }
+  } catch (e) {
+    console.warn('[BrowserRegistration]', e && e.message ? e.message : String(e));
+  }
+}
+
+registerBrowserSystemProtocols();
+
 function readGpuAccelerationPref() {
   try {
     const cfgPath = path.join(app.getPath('userData'), 'cfg.json');
@@ -39,6 +54,12 @@ const HLS_RE   = /\.m3u8(\?|#|$)/i;
 const SKIP_EXT_RE = /\.(html?|php|aspx?|jsp|json|xml|css|js|svg|woff2?|ttf|eot)(\?|#|$)/i;
 
 let mainWin;
+
+// WebContents con una navegación EXPLÍCITA del usuario en curso (barra de
+// URL, marcador, historial, atajo, clic en enlace). Mientras una webContents
+// está en este set, `will-redirect` NO bloquea sus redirecciones: las reglas
+// anti-redirección solo aplican a auto-redirecciones iniciadas por la página.
+const userNavWebContents = new Set();
 
 function normalizeSiteHost(url) {
   return Permissions.normalizeSiteHost(url);
@@ -309,12 +330,22 @@ const AUTH_DOMAINS = [
   'login.skype.com', 'graph.windows.net', 'appleid.apple.com', 'idmsa.apple.com',
   'auth0.com', 'github.com', 'api.github.com', 'copilot.microsoft.com',
   'api.copilot.microsoft.com', 'chatgpt.com', 'auth.openai.com', 'api.openai.com',
-  'claude.ai', 'api.anthropic.com', 'grok.com', 'www.grok.com', 'auth.grok.com',
-  'api.grok.com', 'x.com', 'www.x.com', 'twitter.com', 'www.twitter.com',
+  'openai.com', 'www.openai.com', 'chat.openai.com',
+  'claude.ai', 'api.anthropic.com', 'anthropic.com', 'www.anthropic.com',
+  'grok.com', 'www.grok.com', 'auth.grok.com', 'api.grok.com',
+  'gemini.google.com', 'aistudio.google.com',
+  'deepseek.com', 'www.deepseek.com', 'api.deepseek.com',
+  'perplexity.ai', 'www.perplexity.ai', 'api.perplexity.ai',
+  'pplx-next-static-public.perplexity.ai', 'pplx-next-public.perplexity.ai',
+  'x.com', 'www.x.com', 'twitter.com', 'www.twitter.com',
   'api.x.com', 'oauth.x.com', 'auth.x.com', 'mobile.x.com', 'support.x.com',
   'x.ai', 'www.x.ai', 'accounts.x.ai', 'api.x.ai', 'oauth.x.ai', 'auth.x.ai', 'login.x.ai',
   'api.twitter.com', 'mobile.twitter.com', 'auth.twitter.com', 'id.twitter.com',
-  'abs.twimg.com', 'pbs.twimg.com', 'video.twimg.com', 'twimg.com'
+  'abs.twimg.com', 'pbs.twimg.com', 'video.twimg.com', 'twimg.com',
+  // Meta: SOLO subdominios de auth/asociación (NO facebook.com/fbcdn.net
+  // → el adblock sigue activo en el contenido/anuncios de Facebook/Instagram)
+  'accountscenter.facebook.com', 'connect.facebook.net', 'graph.facebook.com',
+  'api.instagram.com', 'i.instagram.com'
 ];
 
 function isAuthDomain(host) {
@@ -443,6 +474,7 @@ async function registerCookieGuardScript(wc) {
 // así que no necesitan las reglas estrictas de cookies/bloqueo pensadas para
 // pestañas de navegación libre — pero sí conviene que hereden proxy/permisos.
 const WEBCHAT_PARTITION = 'persist:mc-webchat';
+const WHATSAPP_PARTITION = 'persist:mc-whatsapp';
 
 function isMainBrowsingSession(wc) {
   try { return wc?.session === session.fromPartition('persist:mc'); } catch { return false; }
@@ -461,6 +493,34 @@ function setupWebchatSession() {
       .catch(e => console.error('[PROXY][webchat]', e.message));
   }
   return wchSess;
+}
+
+function setupWhatsappSession() {
+  const waSess = session.fromPartition(WHATSAPP_PARTITION);
+  setupSessionPermissionHandlers(waSess);
+  if (CFG.proxyEnabled && CFG.proxyHost) {
+    waSess.setProxy({ proxyRules: `${CFG.proxyType || 'socks5'}://${CFG.proxyHost}:${CFG.proxyPort || 1080}` })
+      .catch(e => console.error('[PROXY][whatsapp]', e.message));
+  }
+  waSess.webRequest.onBeforeSendHeaders({ urls: ['https://web.whatsapp.com/*', 'https://*.whatsapp.com/*', 'https://*.whatsapp.net/*'] }, (d, cb) => {
+    if (!/^https?:\/\//i.test(d.url || '')) return cb({ requestHeaders: d.requestHeaders });
+    const headers = { ...d.requestHeaders };
+    const host = new URL(d.url).hostname.toLowerCase();
+    if (host === 'web.whatsapp.com' || host.endsWith('.whatsapp.com') || host.endsWith('.whatsapp.net')) {
+      const setHdr = (name, value) => {
+        for (const k of Object.keys(headers)) {
+          if (k.toLowerCase() === name.toLowerCase()) delete headers[k];
+        }
+        headers[name] = value;
+      };
+      setHdr('sec-ch-ua', '"Chromium";v="140", "Google Chrome";v="140", "Not=A?Brand";v="99"');
+      setHdr('sec-ch-ua-full-version', '"140.0.0.0"');
+      setHdr('sec-ch-ua-platform', '"Windows"');
+      setHdr('sec-ch-ua-mobile', '?0');
+    }
+    cb({ requestHeaders: headers });
+  });
+  return waSess;
 }
 
 function attachCookieGuard(wc) {
@@ -522,6 +582,8 @@ let CFG = {
   cookiePolicy: 'allow-all', dohEnabled: false, dohServer: 'cloudflare',
   proxyEnabled: false, proxyType: 'socks5', proxyHost: '', proxyPort: 1080,
   mediaDetect: false, httpsOnly: true,
+  ntSearchSize: 'x1', ntIconSize: 'x1', ntLogoSize: 'x1', ntStatsSize: 'x1',
+  uiTextSize: 'x1',
   currentUA: 'win-chrome', rotateUA: false,
   language: '', refererPolicy: '',
   downloadDir: '', allowlist: {}, customRules: [], permissions: {}, resourceRules: [], userCosmeticRules: [],
@@ -685,6 +747,12 @@ ipcMain.handle('webview:destroy', (_event, webContentsId) => {
     return { ok: false, error: error.message };
   }
 });
+// El renderer avisa que el usuario inició una navegación explícita en un
+// webview. Mientras dure, `will-redirect` no bloquea sus redirecciones.
+ipcMain.on('nav-intent', (_event, opts) => {
+  const wcId = Number(opts && opts.wcId);
+  if (Number.isInteger(wcId) && wcId > 0) userNavWebContents.add(wcId);
+});
 function cfgSnapshot() {
   return {
     ...CFG,
@@ -724,6 +792,7 @@ ipcMain.handle('proxy:set', async (_e, settings = {}) => {
     const proxyRules = proxyEnabled ? `${proxyType}://${proxyHost}:${proxyPort}` : '';
     await session.fromPartition('persist:mc').setProxy(proxyEnabled ? { proxyRules } : { mode: 'direct' });
     await session.fromPartition(WEBCHAT_PARTITION).setProxy(proxyEnabled ? { proxyRules } : { mode: 'direct' }).catch(() => {});
+    await session.fromPartition(WHATSAPP_PARTITION).setProxy(proxyEnabled ? { proxyRules } : { mode: 'direct' }).catch(() => {});
     Object.assign(CFG, { proxyEnabled, proxyType, proxyHost, proxyPort });
     saveCfg();
     return { ok: true, enabled: proxyEnabled, type: proxyType, host: proxyHost, port: proxyPort };
@@ -734,7 +803,7 @@ let STATS = { pagesLoaded: 0, totalRequests: 0, detectedAds: 0, detectedTrackers
 const MEDIA_URLS = [];
 const REQ_LOG_TYPES = new Set(['main_frame', 'mainFrame', 'xmlhttprequest', 'fetch', 'websocket', 'manifest', 'script']);
 const AD_REQUEST_RE = /doubleclick|googlesyndication|googleadservices|adservice|adsystem|adnxs|adsrvr|rubicon|criteo|pubmatic|openx|casalemedia|moatads|taboola|outbrain|popunder|popads|adserver|advertising|adskeeper|exoclick|adcash|monetag|trafficfactory|prebid|pagead|\/ads?(?:[/?#]|$)|\/advert(?:[/?#]|$)|\/banner(?:[/?#]|$)|\/vast(?:[/?#]|$)/i;
-const TRACKER_REQUEST_RE = /analytics|google-analytics|googletagmanager|tracking|tracker|telemetry|pixel|beacon|scorecardresearch|quantserve|demdex|hotjar|clarity\.ms|connect\.facebook|facebook\.net\/tr|fingerprint|session-replay|fullstory|mouseflow|mixpanel|amplitude|matomo|segment\.io/i;
+const TRACKER_REQUEST_RE = /analytics|google-analytics|googletagmanager|tracking|tracker|telemetry|pixel|beacon|scorecardresearch|quantserve|demdex|hotjar|clarity\.ms|facebook\.net\/tr|fingerprint|session-replay|fullstory|mouseflow|mixpanel|amplitude|matomo|segment\.io/i;
 function classifyRequest(url, documentUrl) {
   if (/\.(?:m3u8|ts|m4s|mp4|aac|mp3|webm|mpd)(?:[?#]|$)|(?:segment|chunk|playlist|\/stream(?:\/|$))/i.test(url)) return 'media';
   if (AD_REQUEST_RE.test(url)) return 'ads';
@@ -821,7 +890,7 @@ ipcMain.handle('get-processes', async (event) => {
   }
   try {
     const mainRendererPid = mainWin?.webContents ? (typeof mainWin.webContents.getOSProcessId === 'function' ? mainWin.webContents.getOSProcessId() : mainWin.webContents.getProcessId()) : 0;
-    if (mainRendererPid) contextByPid.set(mainRendererPid, { role: 'Interfaz principal', url: 'file://renderer.html' });
+    if (mainRendererPid) contextByPid.set(mainRendererPid, { role: 'Interfaz principal' });
   } catch {}
   const roleFor = (metric) => {
     const context = contextByPid.get(metric.pid);
@@ -829,14 +898,14 @@ ipcMain.handle('get-processes', async (event) => {
     if (!context) {
       if (metric.type === 'Browser') return 'Proceso principal';
       if (metric.type === 'GPU') return 'GPU';
-      if (metric.type === 'Utility') return metric.serviceName || 'Servicio auxiliar';
+      if (metric.type === 'Utility') return 'Servicio auxiliar';
       return metric.type || 'Proceso Electron';
     }
     if (context.id === 'wa-wv') return 'WhatsApp Web';
     if (context.id === 'wch-wv') return 'WebChat';
     if (context.id === 'ai-wv') return 'IA Web';
-    if (context.id.startsWith('webview-')) return 'Pestaña: ' + (context.url || 'Nueva pestaña');
-    return 'Webview: ' + (context.url || 'about:blank');
+    if (context.id.startsWith('webview-')) return 'Pestaña';
+    return 'Webview';
   };
   const metrics = app.getAppMetrics();
   const memoryByPid = new Map();
@@ -855,16 +924,21 @@ ipcMain.handle('get-processes', async (event) => {
       });
     });
   }
-  return metrics.map(metric => ({
-    pid: metric.pid,
-    type: metric.type,
-    role: roleFor(metric),
-    state: 'Activo',
-    memory: memoryByPid.get(metric.pid) || Math.round((metric.memory?.workingSetSize || metric.memory?.privateBytes || 0) / 1048576),
-    cpu: Number(metric.cpu?.percentCPUUsage || 0).toFixed(1),
-    url: contextByPid.get(metric.pid)?.url || '',
-    service: metric.serviceName || ''
-  }));
+  return metrics.map(metric => {
+    const context = contextByPid.get(metric.pid);
+    const role = roleFor(metric);
+    const suppressUrl = role === 'Interfaz principal' || role === 'Pestaña' || role === 'WhatsApp Web' || role === 'WebChat' || role === 'IA Web';
+    return {
+      pid: metric.pid,
+      type: metric.type,
+      role,
+      state: 'Activo',
+      memory: memoryByPid.get(metric.pid) || Math.round((metric.memory?.workingSetSize || metric.memory?.privateBytes || 0) / 1048576),
+      cpu: Number(metric.cpu?.percentCPUUsage || 0).toFixed(1),
+      url: suppressUrl ? '' : context?.url || '',
+      service: ''
+    };
+  });
 });
 // Media detected by the active browser session
 ipcMain.handle('get-media', () => MEDIA_URLS);
@@ -2117,6 +2191,10 @@ async function resolveCtxCssPoint(wc, params) {
 // === WINDOW EVENTS (popups -> nueva pestaña) ────────────
 app.on('web-contents-created', (event, wc) => {
   wc.on('will-redirect', (navigationEvent, url, isInPlace, isMainFrame) => {
+    // Navegación explícita del usuario (barra de URL, marcador, historial,
+    // atajo, clic en enlace): NO bloquear sus redirecciones. Las reglas
+    // anti-redirección solo aplican a auto-redirecciones de la página.
+    if (userNavWebContents.has(wc.id)) return;
     let targetHost = '';
     try {
       targetHost = new URL(url).hostname.toLowerCase();
@@ -2136,6 +2214,14 @@ app.on('web-contents-created', (event, wc) => {
       try { mainWin?.webContents?.send('req-blocked', { type: 'navigation', url, msg: 'Redirección externa bloqueada desde ' + sourceUrl }); } catch {}
     }
   });
+  // Limpiar el marcador de navegación explícita cuando termina (éxito o error).
+  // `did-navigate` se emite cuando la navegación del frame principal se
+  // confirma (tras la cadena de redirecciones), así que limpiar ahí permite
+  // la cadena inicial pero vuelve a bloquear auto-redirecciones posteriores
+  // de la página (anuncios) durante el resto de la carga.
+  wc.on('did-navigate', () => userNavWebContents.delete(wc.id));
+  wc.on('did-fail-load', () => userNavWebContents.delete(wc.id));
+  wc.on('did-stop-loading', () => userNavWebContents.delete(wc.id));
   wc.on('did-start-navigation', (_event, url, isInPlace, isMainFrame) => {
     if (isMainFrame && /^https?:\/\/(?:[^/]+\.)?whatsapp\.(?:com|net)(?:\/|$)/i.test(url)) {
       wc.setUserAgent(UA_WHATSAPP);
@@ -2635,6 +2721,7 @@ app.whenReady().then(() => {
   createWindow();
   const sess = session.fromPartition('persist:mc');
   setupWebchatSession();
+  setupWhatsappSession();
   ACTIONS.emit = (ch, ...args) => { try { mainWin?.webContents?.send(ch, ...args); } catch {} };
   // Desactivado: la señalización automática de auth-session-updated provoca
   // redirecciones durante el flujo OAuth de Google/X y rompe el login de la

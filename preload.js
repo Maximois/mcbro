@@ -94,6 +94,11 @@ contextBridge.exposeInMainWorld('mc', {
   close:      () => ipcRenderer.invoke('win-close'),
   isMaximized:() => ipcRenderer.invoke('win-ismax'),
   destroyWebview: (webContentsId) => ipcRenderer.invoke('webview:destroy', webContentsId),
+  // Avisa al main que el usuario inició una navegación explícita (barra de
+  // URL, marcador, historial, atajo...). El main usa esto para NO bloquear
+  // redirecciones que forman parte de esa navegación (solo bloquea
+  // redirecciones automáticas iniciadas por la propia página).
+  navIntent: (opts) => { try { ipcRenderer.send('nav-intent', opts); } catch {} },
 
   // Descargas
   downloadHLS:  (id,url,name,pageUrl) => ipcRenderer.invoke('dl-hls',  {id,url,name,pageUrl}),

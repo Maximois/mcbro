@@ -16,12 +16,22 @@ const PanelResize = {
   MIN: 300,
   MAX_RATIO: 0.85,
 
+  clampWidth(width, defaultWidth, storageKey) {
+    const max = Math.round(window.innerWidth * PanelResize.MAX_RATIO);
+    const saved = Number(width);
+    if (!Number.isFinite(saved) || saved < PanelResize.MIN || saved > max) {
+      try { localStorage.setItem(storageKey, String(defaultWidth)); } catch {}
+      return defaultWidth;
+    }
+    return Math.round(Math.min(Math.max(saved, PanelResize.MIN), max));
+  },
+
   attach(panelEl, storageKey, defaultWidth) {
     if (!panelEl || panelEl.dataset.resizeAttached) return;
     panelEl.dataset.resizeAttached = '1';
 
     const saved = Number(localStorage.getItem(storageKey));
-    const initial = Number.isFinite(saved) && saved > 0 ? saved : defaultWidth;
+    const initial = PanelResize.clampWidth(saved, defaultWidth, storageKey);
     panelEl.style.setProperty('--panel-w', initial + 'px');
 
     const handle = document.createElement('div');
@@ -31,31 +41,51 @@ const PanelResize = {
 
     let startX = 0;
     let startWidth = 0;
+    let activePointerId = null;
 
     const onMove = (e) => {
+      if (activePointerId === null || e.pointerId !== activePointerId) return;
+      e.preventDefault();
       const max = Math.round(window.innerWidth * PanelResize.MAX_RATIO);
-      // El panel está anclado a la derecha: arrastrar hacia la izquierda lo agranda.
       const next = Math.min(max, Math.max(PanelResize.MIN, startWidth + (startX - e.clientX)));
       panelEl.style.setProperty('--panel-w', next + 'px');
     };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+    const onUp = (e) => {
+      if (activePointerId !== null && e.pointerId !== activePointerId) return;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      try { handle.releasePointerCapture(activePointerId); } catch {}
+      activePointerId = null;
       panelEl.classList.remove('resizing');
       handle.classList.remove('active');
       const finalWidth = parseInt(getComputedStyle(panelEl).getPropertyValue('--panel-w'), 10)
         || panelEl.getBoundingClientRect().width;
-      localStorage.setItem(storageKey, String(Math.round(finalWidth)));
+      const clamped = PanelResize.clampWidth(finalWidth, defaultWidth, storageKey);
+      panelEl.style.setProperty('--panel-w', clamped + 'px');
+      try { localStorage.setItem(storageKey, String(Math.round(clamped))); } catch {}
     };
-    handle.addEventListener('mousedown', (e) => {
+
+    handle.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      if (activePointerId !== null) return;
+      activePointerId = e.pointerId;
       startX = e.clientX;
       startWidth = panelEl.getBoundingClientRect().width;
       panelEl.classList.add('resizing');
       handle.classList.add('active');
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      try { handle.setPointerCapture(activePointerId); } catch {}
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
     });
+  },
+
+  reset(panelEl, storageKey, defaultWidth) {
+    if (!panelEl) return;
+    const clamped = PanelResize.clampWidth(defaultWidth, defaultWidth, storageKey);
+    panelEl.style.setProperty('--panel-w', clamped + 'px');
+    try { localStorage.setItem(storageKey, String(clamped)); } catch {}
   }
 };
 
@@ -435,6 +465,7 @@ const AI = {
     const sb = document.getElementById('ai-sidebar');
     if (!sb) return;
     sb.classList.remove('open');
+    PanelResize.reset(sb, 'mc-panel-w-ai', 400);
     try { mc.aiChatAbort(); } catch {}
     destroyEmbeddedWebview(document.getElementById('ai-wv'));
     this._wv = null;
@@ -504,7 +535,7 @@ const AI = {
       wv.id = 'ai-wv';
       wv.style.cssText = 'flex:0;border:none;height:0;min-height:0;';
       wv.setAttribute('partition', 'persist:mc');
-      wv.setAttribute('allow', 'autoplay; media; encrypted-media');
+      wv.setAttribute('allow', 'autoplay; media; encrypted-media; clipboard-read; clipboard-write');
       wv.setAttribute('webpreferences', 'contextIsolation=yes');
       const msgsEl = document.getElementById('ai-msgs');
       if (msgsEl && msgsEl.parentNode) msgsEl.parentNode.insertBefore(wv, msgsEl);
@@ -517,6 +548,12 @@ const AI = {
           el.textContent=${JSON.stringify(ctx)};el.dataset.context=${JSON.stringify(ctx)};
         `).catch(() => {});
       });
+      wv.addEventListener('permissionrequest', (e) => {
+        const permission = e?.permission || e?.request?.permission;
+        if (permission === 'clipboard-read' || permission === 'clipboard-write') {
+          try { e.request?.allow?.(); } catch {}
+        }
+      });
       wv.addEventListener('did-fail-load', e => {
         console.error('[AI-WV] fail load:', e.errorDescription, e.errorCode);
       });
@@ -524,11 +561,14 @@ const AI = {
     console.log('[AI] showWebview', key, !!wv);
     if (!wv) return;
     const targetUrl = info.url;
-    const currentSrc = wv.getAttribute('src') || '';
-    console.log('[AI] currentSrc:', currentSrc);
-    if (!currentSrc || currentSrc === 'about:blank' || !currentSrc.includes(info.url.split('/')[2])) {
-      console.log('[AI] setting src to', targetUrl);
-      wv.setAttribute('src', targetUrl);
+    let currentUrl = '';
+    try { currentUrl = wv.getURL() || ''; } catch {}
+    const targetHost = (() => { try { return new URL(targetUrl).hostname; } catch { return ''; } })();
+    const currentHost = (() => { try { return new URL(currentUrl).hostname; } catch { return ''; } })();
+    console.log('[AI] currentUrl:', currentUrl);
+    if (!currentUrl || currentUrl === 'about:blank' || currentHost !== targetHost) {
+      console.log('[AI] loading URL', targetUrl);
+      try { wv.loadURL(targetUrl); } catch { wv.setAttribute('src', targetUrl); }
     }
     wv.style.flex = '1';
     wv.style.height = '';
@@ -2615,7 +2655,7 @@ const WebChat = {
     wv.id = 'wch-wv';
     wv.setAttribute('partition', 'persist:mc-webchat');
     wv.setAttribute('allowpopups', '');
-    wv.setAttribute('allow', 'autoplay; media; encrypted-media');
+    wv.setAttribute('allow', 'autoplay; media; encrypted-media; clipboard-read; clipboard-write');
     wv.setAttribute('webpreferences', 'contextIsolation=no,nodeIntegration=no');
     document.getElementById('webchat-sidebar')?.appendChild(wv);
     this._wv = wv;
@@ -2638,12 +2678,14 @@ const WebChat = {
     document.querySelectorAll('.wch-prov-btn').forEach(b => b.classList.toggle('active', b.dataset.prov === id));
     const wv = this.ensureWebview();
     if (!wv) return;
-    // Cargar vía src directamente (igual que WhatsApp) — más confiable que _pendingUrl,
-    // porque un webview sin src puede no disparar dom-ready y quedar en blanco.
+    // Cargar vía loadURL para reutilizar el mismo webview y evitar la sensación
+    // de pantalla negra o esperar a que el DOM del webview se vuelva a crear.
     let current = '';
     try { current = wv.getURL() || ''; } catch {}
-    if (current !== prov.url) {
-      wv.setAttribute('src', prov.url);
+    const targetHost = (() => { try { return new URL(prov.url).hostname; } catch { return ''; } })();
+    const currentHost = (() => { try { return new URL(current).hostname; } catch { return ''; } })();
+    if (current !== prov.url && currentHost !== targetHost) {
+      try { wv.loadURL(prov.url); } catch { wv.setAttribute('src', prov.url); }
     }
     this._pendingUrl = prov.url;
   },
@@ -2762,7 +2804,10 @@ const WebChat = {
 
   close() {
     const sb = document.getElementById('webchat-sidebar');
-    if (sb) sb.classList.remove('open');
+    if (sb) {
+      sb.classList.remove('open');
+      PanelResize.reset(sb, 'mc-panel-w-webchat', 400);
+    }
     destroyEmbeddedWebview(this._wv);
     this._wv = null;
     this._ready = false;
@@ -2954,8 +2999,6 @@ const WebChat = {
 };
 
 //  WhatsAppChat — Sidebar dedicado a WhatsApp Web
-//  Reutiliza la compatibilidad de WhatsApp del main (UA_WHATSAPP + Client Hints)
-//  y comparte sesión persistente (partition="persist:mc").
 // ════════════════════════════════════════════════════════
 
 const WHATSAPP_URL = 'https://web.whatsapp.com';
@@ -2984,7 +3027,6 @@ const WhatsAppChat = {
           <button class="wch-action-btn" onclick="WhatsAppChat.reload()" title="Recargar WhatsApp">🔄</button>
           <button class="wch-action-btn" onclick="WhatsAppChat.openInTab()" title="Abrir WhatsApp en una pestaña">↗ Pestaña</button>
         </div>
-        <div class="wa-note">🔒 Sesión compartida con el navegador · Compatibilidad WhatsApp activa</div>
       `;
       const main = document.getElementById('main');
       if (main) main.appendChild(sb);
@@ -3002,7 +3044,7 @@ const WhatsAppChat = {
       const wv = document.createElement('webview');
       wv.id = 'wa-wv';
       wv.setAttribute('src', WHATSAPP_URL);
-      wv.setAttribute('partition', 'persist:mc');
+      wv.setAttribute('partition', 'persist:mc-whatsapp');
       wv.setAttribute('allowpopups', '');
       wv.setAttribute('allow', 'autoplay; media; encrypted-media');
       wv.setAttribute('webpreferences', 'contextIsolation=no,nodeIntegration=no');
@@ -3090,7 +3132,10 @@ const WhatsAppChat = {
 
   close() {
     const sb = document.getElementById('wa-sidebar');
-    if (sb) sb.classList.remove('open');
+    if (sb) {
+      sb.classList.remove('open');
+      PanelResize.reset(sb, 'mc-panel-w-wa', 480);
+    }
     destroyEmbeddedWebview(this._wv);
     this._wv = null;
     this._ready = false;

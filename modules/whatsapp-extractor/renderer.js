@@ -13,6 +13,10 @@
     _filter: 'all',
     _downloads: [],
     _dlSeq: 0,
+    _followRaf: null,
+    _lastTop: null,
+    _lastLeft: null,
+    _lastHeight: null,
 
     init() {
       this.injectButton();
@@ -42,9 +46,15 @@
       obs.observe(document.body, { childList: true, subtree: true });
     },
 
-    // ── Overlay dedicado ──
+    // ── Overlay dedicado, anclado al borde del panel de WhatsApp ──
     ensureOverlay() {
-      if (document.getElementById(OVERLAY_ID)) return;
+      const existing = document.getElementById(OVERLAY_ID);
+      if (existing) {
+        if (existing.parentElement !== document.body) {
+          document.body.appendChild(existing);
+        }
+        return;
+      }
       const ov = document.createElement('div');
       ov.id = OVERLAY_ID;
       ov.onclick = (e) => { if (e.target === ov) this.close(); };
@@ -62,8 +72,6 @@
             <button class="wa-extractor-filter" data-filter="Perfil" onclick="WhatsAppExtractor.filter('Perfil')">Perfil</button>
             <button class="wa-extractor-filter" data-filter="Imagen" onclick="WhatsAppExtractor.filter('Imagen')">Imagen</button>
             <button class="wa-extractor-filter" data-filter="Videos" onclick="WhatsAppExtractor.filter('Videos')">Videos</button>
-            <button class="wa-extractor-filter" data-filter="Audio" onclick="WhatsAppExtractor.filter('Audio')">Audio</button>
-            <button class="wa-extractor-filter" data-filter="Enlaces" onclick="WhatsAppExtractor.filter('Enlaces')">Enlaces</button>
             <button class="wa-extractor-filter" data-filter="Descargas" onclick="WhatsAppExtractor.filter('Descargas')">Descargas</button>
           </div>
           <div id="wa-extractor-list"></div>
@@ -154,7 +162,6 @@
             const isVideo = tag === 'video' || (tag === 'source' && el.parentElement?.tagName?.toLowerCase() === 'video');
             const rect = el.getBoundingClientRect();
             const small = rect.width > 0 && rect.width <= 80 && rect.height <= 80;
-            if (tag === 'audio' || el.closest('[data-testid="audio-player"]')) return 'Audio';
             if (isVideo) return 'Videos';
             const inProfileArea = el.closest('[data-testid="chat-list"], [data-testid="conversation-info-header"], [data-testid="conversation-panel-header"], [data-testid="chat-list-search"]');
             const avatarHint = el.closest('[data-testid*="avatar"], [data-testid*="profile"], [data-testid*="contact"]');
@@ -202,11 +209,6 @@
             }
             add({ url, type, label, source: cat, preview });
           }
-          document.querySelectorAll('a[href*="whatsapp.net"], a[href*="mmg.whatsapp"]').forEach((el, i) => {
-            const href = el.href;
-            if (!href) return;
-            add({ url: href, type: 'link', label: (el.innerText || '').trim().slice(0, 100) || 'Enlace ' + (i + 1), source: 'Enlaces', preview: null });
-          });
           return { title: 'WhatsApp Web', resources: found.slice(0, 500) };
         })()`);
         this._resources = Array.isArray(data?.resources) ? data.resources : [];
@@ -221,12 +223,62 @@
 
     // ── UI ──
     open() {
+      this.ensureOverlay();
       const ov = document.getElementById(OVERLAY_ID);
+      const waSidebar = document.getElementById('wa-sidebar');
+      if (ov && waSidebar) {
+        const r = waSidebar.getBoundingClientRect();
+        const width = ov.getBoundingClientRect().width || 340;
+        ov.style.position = 'fixed';
+        ov.style.top = r.top + 'px';
+        ov.style.left = Math.max(0, r.left - width) + 'px';
+        ov.style.height = r.height + 'px';
+        ov.style.width = width + 'px';
+      }
       if (ov) ov.classList.add('open');
+      this._followPanel();
     },
     close() {
       const ov = document.getElementById(OVERLAY_ID);
       if (ov) ov.classList.remove('open');
+      this._stopFollow();
+    },
+    // Mantiene el overlay pegado al borde izquierdo del panel de WhatsApp
+    // mientras esté abierto: si el panel se mueve o se redimensiona (handle
+    // de resize, cambio de tamaño de ventana, transición de apertura), el
+    // overlay lo sigue. Usa requestAnimationFrame y se detiene al cerrar.
+    _followPanel() {
+      if (this._followRaf) return;
+      const ov = document.getElementById(OVERLAY_ID);
+      const waSidebar = document.getElementById('wa-sidebar');
+      if (!ov || !waSidebar) return;
+      const tick = () => {
+        if (!ov.classList.contains('open')) { this._followRaf = null; return; }
+        // Si el panel de WhatsApp se cerró, cerrar el overlay también
+        if (!waSidebar.classList.contains('open')) { this.close(); return; }
+        const r = waSidebar.getBoundingClientRect();
+        const width = ov.getBoundingClientRect().width || 340;
+        const top = Math.round(r.top);
+        const left = Math.max(0, Math.round(r.left - width));
+        const height = Math.round(r.height);
+        if (top !== this._lastTop || left !== this._lastLeft || height !== this._lastHeight) {
+          this._lastTop = top;
+          this._lastLeft = left;
+          this._lastHeight = height;
+          ov.style.top = top + 'px';
+          ov.style.left = left + 'px';
+          ov.style.height = height + 'px';
+        }
+        this._followRaf = requestAnimationFrame(tick);
+      };
+      this._followRaf = requestAnimationFrame(tick);
+    },
+    _stopFollow() {
+      if (this._followRaf) {
+        cancelAnimationFrame(this._followRaf);
+        this._followRaf = null;
+      }
+      this._lastTop = this._lastLeft = this._lastHeight = null;
     },
     showMessage(msg) {
       const list = document.getElementById('wa-extractor-list');
