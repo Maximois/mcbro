@@ -871,75 +871,100 @@ ipcMain.handle('get-sysinfo', () => ({
   chromeVersion: process.versions.chrome,
   dlDir: CFG.downloadDir || app.getPath('downloads')
 }));
-ipcMain.handle('get-processes', async (event) => {
-  const contexts = await event.sender.executeJavaScript(`(() => Array.from(document.querySelectorAll('webview')).map(wv => ({
-    id: wv.id || '',
-    webContentsId: typeof wv.getWebContentsId === 'function' ? wv.getWebContentsId() : 0,
-    url: (() => { try { return wv.getURL() || ''; } catch { return ''; } })()
-  })))()`).catch(() => []);
-  const contextByPid = new Map();
-  for (const context of contexts) {
-    try {
-      const guest = require('electron').webContents.fromId(Number(context.webContentsId));
-      if (guest && !guest.isDestroyed()) {
-        // getProcessId() devuelve el ID interno de Chromium; getOSProcessId() el PID real del SO
-        const osPid = typeof guest.getOSProcessId === 'function' ? guest.getOSProcessId() : guest.getProcessId();
-        if (osPid) contextByPid.set(osPid, context);
-      }
-    } catch {}
-  }
+// ── Muestreo de métricas de proceso (CPU/RAM) ────────────────────────────
+// app.getAppMetrics() promedia el uso de CPU desde la ÚLTIMA VEZ que
+// CUALQUIER código del proceso principal la llamó, y esa llamada reinicia
+// la ventana de medición para TODOS los procesos a la vez (lo documenta
+// Electron explícitamente). Antes había 3 timers independientes en el
+// renderer (barra de estado cada 3s, sidebar cada 2s, ajustes cada 2s)
+// llamando a esto sin coordinarse — cada uno le cortaba la ventana de
+// medición al anterior, dando porcentajes de CPU que saltaban sin sentido.
+// Ahora hay un único muestreador con cadencia fija; todo el mundo lee el
+// mismo snapshot cacheado.
+let PROCESS_METRICS_CACHE = [];
+let processMetricsTimer = null;
+
+async function sampleProcessMetrics() {
+  if (!mainWin || mainWin.isDestroyed()) return;
   try {
-    const mainRendererPid = mainWin?.webContents ? (typeof mainWin.webContents.getOSProcessId === 'function' ? mainWin.webContents.getOSProcessId() : mainWin.webContents.getProcessId()) : 0;
-    if (mainRendererPid) contextByPid.set(mainRendererPid, { role: 'Interfaz principal' });
-  } catch {}
-  const roleFor = (metric) => {
-    const context = contextByPid.get(metric.pid);
-    if (context?.role) return context.role;
-    if (!context) {
-      if (metric.type === 'Browser') return 'Proceso principal';
-      if (metric.type === 'GPU') return 'GPU';
-      if (metric.type === 'Utility') return 'Servicio auxiliar';
-      return metric.type || 'Proceso Electron';
-    }
-    if (context.id === 'wa-wv') return 'WhatsApp Web';
-    if (context.id === 'wch-wv') return 'WebChat';
-    if (context.id === 'ai-wv') return 'IA Web';
-    if (context.id.startsWith('webview-')) return 'Pestaña';
-    return 'Webview';
-  };
-  const metrics = app.getAppMetrics();
-  const memoryByPid = new Map();
-  if (process.platform === 'win32') {
-    await new Promise(resolve => {
-      execFile('tasklist.exe', ['/FO', 'CSV', '/NH'], { windowsHide: true }, (error, stdout) => {
-        if (!error && stdout) {
-          for (const line of stdout.split(/\r?\n/)) {
-            const fields = line.match(/"(?:[^"]|"")*"|[^,]+/g) || [];
-            const pid = Number(String(fields[1] || '').replace(/"/g, '').trim());
-            const memoryKb = Number(String(fields[4] || '').replace(/["\s,.KB]/gi, ''));
-            if (pid > 0 && Number.isFinite(memoryKb)) memoryByPid.set(pid, Math.round(memoryKb / 1024));
-          }
+    const contexts = await mainWin.webContents.executeJavaScript(`(() => Array.from(document.querySelectorAll('webview')).map(wv => ({
+      id: wv.id || '',
+      webContentsId: typeof wv.getWebContentsId === 'function' ? wv.getWebContentsId() : 0,
+      url: (() => { try { return wv.getURL() || ''; } catch { return ''; } })()
+    })))()`).catch(() => []);
+    const contextByPid = new Map();
+    for (const context of contexts) {
+      try {
+        const guest = require('electron').webContents.fromId(Number(context.webContentsId));
+        if (guest && !guest.isDestroyed()) {
+          // getProcessId() devuelve el ID interno de Chromium; getOSProcessId() el PID real del SO
+          const osPid = typeof guest.getOSProcessId === 'function' ? guest.getOSProcessId() : guest.getProcessId();
+          if (osPid) contextByPid.set(osPid, context);
         }
-        resolve();
-      });
-    });
-  }
-  return metrics.map(metric => {
-    const context = contextByPid.get(metric.pid);
-    const role = roleFor(metric);
-    const suppressUrl = role === 'Interfaz principal' || role === 'Pestaña' || role === 'WhatsApp Web' || role === 'WebChat' || role === 'IA Web';
-    return {
-      pid: metric.pid,
-      type: metric.type,
-      role,
-      state: 'Activo',
-      memory: memoryByPid.get(metric.pid) || Math.round((metric.memory?.workingSetSize || metric.memory?.privateBytes || 0) / 1048576),
-      cpu: Number(metric.cpu?.percentCPUUsage || 0).toFixed(1),
-      url: suppressUrl ? '' : context?.url || '',
-      service: ''
+      } catch {}
+    }
+    try {
+      const mainRendererPid = mainWin?.webContents ? (typeof mainWin.webContents.getOSProcessId === 'function' ? mainWin.webContents.getOSProcessId() : mainWin.webContents.getProcessId()) : 0;
+      if (mainRendererPid) contextByPid.set(mainRendererPid, { role: 'Interfaz principal' });
+    } catch {}
+    const roleFor = (metric) => {
+      const context = contextByPid.get(metric.pid);
+      if (context?.role) return context.role;
+      if (!context) {
+        if (metric.type === 'Browser') return 'Proceso principal';
+        if (metric.type === 'GPU') return 'GPU';
+        if (metric.type === 'Utility') return 'Servicio auxiliar';
+        return metric.type || 'Proceso Electron';
+      }
+      if (context.id === 'wa-wv') return 'WhatsApp Web';
+      if (context.id === 'wch-wv') return 'WebChat';
+      if (context.id === 'ai-wv') return 'IA Web';
+      if (context.id.startsWith('webview-')) return 'Pestaña';
+      return 'Webview';
     };
-  });
-});
+    // Única llamada a app.getAppMetrics() de toda la app.
+    const metrics = app.getAppMetrics();
+    const memoryByPid = new Map();
+    if (process.platform === 'win32') {
+      await new Promise(resolve => {
+        execFile('tasklist.exe', ['/FO', 'CSV', '/NH'], { windowsHide: true }, (error, stdout) => {
+          if (!error && stdout) {
+            for (const line of stdout.split(/\r?\n/)) {
+              const fields = line.match(/"(?:[^"]|"")*"|[^,]+/g) || [];
+              const pid = Number(String(fields[1] || '').replace(/"/g, '').trim());
+              const memoryKb = Number(String(fields[4] || '').replace(/["\s,.KB]/gi, ''));
+              if (pid > 0 && Number.isFinite(memoryKb)) memoryByPid.set(pid, Math.round(memoryKb / 1024));
+            }
+          }
+          resolve();
+        });
+      });
+    }
+    PROCESS_METRICS_CACHE = metrics.map(metric => {
+      const context = contextByPid.get(metric.pid);
+      const role = roleFor(metric);
+      const suppressUrl = role === 'Interfaz principal' || role === 'Pestaña' || role === 'WhatsApp Web' || role === 'WebChat' || role === 'IA Web';
+      return {
+        pid: metric.pid,
+        type: metric.type,
+        role,
+        state: 'Activo',
+        memory: memoryByPid.get(metric.pid) || Math.round((metric.memory?.workingSetSize || metric.memory?.privateBytes || 0) / 1048576),
+        cpu: Number(metric.cpu?.percentCPUUsage || 0).toFixed(1),
+        url: suppressUrl ? '' : context?.url || '',
+        service: ''
+      };
+    });
+  } catch (e) { console.error('[process-metrics]', e.message); }
+}
+
+function startProcessMetricsSampler() {
+  if (processMetricsTimer) return;
+  sampleProcessMetrics();
+  processMetricsTimer = setInterval(sampleProcessMetrics, 2000);
+}
+
+ipcMain.handle('get-processes', async () => PROCESS_METRICS_CACHE);
 // Media detected by the active browser session
 ipcMain.handle('get-media', () => MEDIA_URLS);
 // ── Helpers de descarga ──────────────────────────
@@ -2734,6 +2759,7 @@ app.whenReady().then(() => {
   createWindow();
   const sess = session.fromPartition('persist:mc');
   setupWebchatSession();
+  startProcessMetricsSampler();
   setupWhatsappSession();
   ACTIONS.emit = (ch, ...args) => { try { mainWin?.webContents?.send(ch, ...args); } catch {} };
   // Desactivado: la señalización automática de auth-session-updated provoca
