@@ -2104,6 +2104,44 @@ function findYtdlp() {
   }
   return null;
 }
+
+// Sitios con extractor propio en yt-dlp que requieren sesión iniciada para
+// resolver el video real (Instagram, Facebook, X/Twitter, TikTok). Para
+// estos, hay que pasarle a yt-dlp la URL de la PÁGINA (no una URL de stream
+// ya extraída) y las cookies de la sesión — yt-dlp arma él mismo el
+// manifiesto/segmentos usando su propio extractor, que sabe manejar el
+// login y las URLs firmadas de cada plataforma.
+const YTDLP_NATIVE_LOGIN_HOSTS = /(^|\.)instagram\.com$|(^|\.)facebook\.com$|(^|\.)twitter\.com$|(^|\.)x\.com$|(^|\.)tiktok\.com$/i;
+function isYtdlpNativeLoginHost(host) {
+  return YTDLP_NATIVE_LOGIN_HOSTS.test(String(host || ''));
+}
+
+// Exporta las cookies de la sesión del navegador para un dominio a un
+// archivo formato Netscape (el que yt-dlp espera con --cookies). Sin esto,
+// yt-dlp corre como proceso aparte sin ninguna cookie — para sitios que
+// exigen sesión iniciada (Instagram, Facebook, etc.) eso significa que solo
+// puede ver contenido público, o directamente falla.
+async function writeYtdlpCookiesFile(pageUrl) {
+  try {
+    const host = new URL(pageUrl).hostname;
+    const cookies = await session.fromPartition('persist:mc').cookies.get({ url: pageUrl });
+    if (!cookies.length) return null;
+    const lines = ['# Netscape HTTP Cookie File', '# Generado por MC Browser para yt-dlp'];
+    for (const c of cookies) {
+      const domain = c.domain || host;
+      const includeSubdomains = domain.startsWith('.') ? 'TRUE' : 'FALSE';
+      const expires = c.expirationDate ? Math.round(c.expirationDate) : 0;
+      lines.push([domain, includeSubdomains, c.path || '/', c.secure ? 'TRUE' : 'FALSE', expires, c.name, c.value].join('\t'));
+    }
+    const file = path.join(app.getPath('temp'), `mc-ytdlp-cookies-${Date.now()}.txt`);
+    fs.writeFileSync(file, lines.join('\n') + '\n');
+    return file;
+  } catch (e) { console.error('[ytdlp-cookies]', e.message); return null; }
+}
+function cleanupYtdlpCookiesFile(file) {
+  if (!file) return;
+  fs.unlink(file, () => {});
+}
 ipcMain.handle('ytdlp-check', () => !!findYtdlp());
 ipcMain.handle('ffmpeg-check', () => ({ found: !!findFfmpeg(), path: findFfmpeg() || '' }));
 ipcMain.handle('ffmpeg-install', () => installFfmpegPortable());
@@ -2135,9 +2173,14 @@ ipcMain.handle('ytdlp-install', async () => {
 ipcMain.handle('ytdlp-analyze', async (e, url) => {
   const p = findYtdlp();
   if (!p) return { error: 'yt-dlp not found' };
+  let cookiesFile = null;
   try {
-    return new Promise((resolve) => {
-      const proc = spawn(p, ['--no-download', '--dump-json', url], { timeout: 30000 });
+    cookiesFile = await writeYtdlpCookiesFile(url);
+    const args = ['--no-download', '--dump-json'];
+    if (cookiesFile) args.push('--cookies', cookiesFile);
+    args.push(url);
+    return await new Promise((resolve) => {
+      const proc = spawn(p, args, { timeout: 30000 });
       let out = '', err = '';
       proc.stdout.on('data', d => out += d.toString());
       proc.stderr.on('data', d => err += d.toString());
@@ -2152,14 +2195,31 @@ ipcMain.handle('ytdlp-analyze', async (e, url) => {
       proc.on('error', e => resolve({ error: e.message }));
     });
   } catch (e) { return { error: e.message }; }
+  finally { cleanupYtdlpCookiesFile(cookiesFile); }
 });
 ipcMain.handle('ytdlp-download', async (e, opts) => {
   const p = findYtdlp();
   if (!p) return { error: 'yt-dlp not found' };
   const dlDir = CFG.downloadDir || app.getPath('downloads');
+  // Si viene pageUrl y es un sitio con login (Instagram/Facebook/X/TikTok),
+  // usar la página real en vez de la URL de stream ya extraída: yt-dlp
+  // resuelve el video con su propio extractor (maneja firmas/expiración
+  // solo), y sí sabe usar las cookies para contenido que requiere sesión.
+  let target = opts.url;
+  let cookiesFile = null;
   try {
-    return new Promise((resolve) => {
-      const proc = spawn(p, [opts.url, '-o', path.join(dlDir, '%(title)s.%(ext)s'), '--no-playlist', '--print', 'after_move:filepath']);
+    if (opts.pageUrl) {
+      try {
+        const pageHost = new URL(opts.pageUrl).hostname;
+        if (isYtdlpNativeLoginHost(pageHost)) target = opts.pageUrl;
+        cookiesFile = await writeYtdlpCookiesFile(opts.pageUrl);
+      } catch {}
+    }
+    if (!cookiesFile) cookiesFile = await writeYtdlpCookiesFile(target).catch(() => null);
+    const args = [target, '-o', path.join(dlDir, '%(title)s.%(ext)s'), '--no-playlist', '--print', 'after_move:filepath'];
+    if (cookiesFile) args.push('--cookies', cookiesFile);
+    return await new Promise((resolve) => {
+      const proc = spawn(p, args);
       let output = '';
       proc.stdout.on('data', d => { output += d.toString(); try { mainWin?.webContents?.send('ytdlp-log', d.toString().trim()); } catch {} });
       proc.stderr.on('data', d => { try { mainWin?.webContents?.send('ytdlp-log', d.toString().trim()); } catch {} });
@@ -2167,6 +2227,7 @@ ipcMain.handle('ytdlp-download', async (e, opts) => {
       proc.on('error', e => resolve({ error: e.message }));
     });
   } catch (e) { return { error: e.message }; }
+  finally { cleanupYtdlpCookiesFile(cookiesFile); }
 });
 
 // === AI MODULE fallbacks (solo si el módulo AI no carga) ────

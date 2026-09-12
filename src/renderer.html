@@ -4989,7 +4989,7 @@ function startMediaDownload(dlId, url, type, name, pageUrl) {
         }
         return;
       }
-      mc.ytdlpDownload({ url }).then(result => {
+      mc.ytdlpDownload({ url, pageUrl }).then(result => {
         if (!item) return;
         if (result.ok) {
           item.dataset.state = 'done';
