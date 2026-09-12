@@ -438,6 +438,31 @@ async function registerCookieGuardScript(wc) {
   } catch (e) { console.error('[cookie-guard] registro fallido', e.message); }
 }
 
+// Partición separada para el panel WebChat (Copilot/ChatGPT/Claude/Gemini/
+// Perplexity): dominios fijos y conocidos, sin publicidad ni tracking real,
+// así que no necesitan las reglas estrictas de cookies/bloqueo pensadas para
+// pestañas de navegación libre — pero sí conviene que hereden proxy/permisos.
+const WEBCHAT_PARTITION = 'persist:mc-webchat';
+
+function isMainBrowsingSession(wc) {
+  try { return wc?.session === session.fromPartition('persist:mc'); } catch { return false; }
+}
+
+function setupWebchatSession() {
+  const wchSess = session.fromPartition(WEBCHAT_PARTITION);
+  // Mismo sistema de permisos granulares por dominio que el resto (para que
+  // cámara/mic de modo voz en estos proveedores se pueda habilitar igual que
+  // en cualquier sitio), pero sin ad/tracker blocking ni política de cookies
+  // estricta: son 5 dominios fijos elegidos por el usuario, no navegación
+  // libre.
+  setupSessionPermissionHandlers(wchSess);
+  if (CFG.proxyEnabled && CFG.proxyHost) {
+    wchSess.setProxy({ proxyRules: `${CFG.proxyType || 'socks5'}://${CFG.proxyHost}:${CFG.proxyPort || 1080}` })
+      .catch(e => console.error('[PROXY][webchat]', e.message));
+  }
+  return wchSess;
+}
+
 function attachCookieGuard(wc) {
   if (!wc || wc.isDestroyed() || wc.debugger.isAttached()) return;
   try {
@@ -462,7 +487,7 @@ function attachCookieGuard(wc) {
 function refreshCookieGuards() {
   try {
     for (const wc of require('electron').webContents.getAllWebContents()) {
-      if (!wc.isDestroyed() && wc.getType() === 'webview') registerCookieGuardScript(wc);
+      if (!wc.isDestroyed() && wc.getType() === 'webview' && isMainBrowsingSession(wc)) registerCookieGuardScript(wc);
     }
   } catch (e) { console.error('[cookie-guard] refresh fallido', e.message); }
 }
@@ -698,6 +723,7 @@ ipcMain.handle('proxy:set', async (_e, settings = {}) => {
   try {
     const proxyRules = proxyEnabled ? `${proxyType}://${proxyHost}:${proxyPort}` : '';
     await session.fromPartition('persist:mc').setProxy(proxyEnabled ? { proxyRules } : { mode: 'direct' });
+    await session.fromPartition(WEBCHAT_PARTITION).setProxy(proxyEnabled ? { proxyRules } : { mode: 'direct' }).catch(() => {});
     Object.assign(CFG, { proxyEnabled, proxyType, proxyHost, proxyPort });
     saveCfg();
     return { ok: true, enabled: proxyEnabled, type: proxyType, host: proxyHost, port: proxyPort };
@@ -2601,13 +2627,14 @@ if (!gotTheLock) {
 }
 
 app.on('web-contents-created', (_event, contents) => {
-  if (contents.getType() === 'webview') attachCookieGuard(contents);
+  if (contents.getType() === 'webview' && isMainBrowsingSession(contents)) attachCookieGuard(contents);
 });
 
 app.whenReady().then(() => {
   if (!gotTheLock) return;
   createWindow();
   const sess = session.fromPartition('persist:mc');
+  setupWebchatSession();
   ACTIONS.emit = (ch, ...args) => { try { mainWin?.webContents?.send(ch, ...args); } catch {} };
   // Desactivado: la señalización automática de auth-session-updated provoca
   // redirecciones durante el flujo OAuth de Google/X y rompe el login de la

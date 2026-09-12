@@ -842,7 +842,11 @@ input:checked + .tslider::before { transform: translateX(16px); }
 .ai-selection-btn { background: var(--accent); color: #000; border: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-family: inherit; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.4); transition: opacity .2s; animation: fadein .15s; white-space: nowrap; }
 .ai-selection-btn:hover { opacity: .85; }
 #ai-sidebar, #webchat-sidebar, #wa-sidebar { width: 0; min-width: 0; flex-shrink: 0; background: var(--surface); border-left: none; display: flex; flex-direction: column; overflow: hidden; transition: width 0.25s ease; position: relative; z-index: 0; }
-#ai-sidebar.open, #webchat-sidebar.open, #wa-sidebar.open { width: 400px; border-left: 1px solid var(--border); box-shadow: -4px 0 12px rgba(0,0,0,0.3); }
+#ai-sidebar.open, #webchat-sidebar.open, #wa-sidebar.open { width: var(--panel-w, 400px); border-left: 1px solid var(--border); box-shadow: -4px 0 12px rgba(0,0,0,0.3); }
+#ai-sidebar.resizing, #webchat-sidebar.resizing, #wa-sidebar.resizing { transition: none; }
+.panel-resize-handle { position: absolute; left: -4px; top: 0; width: 8px; height: 100%; cursor: col-resize; z-index: 6; }
+.panel-resize-handle::after { content: ''; position: absolute; left: 3px; top: 0; width: 2px; height: 100%; background: transparent; transition: background .15s; }
+.panel-resize-handle:hover::after, .panel-resize-handle.active::after { background: var(--accent); }
 #ai-sidebar .ai-header, #webchat-sidebar .ai-header { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 #ai-sidebar .ai-title-wrapper, #webchat-sidebar .ai-title-wrapper { display: flex; align-items: center; gap: 6px; }
 #ai-sidebar .ai-sparkle { color: var(--accent); font-size: 16px; }

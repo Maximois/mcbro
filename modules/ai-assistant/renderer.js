@@ -9,6 +9,56 @@ const WEB_PROVIDERS = {
   perplexity: { label: 'Perplexity',    url: 'https://perplexity.ai' },
 };
 
+// ── Redimensionado de paneles laterales (ai-sidebar / webchat-sidebar / wa-sidebar) ──
+// Agrega un handle arrastrable en el borde izquierdo del panel y persiste el
+// ancho elegido en localStorage, por panel.
+const PanelResize = {
+  MIN: 300,
+  MAX_RATIO: 0.85,
+
+  attach(panelEl, storageKey, defaultWidth) {
+    if (!panelEl || panelEl.dataset.resizeAttached) return;
+    panelEl.dataset.resizeAttached = '1';
+
+    const saved = Number(localStorage.getItem(storageKey));
+    const initial = Number.isFinite(saved) && saved > 0 ? saved : defaultWidth;
+    panelEl.style.setProperty('--panel-w', initial + 'px');
+
+    const handle = document.createElement('div');
+    handle.className = 'panel-resize-handle';
+    handle.title = 'Arrastrar para redimensionar';
+    panelEl.appendChild(handle);
+
+    let startX = 0;
+    let startWidth = 0;
+
+    const onMove = (e) => {
+      const max = Math.round(window.innerWidth * PanelResize.MAX_RATIO);
+      // El panel está anclado a la derecha: arrastrar hacia la izquierda lo agranda.
+      const next = Math.min(max, Math.max(PanelResize.MIN, startWidth + (startX - e.clientX)));
+      panelEl.style.setProperty('--panel-w', next + 'px');
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      panelEl.classList.remove('resizing');
+      handle.classList.remove('active');
+      const finalWidth = parseInt(getComputedStyle(panelEl).getPropertyValue('--panel-w'), 10)
+        || panelEl.getBoundingClientRect().width;
+      localStorage.setItem(storageKey, String(Math.round(finalWidth)));
+    };
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      startX = e.clientX;
+      startWidth = panelEl.getBoundingClientRect().width;
+      panelEl.classList.add('resizing');
+      handle.classList.add('active');
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
+};
+
 function destroyEmbeddedWebview(wv) {
   if (!wv) return;
   let webContentsId = 0;
@@ -260,6 +310,7 @@ const AI = {
     `;
     const main = document.getElementById('main');
     if (main) main.appendChild(sb); else document.body.appendChild(sb);
+    PanelResize.attach(sb, 'mc-panel-w-ai', 400);
 
     const cfgEl = document.getElementById('ai-sb-cfg');
     const msgsEl = document.getElementById('ai-msgs');
@@ -2550,6 +2601,7 @@ const WebChat = {
     const main = document.getElementById('main');
     if (main) main.appendChild(sb);
     else document.body.appendChild(sb);
+    PanelResize.attach(sb, 'mc-panel-w-webchat', 400);
 
     this._wv = null;
     this.renderProviders();
@@ -2561,7 +2613,7 @@ const WebChat = {
     if (this._wv) return this._wv;
     const wv = document.createElement('webview');
     wv.id = 'wch-wv';
-    wv.setAttribute('partition', 'persist:mc');
+    wv.setAttribute('partition', 'persist:mc-webchat');
     wv.setAttribute('allowpopups', '');
     wv.setAttribute('allow', 'autoplay; media; encrypted-media');
     wv.setAttribute('webpreferences', 'contextIsolation=no,nodeIntegration=no');
@@ -2937,6 +2989,7 @@ const WhatsAppChat = {
       const main = document.getElementById('main');
       if (main) main.appendChild(sb);
       else document.body.appendChild(sb);
+      PanelResize.attach(sb, 'mc-panel-w-wa', 480);
 
       this._wv = null;
     } catch (e) {
