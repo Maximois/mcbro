@@ -686,7 +686,18 @@ const AI = {
       content.unshift({ type: 'text', text: 'Analizá esta imagen' });
     }
     const userContent = content.length === 1 && content[0].type === 'text' ? content[0].text : content;
-    this.msgs.push({ role: 'user', content: userContent });
+    // Recordatorio de modo pendiente (ver initModePills): va pegado al mensaje
+    // real que recibe la API, no a lo que se muestra en pantalla — así el
+    // modelo lo lee con máxima recencia sin ensuciar el chat visible.
+    let apiContent = userContent;
+    if (this._pendingModeNote) {
+      const note = this._pendingModeNote;
+      this._pendingModeNote = null;
+      apiContent = Array.isArray(userContent)
+        ? [{ type: 'text', text: note }, ...userContent]
+        : `${note}\n\n${userContent}`;
+    }
+    this.msgs.push({ role: 'user', content: apiContent });
     this.appendMsg('user', userContent);
     this.clearAttachedImages();
     this.scheduleAutoSave();
@@ -2260,6 +2271,13 @@ Usuario: "Descarga todos los videos de esta página"
           supervised: 'Todas las acciones requieren tu confirmación antes de ejecutarse.'
         };
         this.appendMsg('system', `${labels[this.activeMode]}\n${tips[this.activeMode]}`);
+        // El aviso de arriba es solo visual (appendMsg no toca this.msgs, que es
+        // lo que realmente se manda a la API). El system prompt siempre va
+        // primero en el array y con modelos chicos/rápidos pierde peso frente
+        // al historial ya acumulado — por eso "se olvidaba" el modo. Guardamos
+        // un recordatorio para inyectarlo pegado al PRÓXIMO mensaje real del
+        // usuario (máximo efecto de recencia, funciona con cualquier proveedor).
+        this._pendingModeNote = `[Cambio de modo activado: ${labels[this.activeMode]} — ${tips[this.activeMode]}]`;
       });
     });
   },
