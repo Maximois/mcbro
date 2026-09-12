@@ -1046,13 +1046,6 @@ input:checked + .tslider::before { transform: translateX(16px); }
       </div>
 
       <div class="sb-section">
-        <div class="sb-title">Monitor</div>
-        <div id="sidebar-process-monitor" style="display:flex;flex-direction:column;gap:3px;font-size: 0.769rem;color:var(--muted2);">
-          <div style="color:var(--muted);">Cargando...</div>
-        </div>
-      </div>
-
-      <div class="sb-section">
         <details id="sidebar-protections-details">
           <summary class="sb-title" style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">Protecciones <span style="font-size: 0.769rem;color:var(--muted);">▸</span></summary>
           <div style="padding-top:8px;">
@@ -1795,16 +1788,6 @@ input:checked + .tslider::before { transform: translateX(16px); }
           </div>
 
           <div class="card">
-            <div class="card-title"><span class="ct-icon">&#9881;</span> Procesos activos</div>
-            <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
-              <button class="btn ghost btn-sm" onclick="refreshProcessList()">&#8635; Actualizar</button>
-            </div>
-            <div id="process-list" style="font-size: 0.769rem;color:var(--muted2);display:flex;flex-direction:column;gap:4px;">
-              Cargando procesos...
-            </div>
-          </div>
-
-          <div class="card">
             <div class="card-title"><span class="ct-icon">&#128204;</span> Acerca de MC Browser</div>
             <div style="font-size: 0.923rem;line-height:2;color:var(--muted2);" id="about-block">
               <div>Versión: <span style="color:var(--accent);">1.0.0</span></div>
@@ -1972,8 +1955,6 @@ function toggleSidebar() {
   btn.innerHTML = collapsed ? '&#9654;' : '&#9664;';
   btn.title = collapsed ? 'Abrir sidebar (Ctrl+Shift+S)' : 'Colapsar sidebar (Ctrl+Shift+S)';
   try { localStorage.setItem('mc_sidebar_collapsed', collapsed ? '1' : ''); } catch {}
-  if (collapsed) stopSidebarProcessMonitor();
-  else startSidebarProcessMonitor();
   if (!collapsed) {
     renderSidebarStreams();
   }
@@ -2378,7 +2359,6 @@ function showPanel(name) {
   const map = { newtab:0, history:1, reader:2, streams:3, media:4, settings:5, lab:6 };
   const btns = document.querySelectorAll('.tnbtn');
   if (btns[map[name]]) btns[map[name]].classList.add('active');
-  syncProcessRefresh(name);
   // ocultar webview cuando estamos en paneles internos
   $('webview-container').style.display = 'none';
 }
@@ -3959,70 +3939,6 @@ function refreshStats() {
   pill.className = 'blocked-pill' + (total > 50 ? ' danger' : '');
 }
 
-async function refreshProcessList() {
-  const container = $('process-list');
-  if (!container || typeof mc === 'undefined' || typeof mc.getProcesses !== 'function') return;
-  try {
-    const processes = await mc.getProcesses();
-    container.innerHTML = processes.map(process => {
-      const detail = `${process.type} · PID ${process.pid} · ${process.memory} MB · ${process.cpu}% CPU · ${process.state}`;
-      const url = process.url ? `<div style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(process.url)}</div>` : '';
-      return `<div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--border);padding:4px 0;">
-        <div style="min-width:0;">
-          <div style="color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(process.role)}</div>
-          ${url}
-        </div>
-        <span style="white-space:nowrap;color:var(--muted);">${escapeHtml(detail)}</span>
-      </div>`;
-    }).join('') || 'No hay procesos Electron disponibles.';
-  } catch (error) {
-    container.textContent = 'No se pudieron consultar los procesos: ' + (error.message || 'error');
-  }
-}
-
-let _sidebarProcessTimer = null;
-async function refreshSidebarProcessMonitor() {
-  const container = $('sidebar-process-monitor');
-  if (!container || typeof mc === 'undefined' || typeof mc.getProcesses !== 'function') return;
-  try {
-    const processes = await mc.getProcesses();
-    const tabs = processes.filter(p => /^Pestaña:/.test(p.role));
-    const groups = [
-      { label: 'Browser', items: processes.filter(p => p.type === 'Browser') },
-      { label: 'GPU', items: processes.filter(p => p.type === 'GPU') },
-      { label: 'Utility', items: processes.filter(p => p.type === 'Utility') },
-    ];
-    const row = (label, items, detail = '') => {
-      const memory = items.reduce((total, item) => total + (Number(item.memory) || 0), 0);
-      const cpu = items.reduce((total, item) => total + (Number(item.cpu) || 0), 0);
-      return `<div style="display:flex;justify-content:space-between;gap:6px;line-height:1.4;">
-        <span style="color:var(--accent);">${escapeHtml(label)}${detail}</span>
-        <span style="white-space:nowrap;color:var(--muted);">${memory} MB · ${cpu.toFixed(1)}%</span>
-      </div>`;
-    };
-    const tabRows = tabs.map((tab, index) => row('Tab ' + (index + 1), [tab])).join('');
-    // Preservar el estado abierto/cerrado del <details> de Tabs entre re-renders
-    const prevDetails = container.querySelector('details');
-    const wasOpen = prevDetails ? prevDetails.open : false;
-    container.innerHTML = groups.map(group => row(group.label, group.items)).join('') +
-      `<details style="margin-top:1px;" ${wasOpen ? 'open' : ''}><summary style="cursor:pointer;color:var(--accent);list-style:none;">Tabs (${tabs.length}) <span style="color:var(--muted);">▸</span></summary><div style="padding:3px 0 0 8px;display:flex;flex-direction:column;gap:2px;">${tabRows || '<span style="color:var(--muted);">0 MB · 0.0%</span>'}</div></details>`;
-  } catch {
-    container.textContent = 'Monitor no disponible';
-  }
-}
-
-function startSidebarProcessMonitor() {
-  if (_sidebarProcessTimer) return;
-  refreshSidebarProcessMonitor();
-  _sidebarProcessTimer = setInterval(refreshSidebarProcessMonitor, 2000);
-}
-
-function stopSidebarProcessMonitor() {
-  if (!_sidebarProcessTimer) return;
-  clearInterval(_sidebarProcessTimer);
-  _sidebarProcessTimer = null;
-}
-
 // ── Status bar resources monitor ──────────────
 let _statusBarResourceTimer = null;
 function startStatusBarResources() {
@@ -4044,18 +3960,6 @@ function startStatusBarResources() {
   }
   update();
   _statusBarResourceTimer = setInterval(update, 3000);
-}
-
-let _processRefreshTimer = null;
-function syncProcessRefresh(name) {
-  if (_processRefreshTimer) {
-    clearInterval(_processRefreshTimer);
-    _processRefreshTimer = null;
-  }
-  if (name === 'settings') {
-    refreshProcessList();
-    _processRefreshTimer = setInterval(refreshProcessList, 2000);
-  }
 }
 
 async function resetStats() {
@@ -5882,8 +5786,6 @@ ${details}`;
   setText('ab-mem',      info.mem);
   setText('ab-datadir',  info.dataDir);
   $('dl-dir').value = info.dlDir;
-  refreshProcessList();
-  if (!$('sidebar')?.classList.contains('collapsed')) startSidebarProcessMonitor();
 
   // Real values for fingerprinting
   const real = await mc.getRealValues();
