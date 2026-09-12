@@ -2623,6 +2623,7 @@ const WebChat = {
         <button class="wch-action-btn" onclick="WebChat.attachPage()" title="Enviar contexto de la página activa al chat">📋 Adjuntar página</button>
         <button class="wch-action-btn" onclick="WebChat.attachSelection()" title="Enviar selección de texto al chat">✂️ Selección</button>
         <button class="wch-action-btn" onclick="WebChat.reload()" title="Recargar chat">🔄</button>
+        <button class="wch-action-btn" onclick="WebChat.clearData()" title="Borrar cookies/caché/datos de este panel (sesión propia, no afecta al resto del navegador)">🧹</button>
       </div>
       <details id="wch-bg-cfg" style="flex-shrink:0;">
         <summary style="font-size:11px;color:var(--muted2);cursor:pointer;user-select:none;padding:8px 12px;border-top:1px solid var(--border);">🎨 Fondo del panel</summary>
@@ -2824,6 +2825,20 @@ const WebChat = {
   reload() {
     const wv = this._wv;
     if (wv && this._ready) wv.reload();
+  },
+
+  async clearData() {
+    if (!confirm('¿Borrar cookies, caché y datos guardados del panel WebChat?\n\nEsto va a cerrar la sesión en Copilot/ChatGPT/Claude/Gemini/Perplexity dentro de este panel (no afecta al resto del navegador).')) return;
+    try {
+      const res = await mc.clearWebchatData();
+      if (res?.ok) {
+        const wv = this._wv;
+        if (wv) { try { wv.loadURL('about:blank'); } catch {} }
+        this._active = null;
+      } else {
+        alert('No se pudo borrar: ' + (res?.error || 'error desconocido'));
+      }
+    } catch (e) { alert('No se pudo borrar: ' + e.message); }
   },
 
   refreshSession() {

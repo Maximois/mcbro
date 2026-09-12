@@ -1597,6 +1597,19 @@ ipcMain.handle('clear-cookies', async () => {
 ipcMain.handle('clear-cache', async () => {
   try { await sess().clearCache(); return { ok: true }; } catch (e) { return { error: e.message }; }
 });
+ipcMain.handle('clear-webchat-data', async (_e, opts = {}) => {
+  try {
+    const wchSess = session.fromPartition(WEBCHAT_PARTITION);
+    const settings = { cookies: opts.cookies !== false, cache: opts.cache !== false, storage: opts.storage !== false };
+    if (settings.cookies) {
+      const cookies = await wchSess.cookies.get({});
+      for (const c of cookies) await wchSess.cookies.remove(cookieRemovalUrl(c), c.name).catch(() => {});
+    }
+    if (settings.cache) await wchSess.clearCache();
+    if (settings.storage) await wchSess.clearStorageData();
+    return { ok: true, settings };
+  } catch (e) { return { ok: false, error: e.message || String(e) }; }
+});
 ipcMain.handle('clear-data', async (_e, opts = {}) => {
   try {
     const settings = {

@@ -116,6 +116,7 @@ contextBridge.exposeInMainWorld('mc', {
   clearCache:      ()               => ipcRenderer.invoke('clear-cache'),
   clearData:       (opts={})         => ipcRenderer.invoke('clear-data', opts),
   clearAll:        ()               => ipcRenderer.invoke('clear-all'),
+  clearWebchatData: (opts={})       => ipcRenderer.invoke('clear-webchat-data', opts),
   addCookieRule:   (domain,policy)  => ipcRenderer.invoke('add-cookie-rule',   {domain,policy}),
   removeCookieRule:(domain)         => ipcRenderer.invoke('remove-cookie-rule', {domain}),
 
