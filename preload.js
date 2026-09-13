@@ -10,6 +10,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 // -- Canales permitidos (whitelist estricta) --------
 const ALLOWED = new Set([
   'req-blocked','media-detected','cookie-intercepted','stats-update',
+  'webview-fullscreen',
   'dl-progress','dl-complete','dl-error','new-tab','close-tab',
   'dl-pause','dl-resume','dl-cancel','dl:open-file',
   'dl-native','dl-native-progress','dl-native-done','dl-native-tab',

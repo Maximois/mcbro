@@ -2326,6 +2326,33 @@ app.on('web-contents-created', (event, wc) => {
       wc.setUserAgent(UA_WHATSAPP);
     }
   });
+  // ── Pantalla completa HTML5 (botón nativo de fullscreen/modo teatro del
+  // propio sitio: YouTube, Facebook, Vimeo, etc.) ──
+  // Sin este manejo, Electron solo expande el elemento dentro de los límites
+  // del propio <webview> (que ocupa una fracción de la ventana, dejando la
+  // barra de pestañas/sidebar visibles alrededor) y nunca lleva la ventana
+  // del SO a fullscreen real — exactamente el síntoma reportado.
+  if (wc.getType() === 'webview') {
+    wc.on('enter-html-full-screen', () => {
+      const win = wc.getOwnerBrowserWindow();
+      if (win && !win.isFullScreen()) win.setFullScreen(true);
+      try { mainWin?.webContents?.send('webview-fullscreen', { wcId: wc.id, fullscreen: true }); } catch {}
+      // Salvaguarda documentada por Electron: si la ventana sale de fullscreen
+      // por una vía distinta al propio control del sitio (p.ej. el usuario usa
+      // el atajo de maximizar/restaurar del SO), forzar que el documento salga
+      // de fullscreen HTML también — si no, el webview queda en un estado
+      // "fullscreen" interno desincronizado y el siguiente intento de
+      // fullscreen del sitio deja de disparar el evento por completo.
+      win?.once('leave-html-full-screen', () => {
+        try { wc.executeJavaScript('document.exitFullscreen()', true).catch(() => {}); } catch {}
+      });
+    });
+    wc.on('leave-html-full-screen', () => {
+      const win = wc.getOwnerBrowserWindow();
+      if (win && win.isFullScreen()) win.setFullScreen(false);
+      try { mainWin?.webContents?.send('webview-fullscreen', { wcId: wc.id, fullscreen: false }); } catch {}
+    });
+  }
   // Captura la posición del clic derecho en píxeles CSS (exacta para elementFromPoint)
   wc.on('dom-ready', () => {
     try {
