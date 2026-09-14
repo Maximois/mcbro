@@ -348,6 +348,78 @@ const AUTH_DOMAINS = [
   'api.instagram.com', 'i.instagram.com'
 ];
 
+function extFromMime(mime) {
+  const map = {
+    'image/png': '.png', 'image/jpeg': '.jpg', 'image/jpg': '.jpg', 'image/webp': '.webp',
+    'image/gif': '.gif', 'image/bmp': '.bmp', 'image/svg+xml': '.svg', 'image/avif': '.avif',
+    'video/mp4': '.mp4', 'video/webm': '.webm', 'audio/mpeg': '.mp3', 'audio/wav': '.wav',
+    'application/pdf': '.pdf', 'text/plain': '.txt'
+  };
+  return map[String(mime || '').split(';')[0].trim().toLowerCase()] || '';
+}
+
+// webContents.downloadURL() hace un pedido de RED — no puede alcanzar
+// blob:/data: URLs, que solo existen en la memoria de la propia página (el
+// caso típico de generadores de imagen client-side sin URL persistente,
+// como perchance.org). Para esos, hay que pedirle a la página misma que
+// lea el blob (fetch dentro de su propio contexto) y nos devuelva los
+// bytes, en vez de intentar bajarlo desde afuera.
+async function saveBlobOrDataUrlToDownloads(wc, srcURL, hintName) {
+  try {
+    let mime = '';
+    let buffer = null;
+    if (/^data:/i.test(srcURL)) {
+      const match = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(srcURL);
+      if (!match) return { ok: false, error: 'data URL inválida' };
+      mime = match[1] || 'application/octet-stream';
+      buffer = match[2] ? Buffer.from(match[3], 'base64') : Buffer.from(decodeURIComponent(match[3]), 'binary');
+    } else if (/^blob:/i.test(srcURL)) {
+      if (!wc || wc.isDestroyed()) return { ok: false, error: 'página no disponible' };
+      const result = await wc.executeJavaScript(`
+        (async () => {
+          try {
+            const resp = await fetch(${JSON.stringify(srcURL)});
+            const blob = await resp.blob();
+            const buf = await blob.arrayBuffer();
+            const bytes = new Uint8Array(buf);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+            return { mime: blob.type || '', base64: btoa(binary) };
+          } catch (e) { return { error: e.message || String(e) }; }
+        })()
+      `, true);
+      if (!result || result.error) return { ok: false, error: result?.error || 'no se pudo leer el blob' };
+      mime = result.mime || 'application/octet-stream';
+      buffer = Buffer.from(result.base64, 'base64');
+    } else {
+      return { ok: false, error: 'no es blob: ni data:' };
+    }
+
+    const dlDir = CFG.downloadDir || app.getPath('downloads');
+    if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
+    const ext = extFromMime(mime) || path.extname(hintName || '') || '.bin';
+    const base = (hintName ? hintName.replace(/\.[a-z0-9]+$/i, '') : 'imagen').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) || 'descarga';
+    let filename = base + ext;
+    let filePath = path.join(dlDir, filename);
+    let n = 1;
+    while (fs.existsSync(filePath)) {
+      filename = `${base} (${n})${ext}`;
+      filePath = path.join(dlDir, filename);
+      n++;
+    }
+    fs.writeFileSync(filePath, buffer);
+
+    const dlId = 'dl-blob-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    const pageUrl = wc?.getURL?.() || '';
+    ACTIONS.emit('dl-native', { id: dlId, url: srcURL.slice(0, 60) + '…', filename, totalBytes: buffer.length, pageUrl, state: 'active' });
+    ACTIONS.emit('dl-native-progress', { id: dlId, url: srcURL, filename, received: buffer.length, totalBytes: buffer.length, pct: 100, state: 'progressing' });
+    ACTIONS.emit('dl-native-done', { id: dlId, url: srcURL, filename, file: filePath, size: (buffer.length / 1048576).toFixed(1), state: 'completed', cancelled: false });
+    return { ok: true, file: filePath };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+}
+
 function isAuthDomain(host) {
   const normalized = String(host || '').toLowerCase().replace(/^\.+/, '');
   if (!normalized) return false;
@@ -2528,6 +2600,10 @@ app.on('web-contents-created', (event, wc) => {
           label: 'Descargar imagen',
           click: () => {
             if (/^https?:\/\//i.test(params.srcURL)) mainWin?.webContents?.downloadURL(params.srcURL);
+            else if (/^(blob|data):/i.test(params.srcURL)) {
+              saveBlobOrDataUrlToDownloads(wc, params.srcURL, 'imagen')
+                .then(r => { if (!r.ok) console.error('[blob-download]', r.error); });
+            }
           }
         }
       );
@@ -2542,6 +2618,10 @@ app.on('web-contents-created', (event, wc) => {
           label: 'Descargar multimedia',
           click: () => {
             if (/^https?:\/\//i.test(params.srcURL)) mainWin?.webContents?.downloadURL(params.srcURL);
+            else if (/^(blob|data):/i.test(params.srcURL)) {
+              saveBlobOrDataUrlToDownloads(wc, params.srcURL, 'multimedia')
+                .then(r => { if (!r.ok) console.error('[blob-download]', r.error); });
+            }
           }
         }
       );
