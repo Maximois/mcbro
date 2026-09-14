@@ -26,16 +26,17 @@ const PanelResize = {
     return Math.round(Math.min(Math.max(saved, PanelResize.MIN), max));
   },
 
-  attach(panelEl, storageKey, defaultWidth) {
+  attach(panelEl, storageKey, defaultWidth, dockSide) {
     if (!panelEl || panelEl.dataset.resizeAttached) return;
     panelEl.dataset.resizeAttached = '1';
+    const leftDocked = dockSide === 'left';
 
     const saved = Number(localStorage.getItem(storageKey));
     const initial = PanelResize.clampWidth(saved, defaultWidth, storageKey);
     panelEl.style.setProperty('--panel-w', initial + 'px');
 
     const handle = document.createElement('div');
-    handle.className = 'panel-resize-handle';
+    handle.className = 'panel-resize-handle' + (leftDocked ? ' right-edge' : '');
     handle.title = 'Arrastrar para redimensionar';
     panelEl.appendChild(handle);
 
@@ -47,7 +48,11 @@ const PanelResize = {
       if (activePointerId === null || e.pointerId !== activePointerId) return;
       e.preventDefault();
       const max = Math.round(window.innerWidth * PanelResize.MAX_RATIO);
-      const next = Math.min(max, Math.max(PanelResize.MIN, startWidth + (startX - e.clientX)));
+      // Panel anclado a la derecha: arrastrar a la izquierda agranda.
+      // Panel anclado a la izquierda (dockSide:'left'): es al revés, arrastrar
+      // a la derecha agranda — el handle está en el borde opuesto del panel.
+      const delta = leftDocked ? (e.clientX - startX) : (startX - e.clientX);
+      const next = Math.min(max, Math.max(PanelResize.MIN, startWidth + delta));
       panelEl.style.setProperty('--panel-w', next + 'px');
     };
     const onUp = (e) => {

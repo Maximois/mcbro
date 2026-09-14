@@ -480,6 +480,36 @@ function isMainBrowsingSession(wc) {
   try { return wc?.session === session.fromPartition('persist:mc'); } catch { return false; }
 }
 
+function extraSessionPartition(id) {
+  return 'persist:mc-session-' + id;
+}
+
+// Sesiones extra: a diferencia de WebChat (5 dominios fijos, sin publicidad),
+// acá el usuario navega a CUALQUIER sitio dentro de su propia identidad/
+// cookie jar — así que sí deben recibir las mismas reglas de ad/tracker
+// blocking, política de cookies y permisos que la sesión principal. Lo único
+// que cambia es el almacenamiento (cookies/cache/storage separados).
+function setupExtraSession(sess) {
+  setupSessionPermissionHandlers(sess);
+  if (CFG.proxyEnabled && CFG.proxyHost) {
+    sess.setProxy({ proxyRules: `${CFG.proxyType || 'socks5'}://${CFG.proxyHost}:${CFG.proxyPort || 1080}` })
+      .catch(e => console.error('[PROXY][session]', e.message));
+  }
+  try {
+    const m = require('./modules/adblocker/main');
+    m.setup({
+      cfg: CFG, saveCfg, emit: () => {}, session: sess, allowedDomains: AUTH_DOMAINS,
+      mediaCallback: null, blockCallback: null, requestCallback: null, requestGuard: createRequestGuard()
+    });
+  } catch (e) { console.error('[ADBLOCK][session]', e.message); }
+}
+
+function isExtraSessionWebContents(wc) {
+  try {
+    return (CFG.extraSessions || []).some(s => wc?.session === session.fromPartition(extraSessionPartition(s.id)));
+  } catch { return false; }
+}
+
 function setupWebchatSession() {
   const wchSess = session.fromPartition(WEBCHAT_PARTITION);
   // Mismo sistema de permisos granulares por dominio que el resto (para que
@@ -547,7 +577,7 @@ function attachCookieGuard(wc) {
 function refreshCookieGuards() {
   try {
     for (const wc of require('electron').webContents.getAllWebContents()) {
-      if (!wc.isDestroyed() && wc.getType() === 'webview' && isMainBrowsingSession(wc)) registerCookieGuardScript(wc);
+      if (!wc.isDestroyed() && wc.getType() === 'webview' && (isMainBrowsingSession(wc) || isExtraSessionWebContents(wc))) registerCookieGuardScript(wc);
     }
   } catch (e) { console.error('[cookie-guard] refresh fallido', e.message); }
 }
@@ -587,6 +617,7 @@ let CFG = {
   currentUA: 'win-chrome', rotateUA: false,
   language: '', refererPolicy: '',
   downloadDir: '', allowlist: {}, customRules: [], permissions: {}, resourceRules: [], userCosmeticRules: [],
+  extraSessions: [],
   aiConfig: {
     provider: 'ollama', ollamaUrl: 'http://localhost:11434', ollamaModel: 'qwen2.5:1.5b',
     openaiKey: '', openaiModel: 'gpt-4o',
@@ -1621,6 +1652,38 @@ ipcMain.handle('clear-cookies', async () => {
 });
 ipcMain.handle('clear-cache', async () => {
   try { await sess().clearCache(); return { ok: true }; } catch (e) { return { error: e.message }; }
+});
+ipcMain.handle('sessions:list', () => CFG.extraSessions || []);
+ipcMain.handle('sessions:create', (e, { name } = {}) => {
+  const id = 'sess_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const entry = { id, name: String(name || 'Nueva sesión').trim().slice(0, 40) || 'Nueva sesión', createdAt: Date.now() };
+  CFG.extraSessions = [...(CFG.extraSessions || []), entry];
+  saveCfg();
+  try { setupExtraSession(session.fromPartition(extraSessionPartition(id))); } catch (e2) { console.error('[sessions:create]', e2.message); }
+  return entry;
+});
+ipcMain.handle('sessions:rename', (_e, { id, name }) => {
+  const s = (CFG.extraSessions || []).find(s => s.id === id);
+  if (!s) return { ok: false, error: 'no encontrada' };
+  s.name = String(name || '').trim().slice(0, 40) || s.name;
+  saveCfg();
+  return { ok: true, name: s.name };
+});
+ipcMain.handle('sessions:delete', async (_e, { id }) => {
+  CFG.extraSessions = (CFG.extraSessions || []).filter(s => s.id !== id);
+  saveCfg();
+  try { await session.fromPartition(extraSessionPartition(id)).clearStorageData(); } catch {}
+  return { ok: true };
+});
+ipcMain.handle('sessions:clear-data', async (_e, { id }) => {
+  try {
+    const sess2 = session.fromPartition(extraSessionPartition(id));
+    const cookies = await sess2.cookies.get({});
+    for (const c of cookies) await sess2.cookies.remove(cookieRemovalUrl(c), c.name).catch(() => {});
+    await sess2.clearCache();
+    await sess2.clearStorageData();
+    return { ok: true };
+  } catch (e2) { return { ok: false, error: e2.message }; }
 });
 ipcMain.handle('clear-webchat-data', async (_e, opts = {}) => {
   try {
@@ -2839,7 +2902,7 @@ if (!gotTheLock) {
 }
 
 app.on('web-contents-created', (_event, contents) => {
-  if (contents.getType() === 'webview' && isMainBrowsingSession(contents)) attachCookieGuard(contents);
+  if (contents.getType() === 'webview' && (isMainBrowsingSession(contents) || isExtraSessionWebContents(contents))) attachCookieGuard(contents);
 });
 
 app.whenReady().then(() => {
@@ -2847,6 +2910,9 @@ app.whenReady().then(() => {
   createWindow();
   const sess = session.fromPartition('persist:mc');
   setupWebchatSession();
+  for (const s of (CFG.extraSessions || [])) {
+    try { setupExtraSession(session.fromPartition(extraSessionPartition(s.id))); } catch (e) { console.error('[sessions:init]', e.message); }
+  }
   startProcessMetricsSampler();
   setupWhatsappSession();
   ACTIONS.emit = (ch, ...args) => { try { mainWin?.webContents?.send(ch, ...args); } catch {} };

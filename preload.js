@@ -118,6 +118,11 @@ contextBridge.exposeInMainWorld('mc', {
   clearData:       (opts={})         => ipcRenderer.invoke('clear-data', opts),
   clearAll:        ()               => ipcRenderer.invoke('clear-all'),
   clearWebchatData: (opts={})       => ipcRenderer.invoke('clear-webchat-data', opts),
+  sessionsList:    ()               => ipcRenderer.invoke('sessions:list'),
+  sessionsCreate:  (name)           => ipcRenderer.invoke('sessions:create', { name }),
+  sessionsRename:  (id, name)       => ipcRenderer.invoke('sessions:rename', { id, name }),
+  sessionsDelete:  (id)             => ipcRenderer.invoke('sessions:delete', { id }),
+  sessionsClearData: (id)           => ipcRenderer.invoke('sessions:clear-data', { id }),
   addCookieRule:   (domain,policy)  => ipcRenderer.invoke('add-cookie-rule',   {domain,policy}),
   removeCookieRule:(domain)         => ipcRenderer.invoke('remove-cookie-rule', {domain}),
 

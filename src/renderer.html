@@ -860,10 +860,13 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
 .ai-key-link:hover { background: rgba(255,169,77,.25); border-color: var(--accent); color: #fff; }
 .ai-selection-btn { background: var(--accent); color: #000; border: none; border-radius: 8px; padding: 6px 12px; font-size: 0.923rem; font-family: inherit; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.4); transition: opacity .2s; animation: fadein .15s; white-space: nowrap; }
 .ai-selection-btn:hover { opacity: .85; }
-#ai-sidebar, #webchat-sidebar, #wa-sidebar { width: 0; min-width: 0; flex-shrink: 0; background: var(--surface); border-left: none; display: flex; flex-direction: column; overflow: hidden; transition: width 0.25s ease; position: relative; z-index: 0; }
+#ai-sidebar, #webchat-sidebar, #wa-sidebar, #session-sidebar { width: 0; min-width: 0; flex-shrink: 0; background: var(--surface); border-left: none; display: flex; flex-direction: column; overflow: hidden; transition: width 0.25s ease; position: relative; z-index: 0; }
 #ai-sidebar.open, #webchat-sidebar.open, #wa-sidebar.open { width: var(--panel-w, 400px); border-left: 1px solid var(--border); box-shadow: -4px 0 12px rgba(0,0,0,0.3); }
-#ai-sidebar.resizing, #webchat-sidebar.resizing, #wa-sidebar.resizing { transition: none; }
+#session-sidebar { order: -1; }
+#session-sidebar.open { width: var(--panel-w, 400px); border-right: 1px solid var(--border); box-shadow: 4px 0 12px rgba(0,0,0,0.3); }
+#ai-sidebar.resizing, #webchat-sidebar.resizing, #wa-sidebar.resizing, #session-sidebar.resizing { transition: none; }
 .panel-resize-handle { position: absolute; left: -4px; top: 0; width: 8px; height: 100%; cursor: col-resize; z-index: 6; }
+.panel-resize-handle.right-edge { left: auto; right: -4px; }
 .panel-resize-handle::after { content: ''; position: absolute; left: 3px; top: 0; width: 2px; height: 100%; background: transparent; transition: background .15s; }
 .panel-resize-handle:hover::after, .panel-resize-handle.active::after { background: var(--accent); }
 #ai-sidebar .ai-header, #webchat-sidebar .ai-header { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
@@ -933,6 +936,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
 #ai-wv, #wch-wv, #wa-wv { flex: 1; border: none; min-height: 0; }
 /* Chat edge toggle buttons (mismo formato que sidebar) */
 #chat-toggles { display: flex; flex-direction: column; flex-shrink: 0; width: 18px; min-width: 18px; background: var(--surface); border-left: 1px solid var(--border); }
+#session-toggle-wrap { display: flex; flex-direction: column; flex-shrink: 0; width: 18px; min-width: 18px; background: var(--surface); border-right: 1px solid var(--border); order: -1; }
 .chat-toggle { width: 18px; min-width: 18px; flex: 1; background: var(--surface); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.769rem; transition: color 0.2s, background 0.2s; user-select: none; }
 .chat-toggle:hover { background: var(--surface2); color: var(--accent); }
 .chat-toggle + .chat-toggle { border-top: 1px solid var(--border); }
@@ -1403,6 +1407,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
               <div class="nt-sc-ref-item" onclick="(window.AI?AI.toggle():toggleChatPanel('ai'))" title="Panel IA"><span class="nt-sc-ref-key">Ctrl+Shift+A</span> IA</div>
               <div class="nt-sc-ref-item" onclick="(window.WebChat?WebChat.toggle():toggleChatPanel('web'))" title="WebChat"><span class="nt-sc-ref-key">Ctrl+Shift+W</span> WebChat</div>
               <div class="nt-sc-ref-item" onclick="(window.WhatsAppChat?WhatsAppChat.toggle():toggleChatPanel('wa'))" title="WhatsApp Web"><span class="nt-sc-ref-key">Ctrl+Shift+Q</span> WhatsApp</div>
+              <div class="nt-sc-ref-item" onclick="(window.Sessions?Sessions.toggle():null)" title="Sesiones aisladas"><span class="nt-sc-ref-key">Ctrl+Shift+N</span> Sesiones</div>
               <div class="nt-sc-ref-item" onclick="openReader()" title="Reader"><span class="nt-sc-ref-key">Ctrl+Shift+E</span> Reader</div>
               <div class="nt-sc-ref-item" onclick="showPanel('lab')" title="Laboratorio"><span class="nt-sc-ref-key">Ctrl+Shift+G</span> Lab</div>
               <div class="nt-sc-ref-item" onclick="showPanel('settings')" title="Configuración"><span class="nt-sc-ref-key">Ctrl+Shift+,</span> Config</div>
@@ -1876,6 +1881,11 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
       </div>
     </div>
 
+    <!-- SESSION EDGE TOGGLE (izquierda) -->
+    <div id="session-toggle-wrap">
+      <div id="session-toggle" class="chat-toggle closed" onclick="(window.Sessions?Sessions.toggle():null)" title="Abrir sesiones aisladas (Ctrl+Shift+N)">&#9654;</div>
+    </div>
+
     <!-- CHAT EDGE TOGGLE BUTTONS -->
     <div id="chat-toggles">
       <div id="chat-toggle-ai" class="chat-toggle closed" onclick="(window.AI?AI.toggle():toggleChatPanel('ai'))" title="Abrir IA (Ctrl+Shift+A)">&#9664;</div>
@@ -2292,6 +2302,155 @@ function getTitleForUrl(url) {
     }
   }
 })();
+
+// ── Sesiones aisladas (mini-navegador con partición propia, panel a la
+//    izquierda) — a diferencia de WebChat, acá se puede navegar a cualquier
+//    sitio; cada sesión tiene su propia identidad/cookie jar, gestionada en
+//    main.js (sessions:list/create/rename/delete/clear-data). ──
+const Sessions = {
+  list: [],
+  activeId: null,
+  _wv: null,
+  _injected: false,
+
+  async injectSidebar() {
+    if (this._injected) return;
+    this._injected = true;
+    const sb = document.createElement('div');
+    sb.id = 'session-sidebar';
+    sb.innerHTML = `
+      <div style="display:flex;align-items:center;gap:6px;padding:8px;border-bottom:1px solid var(--border);">
+        <select id="session-select" style="flex:1;min-width:0;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:0.85rem;"></select>
+        <button class="wch-action-btn" onclick="Sessions.createNew()" title="Nueva sesión">&#43;</button>
+        <button class="wch-action-btn" onclick="Sessions.renameCurrent()" title="Renombrar esta sesión">&#9998;</button>
+        <button class="wch-action-btn" onclick="Sessions.clearData()" title="Borrar cookies/caché/datos de esta sesión (no afecta al resto del navegador)">🧹</button>
+        <button class="wch-action-btn" onclick="Sessions.deleteCurrent()" title="Eliminar esta sesión y todos sus datos">&#128465;</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid var(--border);">
+        <button class="wch-action-btn" onclick="Sessions.goBack()" title="Atrás">&#8592;</button>
+        <button class="wch-action-btn" onclick="Sessions.goForward()" title="Adelante">&#8594;</button>
+        <button class="wch-action-btn" onclick="Sessions.reload()" title="Recargar">&#8635;</button>
+        <input id="session-urlbar" placeholder="URL o búsqueda..." spellcheck="false" autocomplete="off" style="flex:1;min-width:0;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:0.85rem;" onkeydown="if(event.key==='Enter') Sessions.navigate(this.value)"/>
+      </div>
+      <div id="session-webview-wrap" style="flex:1;position:relative;"></div>
+    `;
+    const main = document.getElementById('main');
+    if (main) main.appendChild(sb);
+    PanelResize.attach(sb, 'mc-panel-w-session', 400, 'left');
+    document.getElementById('session-select')?.addEventListener('change', (e) => this.switchTo(e.target.value));
+    await this.refreshList();
+  },
+
+  async refreshList() {
+    try { this.list = await mc.sessionsList(); } catch { this.list = []; }
+    const sel = document.getElementById('session-select');
+    if (!sel) return;
+    if (!this.list.length) {
+      sel.innerHTML = '<option value="">Sin sesiones — creá una con +</option>';
+      this.activeId = null;
+      const wrap = document.getElementById('session-webview-wrap');
+      if (this._wv) { try { this._wv.remove(); } catch {} this._wv = null; }
+      return;
+    }
+    sel.innerHTML = this.list.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join('');
+    if (!this.activeId || !this.list.some(s => s.id === this.activeId)) this.activeId = this.list[0].id;
+    sel.value = this.activeId;
+    this.ensureWebview();
+  },
+
+  ensureWebview() {
+    const wrap = document.getElementById('session-webview-wrap');
+    if (!wrap || !this.activeId) return;
+    if (this._wv && this._wv.dataset.sessionId === this.activeId) return;
+    if (this._wv) { try { this._wv.remove(); } catch {} this._wv = null; }
+    const wv = document.createElement('webview');
+    wv.id = 'session-wv';
+    wv.dataset.sessionId = this.activeId;
+    wv.setAttribute('partition', 'persist:mc-session-' + this.activeId);
+    wv.setAttribute('allowpopups', '');
+    wv.style.cssText = 'width:100%;height:100%;display:inline-flex;';
+    wv.src = 'https://duckduckgo.com/';
+    wrap.appendChild(wv);
+    this._wv = wv;
+    wv.addEventListener('did-navigate', () => this.syncUrlbar());
+    wv.addEventListener('did-navigate-in-page', () => this.syncUrlbar());
+  },
+
+  syncUrlbar() {
+    const input = document.getElementById('session-urlbar');
+    if (input && this._wv) { try { input.value = this._wv.getURL(); } catch {} }
+  },
+
+  switchTo(id) {
+    this.activeId = id;
+    this.ensureWebview();
+  },
+
+  async createNew() {
+    const name = prompt('Nombre de la nueva sesión (ej: "Trabajo", "Personal"):', '');
+    if (name === null) return;
+    const entry = await mc.sessionsCreate(name);
+    await this.refreshList();
+    this.activeId = entry.id;
+    const sel = document.getElementById('session-select');
+    if (sel) sel.value = entry.id;
+    this.ensureWebview();
+  },
+
+  async renameCurrent() {
+    if (!this.activeId) return;
+    const current = this.list.find(s => s.id === this.activeId);
+    const name = prompt('Nuevo nombre:', current?.name || '');
+    if (name === null) return;
+    await mc.sessionsRename(this.activeId, name);
+    await this.refreshList();
+  },
+
+  async deleteCurrent() {
+    if (!this.activeId) return;
+    const current = this.list.find(s => s.id === this.activeId);
+    if (!confirm(`¿Eliminar la sesión "${current?.name || ''}" y todos sus datos? Esta acción no se puede deshacer.`)) return;
+    await mc.sessionsDelete(this.activeId);
+    if (this._wv) { try { this._wv.remove(); } catch {} this._wv = null; }
+    this.activeId = null;
+    await this.refreshList();
+  },
+
+  async clearData() {
+    if (!this.activeId) return;
+    if (!confirm('¿Borrar cookies, caché y datos guardados de esta sesión? Vas a perder el login en los sitios abiertos acá (no afecta al resto del navegador).')) return;
+    const res = await mc.sessionsClearData(this.activeId);
+    if (res?.ok && this._wv) { try { this._wv.loadURL('about:blank'); } catch {} }
+  },
+
+  navigate(value) {
+    if (!this._wv || !value?.trim()) return;
+    let url = value.trim();
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) {
+      url = /^[^\s.]+\.[^\s]+$/.test(url) ? 'https://' + url : 'https://duckduckgo.com/?q=' + encodeURIComponent(url);
+    }
+    try { this._wv.loadURL(url); } catch {}
+  },
+
+  goBack() { try { this._wv?.canGoBack() && this._wv.goBack(); } catch {} },
+  goForward() { try { this._wv?.canGoForward() && this._wv.goForward(); } catch {} },
+  reload() { try { this._wv?.reload(); } catch {} },
+
+  toggle() {
+    this.injectSidebar().then(() => {
+      const sb = document.getElementById('session-sidebar');
+      const btn = document.getElementById('session-toggle');
+      if (!sb) return;
+      const opening = !sb.classList.contains('open');
+      sb.classList.toggle('open');
+      if (btn) {
+        btn.className = 'chat-toggle ' + (opening ? 'open' : 'closed');
+        btn.innerHTML = opening ? '&#9664;' : '&#9654;';
+        btn.title = opening ? 'Cerrar sesiones aisladas' : 'Abrir sesiones aisladas (Ctrl+Shift+N)';
+      }
+    });
+  }
+};
 
 // ── Chat edge toggle (fallback si módulo AI no cargó) ──
 function toggleChatPanel(type) {
@@ -5456,6 +5615,10 @@ document.addEventListener('keydown', e => {
         e.preventDefault();
         if (window.WhatsAppChat && typeof WhatsAppChat.toggle === 'function') WhatsAppChat.toggle();
         else toggleChatPanel('wa');
+        break;
+      case 'n': // Sesiones aisladas
+        e.preventDefault();
+        if (window.Sessions && typeof Sessions.toggle === 'function') Sessions.toggle();
         break;
       case 'e': // Modo Reader
         e.preventDefault(); openReader(); break;
