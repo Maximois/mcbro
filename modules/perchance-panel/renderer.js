@@ -8,22 +8,27 @@
 (function () {
   'use strict';
 
-  const HOME = 'https://perchance.org/4cffvbcm0c';
-  const NEW_TAB = 'https://www.google.com/';
+  const HOME_DEFAULT = 'https://perchance.org/4cffvbcm0c';
+  const NEW_TAB_DEFAULT = 'https://www.google.com/';
   const PARTITION = 'persist:perchance';
   const NATIVE_UA = navigator.userAgent;
   const BM_KEY = 'mc_perchance_bookmarks';
   const HIST_KEY = 'mc_perchance_history';
+  const SET_KEY = 'mc_perchance_settings';
   const WIDTH_KEY = 'mc-panel-w-pch';
   const MAX_HISTORY = 200;
 
   let bookmarks = load(BM_KEY, []);
   let history = load(HIST_KEY, []);
+  let settings = load(SET_KEY, { home: HOME_DEFAULT, newTab: NEW_TAB_DEFAULT });
   let tabs = [];
   let activeId = null;
   let tabSeq = 0;
   const loadTimers = new WeakMap();
   const loadRetries = new WeakMap();
+
+  function homeUrl() { return settings.home || HOME_DEFAULT; }
+  function newTabUrl() { return settings.newTab || NEW_TAB_DEFAULT; }
 
   function load(key, fallback) {
     try { const v = JSON.parse(localStorage.getItem(key) || 'null'); return v == null ? fallback : v; } catch { return fallback; }
@@ -36,6 +41,7 @@
     if (document.getElementById('perchance-sidebar')) return;
     const sb = document.createElement('div');
     sb.id = 'perchance-sidebar';
+    sb.className = 'pch-scope';
     sb.innerHTML = `
       <div class="pch-header">
         <div class="pch-title-wrapper">
@@ -52,10 +58,8 @@
         <button class="pch-nav-btn" onclick="PerchancePanel.home()" title="Inicio">&#8962;</button>
         <input id="pch-urlbar" placeholder="URL o código de generador..." spellcheck="false" autocomplete="off" onkeydown="if(event.key==='Enter')PerchancePanel.navigate(this.value)"/>
         <button class="pch-nav-btn" id="pch-bookmark-btn" onclick="PerchancePanel.toggleBookmark()" title="Marcar página">&#9734;</button>
-        <button class="pch-nav-btn" id="pch-history-btn" onclick="PerchancePanel.toggleHistory()" title="Historial">&#128337;</button>
+        <button class="pch-nav-btn" id="pch-panel-btn" onclick="PerchancePanel.toggleExtractor()" title="Panel: marcadores, historial y configuración">&#128209;</button>
       </div>
-      <div class="pch-bookmarks" id="pch-bookmarks"></div>
-      <div class="pch-history" id="pch-history" style="display:none"></div>
       <div class="pch-wv-container" id="pch-wv-container"></div>
     `;
     const main = document.getElementById('main');
@@ -63,7 +67,8 @@
     if (window.PanelResize && typeof window.PanelResize.attach === 'function') {
       window.PanelResize.attach(sb, WIDTH_KEY, 420);
     }
-    addTab(HOME);
+    ensureExtractor();
+    addTab(homeUrl());
     renderBookmarks();
     renderHistory();
   }
@@ -104,7 +109,7 @@
     });
     wv.addEventListener('dom-ready', () => {
       try {
-        if (!wv.getURL()) wv.loadURL(HOME);
+        if (!wv.getURL()) wv.loadURL(homeUrl());
         installNavInterceptor(wv);
       } catch {}
     });
@@ -157,7 +162,7 @@
   function addTab(url) {
     const id = ++tabSeq;
     const wv = createWebview();
-    const initialUrl = url || NEW_TAB;
+    const initialUrl = url || newTabUrl();
     const tab = { id, title: 'Nueva pestaña', url: initialUrl, wv };
     tabs.push(tab);
     setUserAgentForUrl(wv, initialUrl);
@@ -176,7 +181,7 @@
       const next = tabs[idx] || tabs[idx - 1];
       activeId = next ? next.id : null;
     }
-    if (!tabs.length) addTab(HOME);
+    if (!tabs.length) addTab(homeUrl());
     else if (activeId) switchTab(activeId);
     renderTabs();
   }
@@ -210,9 +215,10 @@
     const opening = !el.classList.contains('open');
     el.classList.toggle('open');
     syncToggleBtn(opening);
+    if (!opening) closeExtractor();
     if (opening) {
       const wv = getWv();
-      if (wv) { try { if (!wv.getURL()) wv.loadURL(HOME); } catch {} }
+      if (wv) { try { if (!wv.getURL()) wv.loadURL(homeUrl()); } catch {} }
     }
   }
   function openPanel() {
@@ -224,6 +230,7 @@
   function closePanel() {
     const el = document.getElementById('perchance-sidebar');
     if (el && el.classList.contains('open')) { el.classList.remove('open'); syncToggleBtn(false); }
+    closeExtractor();
   }
 
   function syncToggleBtn(open) {
@@ -263,7 +270,7 @@
       else if (wv.reload) wv.reload();
     } catch {}
   }
-  function home() { navigate(HOME); }
+  function home() { navigate(homeUrl()); }
 
   function syncActive() {
     const wv = getWv();
@@ -286,7 +293,7 @@
   }
 
   function renderBookmarks() {
-    const list = document.getElementById('pch-bookmarks');
+    const list = document.getElementById('pch-extractor-bookmarks') || document.getElementById('pch-bookmarks');
     if (!list) return;
     if (!bookmarks.length) {
       list.innerHTML = '<div class="pch-bm-empty">Sin marcadores.<br><small>Usá ★ para guardar el generador actual.</small></div>';
@@ -333,7 +340,7 @@
     renderHistory();
   }
   function renderHistory() {
-    const list = document.getElementById('pch-history');
+    const list = document.getElementById('pch-extractor-history') || document.getElementById('pch-history');
     if (!list) return;
     if (!history.length) {
       list.innerHTML = '<div class="pch-bm-empty">Sin historial.</div>';
@@ -347,15 +354,143 @@
       </div>`).join('');
   }
   function toggleHistory() {
-    const list = document.getElementById('pch-history');
-    if (!list) return;
-    const show = list.style.display === 'none';
-    list.style.display = show ? 'block' : 'none';
-    if (show) renderHistory();
+    openExtractor('history');
   }
   function openHistory(i) { const h = history[i]; if (h) navigate(h.url); }
   function removeHistory(i) {
     if (history[i]) { history.splice(i, 1); save(HIST_KEY, history); renderHistory(); }
+  }
+
+  // ---- Segundo panel acoplado (overlay, como el extractor de WhatsApp) ----
+  const EXTRACTOR_ID = 'pch-extractor-overlay';
+  let extractorTab = 'bookmarks';
+  let followRaf = null;
+  let lastTop = null, lastLeft = null, lastHeight = null;
+
+  function ensureExtractor() {
+    let ov = document.getElementById(EXTRACTOR_ID);
+    if (ov) {
+      if (ov.parentElement !== document.body) document.body.appendChild(ov);
+      return ov;
+    }
+    ov = document.createElement('div');
+    ov.id = EXTRACTOR_ID;
+    ov.className = 'pch-scope';
+    ov.onclick = (e) => { if (e.target === ov) closeExtractor(); };
+    ov.innerHTML = `
+      <div id="pch-extractor-dialog">
+        <div class="pch-extractor-head">
+          <strong>📑 Panel de Perchance</strong>
+          <span id="pch-extractor-count" style="color:var(--muted);font-size:10px;"></span>
+          <button class="btn ghost btn-sm" onclick="PerchancePanel.clearAllData()" title="Borrar todos los datos">🗑</button>
+          <button class="btn ghost btn-sm" onclick="PerchancePanel.closeExtractor()" title="Cerrar">&#215;</button>
+        </div>
+        <div class="pch-extractor-tabs">
+          <button class="pch-extractor-tab active" data-tab="bookmarks" onclick="PerchancePanel.switchExtractorTab('bookmarks')">Marcadores</button>
+          <button class="pch-extractor-tab" data-tab="history" onclick="PerchancePanel.switchExtractorTab('history')">Historial</button>
+          <button class="pch-extractor-tab" data-tab="settings" onclick="PerchancePanel.switchExtractorTab('settings')">Configuración</button>
+        </div>
+        <div id="pch-extractor-content">
+          <div id="pch-extractor-bookmarks" class="pch-extractor-section active"></div>
+          <div id="pch-extractor-history" class="pch-extractor-section"></div>
+          <div id="pch-extractor-settings" class="pch-extractor-section"></div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(ov);
+    return ov;
+  }
+
+  function openExtractor(tab) {
+    const sb = document.getElementById('perchance-sidebar');
+    if (!sb || !sb.classList.contains('open')) openPanel();
+    const ov = ensureExtractor();
+    if (tab) switchExtractorTab(tab);
+    ov.classList.add('open');
+    followExtractor();
+  }
+  function closeExtractor() {
+    const ov = document.getElementById(EXTRACTOR_ID);
+    if (ov) ov.classList.remove('open');
+    stopFollow();
+  }
+  function toggleExtractor(tab) {
+    const ov = document.getElementById(EXTRACTOR_ID);
+    if (ov && ov.classList.contains('open')) closeExtractor();
+    else openExtractor(tab);
+  }
+  function switchExtractorTab(tab) {
+    extractorTab = tab;
+    document.querySelectorAll('.pch-extractor-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    ['bookmarks', 'history', 'settings'].forEach(t => {
+      const sec = document.getElementById('pch-extractor-' + t);
+      if (sec) sec.classList.toggle('active', t === tab);
+    });
+    if (tab === 'bookmarks') renderBookmarks();
+    else if (tab === 'history') renderHistory();
+    else if (tab === 'settings') renderSettings();
+  }
+  function followExtractor() {
+    if (followRaf) return;
+    const ov = document.getElementById(EXTRACTOR_ID);
+    const sb = document.getElementById('perchance-sidebar');
+    if (!ov || !sb) return;
+    const tick = () => {
+      if (!ov.classList.contains('open')) { followRaf = null; return; }
+      if (!sb.classList.contains('open')) { closeExtractor(); return; }
+      const r = sb.getBoundingClientRect();
+      const width = ov.getBoundingClientRect().width || 340;
+      const top = Math.round(r.top);
+      const left = Math.max(0, Math.round(r.left - width));
+      const height = Math.round(r.height);
+      if (top !== lastTop || left !== lastLeft || height !== lastHeight) {
+        lastTop = top; lastLeft = left; lastHeight = height;
+        ov.style.top = top + 'px';
+        ov.style.left = left + 'px';
+        ov.style.height = height + 'px';
+      }
+      followRaf = requestAnimationFrame(tick);
+    };
+    followRaf = requestAnimationFrame(tick);
+  }
+  function stopFollow() {
+    if (followRaf) { cancelAnimationFrame(followRaf); followRaf = null; }
+    lastTop = lastLeft = lastHeight = null;
+  }
+
+  function renderSettings() {
+    const sec = document.getElementById('pch-extractor-settings');
+    if (!sec) return;
+    sec.innerHTML = `
+      <div class="pch-settings">
+        <div class="pch-set-row">
+          <label for="pch-set-home">Inicio</label>
+          <input id="pch-set-home" type="text" spellcheck="false" autocomplete="off" placeholder="https://perchance.org/..." value="${escapeHtml(homeUrl())}"/>
+        </div>
+        <div class="pch-set-row">
+          <label for="pch-set-newtab">Nueva pestaña</label>
+          <input id="pch-set-newtab" type="text" spellcheck="false" autocomplete="off" placeholder="https://www.google.com/" value="${escapeHtml(newTabUrl())}"/>
+        </div>
+        <div class="pch-set-actions">
+          <button class="pch-set-btn" onclick="PerchancePanel.saveSettings()">Guardar</button>
+          <button class="pch-set-btn" onclick="PerchancePanel.resetSettings()">Restaurar</button>
+        </div>
+        <div class="pch-set-divider">Datos del panel</div>
+        <div class="pch-set-actions">
+          <button class="pch-set-btn" onclick="PerchancePanel.clearCache()">Limpiar caché</button>
+          <button class="pch-set-btn" onclick="PerchancePanel.clearCookies()">Limpiar cookies</button>
+          <button class="pch-set-btn" onclick="PerchancePanel.clearHistory()">Borrar historial</button>
+          <button class="pch-set-btn" onclick="PerchancePanel.clearBookmarks()">Borrar marcadores</button>
+          <button class="pch-set-btn pch-set-danger" onclick="PerchancePanel.clearAllData()">Borrar todo</button>
+        </div>
+        <div class="pch-set-row">
+          <label>Descargas</label>
+          <span class="pch-set-dl">~/Downloads/Perchance</span>
+          <button class="pch-set-btn" onclick="PerchancePanel.openDlFolder()">Abrir</button>
+        </div>
+        <div class="pch-set-status" id="pch-set-status"></div>
+      </div>
+    `;
   }
 
   function escapeHtml(s) {
@@ -372,11 +507,81 @@
     });
   }
 
+  // ---- Configuración y gestión de datos ----
+  function toggleSettings() {
+    toggleExtractor('settings');
+  }
+  function saveSettings() {
+    const h = (document.getElementById('pch-set-home')?.value || '').trim();
+    const n = (document.getElementById('pch-set-newtab')?.value || '').trim();
+    if (h) settings.home = h;
+    if (n) settings.newTab = n;
+    save(SET_KEY, settings);
+    setStatus('Configuración guardada');
+  }
+  function resetSettings() {
+    settings = { home: HOME_DEFAULT, newTab: NEW_TAB_DEFAULT };
+    save(SET_KEY, settings);
+    const h = document.getElementById('pch-set-home'); if (h) h.value = HOME_DEFAULT;
+    const n = document.getElementById('pch-set-newtab'); if (n) n.value = NEW_TAB_DEFAULT;
+    setStatus('Configuración restaurada');
+  }
+  function setStatus(msg) {
+    const el = document.getElementById('pch-set-status');
+    if (!el) return;
+    el.textContent = msg;
+    clearTimeout(setStatus._t);
+    setStatus._t = setTimeout(() => { if (el) el.textContent = ''; }, 2500);
+  }
+  async function clearCache() {
+    try {
+      const r = await mc.clearPerchanceData({ cache: true, cookies: false, storage: false });
+      setStatus(r && r.cache ? 'Caché limpiada' : 'Error al limpiar caché');
+    } catch { setStatus('Error al limpiar caché'); }
+  }
+  async function clearCookies() {
+    try {
+      const r = await mc.clearPerchanceData({ cache: false, cookies: true, storage: false });
+      setStatus(r && r.cookies ? 'Cookies limpiadas' : 'Error al limpiar cookies');
+    } catch { setStatus('Error al limpiar cookies'); }
+  }
+  function clearHistory() {
+    history = [];
+    save(HIST_KEY, history);
+    renderHistory();
+    setStatus('Historial borrado');
+  }
+  function clearBookmarks() {
+    bookmarks = [];
+    save(BM_KEY, bookmarks);
+    renderBookmarks();
+    updateBookmarkBtn();
+    setStatus('Marcadores borrados');
+  }
+  async function clearAllData() {
+    try { await mc.clearPerchanceData({ cache: true, cookies: true, storage: true }); } catch {}
+    history = [];
+    save(HIST_KEY, history);
+    renderHistory();
+    bookmarks = [];
+    save(BM_KEY, bookmarks);
+    renderBookmarks();
+    updateBookmarkBtn();
+    setStatus('Todos los datos borrados');
+  }
+  function openDlFolder() {
+    try { if (window.mc && typeof mc.openPerchanceDlFolder === 'function') mc.openPerchanceDlFolder(); } catch {}
+  }
+
   window.PerchancePanel = {
     toggle, open: openPanel, close: closePanel,
     navigate, goBack, goForward, reload, home,
     addTab, closeTab, switchTab,
     toggleBookmark, removeBookmark, openBookmark,
-    toggleHistory, openHistory, removeHistory
+    toggleHistory, openHistory, removeHistory,
+    toggleSettings, saveSettings, resetSettings,
+    clearCache, clearCookies, clearHistory, clearBookmarks, clearAllData,
+    openDlFolder,
+    openExtractor, closeExtractor, toggleExtractor, switchExtractorTab
   };
 })();

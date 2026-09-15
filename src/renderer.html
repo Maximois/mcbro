@@ -869,37 +869,64 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
 #perchance-sidebar { width: 0; min-width: 0; flex-shrink: 0; background: var(--surface); border-left: none; display: flex; flex-direction: column; overflow: hidden; transition: width 0.25s ease; position: relative; z-index: 0; }
 #perchance-sidebar.open { width: var(--panel-w, 420px); border-left: 1px solid var(--border); box-shadow: -4px 0 12px rgba(0,0,0,0.3); }
 #perchance-sidebar.resizing { transition: none; }
-#perchance-sidebar .pch-header { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-#perchance-sidebar .pch-title-wrapper { display: flex; align-items: center; gap: 6px; }
-#perchance-sidebar .pch-sparkle { color: var(--accent); font-size: 1.231rem; }
-#perchance-sidebar h2 { font-size: 1.077rem; font-weight: 700; color: var(--text); margin: 0; }
-#perchance-sidebar .pch-toolbar { display: flex; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; align-items: center; }
-#perchance-sidebar .pch-nav-btn { width: 26px; height: 26px; flex-shrink: 0; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; justify-content: center; transition: background .15s, color .15s; }
-#perchance-sidebar .pch-nav-btn:hover { background: var(--accent); color: #000; }
-#perchance-sidebar #pch-urlbar { flex: 1; min-width: 0; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 4px 8px; font-size: 0.846rem; outline: none; font-family: inherit; transition: border-color .2s; }
-#perchance-sidebar #pch-urlbar:focus { border-color: var(--accent); }
-#perchance-sidebar .pch-bookmarks { max-height: 130px; overflow-y: auto; border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.15); flex-shrink: 0; scrollbar-width: thin; }
-#perchance-sidebar .pch-bm-empty { padding: 8px 12px; font-size: 0.769rem; color: var(--muted); text-align: center; }
-#perchance-sidebar .pch-bm-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 0.769rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
-#perchance-sidebar .pch-bm-item:hover { background: rgba(255,255,255,0.04); }
-#perchance-sidebar .pch-bm-fav { flex-shrink: 0; width: 18px; text-align: center; font-size: 0.846rem; }
-#perchance-sidebar .pch-bm-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; color: var(--text); }
-#perchance-sidebar .pch-bm-title:hover { color: var(--accent); }
-#perchance-sidebar .pch-bm-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; flex-shrink: 0; padding: 0 2px; }
-#perchance-sidebar .pch-bm-del:hover { color: #f87171; }
-#perchance-sidebar .pch-tabs { display: flex; gap: 4px; padding: 6px 8px 0; border-bottom: 1px solid var(--border); flex-shrink: 0; align-items: flex-end; overflow-x: auto; scrollbar-width: thin; }
-#perchance-sidebar .pch-tab { display: flex; align-items: center; gap: 4px; max-width: 140px; min-width: 60px; padding: 4px 6px; background: var(--surface2); border: 1px solid var(--border); border-bottom: none; border-radius: var(--radius-sm) var(--radius-sm) 0 0; cursor: pointer; font-size: 0.769rem; color: var(--muted); flex-shrink: 0; }
-#perchance-sidebar .pch-tab.active { background: var(--surface); color: var(--text); border-color: var(--accent); }
-#perchance-sidebar .pch-tab-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#perchance-sidebar .pch-tab-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; flex-shrink: 0; padding: 0 2px; }
-#perchance-sidebar .pch-tab-close:hover { color: #f87171; }
-#perchance-sidebar .pch-tab-add { background: none; border: 1px solid var(--border); color: var(--muted); cursor: pointer; font-size: 0.85rem; width: 24px; height: 24px; border-radius: var(--radius-sm); flex-shrink: 0; }
-#perchance-sidebar .pch-tab-add:hover { color: var(--accent); border-color: var(--accent); }
-#perchance-sidebar .pch-history { max-height: 150px; overflow-y: auto; border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.15); flex-shrink: 0; scrollbar-width: thin; }
-#perchance-sidebar .pch-hist-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 0.769rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
-#perchance-sidebar .pch-hist-item:hover { background: rgba(255,255,255,0.04); }
-#perchance-sidebar .pch-wv-container { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
-#perchance-sidebar .pch-wv-container webview { flex: 1; border: none; min-height: 0; width: 100%; }
+.pch-scope .pch-header { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.pch-scope .pch-title-wrapper { display: flex; align-items: center; gap: 6px; }
+.pch-scope .pch-sparkle { color: var(--accent); font-size: 1.231rem; }
+.pch-scope h2 { font-size: 1.077rem; font-weight: 700; color: var(--text); margin: 0; }
+.pch-scope .pch-toolbar { display: flex; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; align-items: center; }
+.pch-scope .pch-nav-btn { width: 26px; height: 26px; flex-shrink: 0; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; justify-content: center; transition: background .15s, color .15s; }
+.pch-scope .pch-nav-btn:hover { background: var(--accent); color: #000; }
+.pch-scope #pch-urlbar { flex: 1; min-width: 0; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 4px 8px; font-size: 0.846rem; outline: none; font-family: inherit; transition: border-color .2s; }
+.pch-scope #pch-urlbar:focus { border-color: var(--accent); }
+.pch-scope .pch-bookmarks { max-height: 130px; overflow-y: auto; border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.15); flex-shrink: 0; scrollbar-width: thin; }
+.pch-scope .pch-bm-empty { padding: 8px 12px; font-size: 0.769rem; color: var(--muted); text-align: center; }
+.pch-scope .pch-bm-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 0.769rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.pch-scope .pch-bm-item:hover { background: rgba(255,255,255,0.04); }
+.pch-scope .pch-bm-fav { flex-shrink: 0; width: 18px; text-align: center; font-size: 0.846rem; }
+.pch-scope .pch-bm-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; color: var(--text); }
+.pch-scope .pch-bm-title:hover { color: var(--accent); }
+.pch-scope .pch-bm-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; flex-shrink: 0; padding: 0 2px; }
+.pch-scope .pch-bm-del:hover { color: #f87171; }
+.pch-scope .pch-tabs { display: flex; gap: 4px; padding: 6px 8px 0; border-bottom: 1px solid var(--border); flex-shrink: 0; align-items: flex-end; overflow-x: auto; scrollbar-width: thin; }
+.pch-scope .pch-tab { display: flex; align-items: center; gap: 4px; max-width: 140px; min-width: 60px; padding: 4px 6px; background: var(--surface2); border: 1px solid var(--border); border-bottom: none; border-radius: var(--radius-sm) var(--radius-sm) 0 0; cursor: pointer; font-size: 0.769rem; color: var(--muted); flex-shrink: 0; }
+.pch-scope .pch-tab.active { background: var(--surface); color: var(--text); border-color: var(--accent); }
+.pch-scope .pch-tab-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pch-scope .pch-tab-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; flex-shrink: 0; padding: 0 2px; }
+.pch-scope .pch-tab-close:hover { color: #f87171; }
+.pch-scope .pch-tab-add { background: none; border: 1px solid var(--border); color: var(--muted); cursor: pointer; font-size: 0.85rem; width: 24px; height: 24px; border-radius: var(--radius-sm); flex-shrink: 0; }
+.pch-scope .pch-tab-add:hover { color: var(--accent); border-color: var(--accent); }
+.pch-scope .pch-history { max-height: 150px; overflow-y: auto; border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.15); flex-shrink: 0; scrollbar-width: thin; }
+.pch-scope .pch-hist-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 0.769rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.pch-scope .pch-hist-item:hover { background: rgba(255,255,255,0.04); }
+.pch-scope .pch-wv-container { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.pch-scope .pch-wv-container webview { flex: 1; border: none; min-height: 0; width: 100%; }
+.pch-scope .pch-settings { padding: 8px 10px; border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.15); flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; scrollbar-width: thin; }
+.pch-scope .pch-set-row { display: flex; align-items: center; gap: 6px; font-size: 0.769rem; }
+.pch-scope .pch-set-row label { flex-shrink: 0; width: 78px; color: var(--muted); }
+.pch-scope .pch-set-row input { flex: 1; min-width: 0; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 3px 6px; font-size: 0.769rem; outline: none; font-family: inherit; }
+.pch-scope .pch-set-row input:focus { border-color: var(--accent); }
+.pch-scope .pch-set-dl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 0.692rem; }
+.pch-scope .pch-set-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.pch-scope .pch-set-btn { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 3px 8px; font-size: 0.692rem; cursor: pointer; transition: background .15s, color .15s; font-family: inherit; }
+.pch-scope .pch-set-btn:hover { background: var(--accent); color: #000; }
+.pch-scope .pch-set-btn.pch-set-danger { border-color: rgba(248,113,113,0.5); color: #f87171; }
+.pch-scope .pch-set-btn.pch-set-danger:hover { background: #f87171; color: #000; }
+.pch-scope .pch-set-divider { font-size: 0.692rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px; }
+.pch-scope .pch-set-status { font-size: 0.692rem; color: var(--accent); min-height: 14px; text-align: center; }
+#pch-extractor-overlay { display:none; position:fixed; top:0; left:0; width:min(340px,31vw); z-index:10001; background:var(--surface); border-right:1px solid var(--border2); box-shadow:0 0 40px rgba(0,0,0,.5); overflow:hidden; }
+#pch-extractor-overlay.open { display:flex; }
+#pch-extractor-dialog { flex:1; display:flex; flex-direction:column; background:var(--surface); overflow:hidden; }
+.pch-extractor-head { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border); }
+.pch-extractor-head strong { flex:1; }
+.pch-extractor-tabs { display:flex; gap:5px; padding:8px 12px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+.pch-extractor-tab { background:var(--surface2); color:var(--muted2); border:1px solid var(--border); border-radius:4px; padding:4px 9px; cursor:pointer; font:inherit; font-size:0.769rem; }
+.pch-extractor-tab:hover { border-color:var(--accent); color:var(--accent); }
+.pch-extractor-tab.active { background:var(--surface2); color:var(--accent); border-color:var(--accent); }
+#pch-extractor-content { flex:1; overflow:auto; display:flex; flex-direction:column; }
+.pch-extractor-section { display:none; flex:1; min-height:0; overflow-y:auto; }
+.pch-extractor-section.active { display:flex; flex-direction:column; }
+#pch-extractor-overlay .pch-bookmarks, #pch-extractor-overlay .pch-history { max-height:none; flex:1; border-bottom:none; }
+#pch-extractor-overlay .pch-settings { max-height:none; flex:1; border-bottom:none; }
 .panel-resize-handle { position: absolute; left: -4px; top: 0; width: 8px; height: 100%; cursor: col-resize; z-index: 6; }
 .panel-resize-handle.right-edge { left: auto; right: -4px; }
 .panel-resize-handle::after { content: ''; position: absolute; left: 3px; top: 0; width: 2px; height: 100%; background: transparent; transition: background .15s; }

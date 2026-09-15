@@ -206,6 +206,43 @@ function installPerchanceNetwork(partition = PERCHANCE_PARTITION) {
   return ses;
 }
 
+// ===========================================================================
+// 3b. Limpieza de datos del panel (caché, cookies, storage)
+// ===========================================================================
+
+async function clearPerchanceData(partition = PERCHANCE_PARTITION, opts = {}) {
+  const ses = session.fromPartition(partition);
+  const settings = {
+    cache: opts.cache !== false,
+    cookies: opts.cookies !== false,
+    storage: opts.storage !== false,
+  };
+  const results = { ok: true, settings };
+  try {
+    if (settings.cache) { await ses.clearCache(); results.cache = true; }
+  } catch (e) { results.cache = false; results.error = e.message; }
+  try {
+    if (settings.cookies) {
+      await ses.cookies.flushStore();
+      const cookies = await ses.cookies.get({});
+      for (const c of cookies) {
+        const domain = String(c.domain || '').replace(/^\./, '');
+        const scheme = c.secure !== false ? 'https' : 'http';
+        const p = String(c.path || '/');
+        await ses.cookies.remove(`${scheme}://${domain}${p.startsWith('/') ? p : '/' + p}`, c.name).catch(() => {});
+      }
+      results.cookies = true;
+    }
+  } catch (e) { results.cookies = false; results.error = e.message; }
+  try {
+    if (settings.storage) {
+      await ses.clearStorageData({ storages: ['localstorage', 'indexdb', 'serviceworkers', 'cachestorage', 'shadercache', 'websql'] });
+      results.storage = true;
+    }
+  } catch (e) { results.storage = false; results.error = e.message; }
+  return results;
+}
+
 function safeHost(u) { try { return new URL(u).hostname; } catch { return ""; } }
 
 // ===========================================================================
@@ -272,6 +309,7 @@ module.exports = {
   isGoogleHost,
   installPerchanceDownloads,
   installPerchanceNetwork,
+  clearPerchanceData,
   createPerchancePanel,
   downloadFolder,
   DEFAULT_FOLDER,

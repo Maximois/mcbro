@@ -370,6 +370,18 @@ function setupPerchancePanel() {
   } catch (e) { console.error('[PERCHANCE][init]', e.message); }
 }
 
+// Limpieza de datos del panel de Perchance (caché/cookies/storage) y apertura
+// de su carpeta de descargas. El renderer del panel las invoca desde su sección
+// de configuración.
+ipcMain.handle('perchance:clear-data', async (_e, opts = {}) => {
+  try {
+    return await PerchancePanel.clearPerchanceData(PerchancePanel.PERCHANCE_PARTITION, opts);
+  } catch (e) { return { ok: false, error: e.message || String(e) }; }
+});
+ipcMain.handle('perchance:open-dl-folder', () => {
+  try { shell.openPath(PerchancePanel.downloadFolder()); } catch {}
+});
+
 // === AUTH DOMAINS (nunca bloquear estos) ===
 const AUTH_DOMAINS = [
   'login.microsoftonline.com', 'login.live.com', 'login.windows.net',
