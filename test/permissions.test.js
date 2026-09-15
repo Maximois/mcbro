@@ -11,7 +11,9 @@ const {
   resolveCookieAction,
   parseGlobalBlockRule,
   isGlobalBlockMatch,
-  normalizeSiteHost
+  normalizeSiteHost,
+  isWebContentsFrameAlive,
+  sanitizeAiConfigForPublic
 } = require('../lib/permissions');
 
 // ── normalizeSiteHost ──────────────────────────────────────────────────
@@ -62,6 +64,14 @@ describe('resolvePermissionDecision', () => {
     assert.equal(resolvePermissionDecision('example.com', 'clipboard-read', cfg), true);
     assert.equal(resolvePermissionDecision('example.com', 'clipboard-write', cfg), true);
     assert.equal(resolvePermissionDecision('example.com', 'clipboard-sanitized-write', cfg), true);
+  });
+  test('fullscreen se otorga por defecto (regresión: pantalla completa HTML5)', () => {
+    const cfg = { permissions: {} };
+    assert.equal(resolvePermissionDecision('perchance.org', 'fullscreen', cfg), true);
+    assert.equal(resolvePermissionDecision('youtube.com', 'fullscreen', cfg), true);
+    // Una regla explícita "deny" sí debe poder bloquearlo.
+    const cfgDeny = { permissions: { 'example.com': { fullscreen: 'deny' } } };
+    assert.equal(resolvePermissionDecision('example.com', 'fullscreen', cfgDeny), false);
   });
 });
 
@@ -125,11 +135,47 @@ describe('resolveCookieAction (regresión: cookies "block" que no bloqueaban)', 
   });
 });
 
+describe('isWebContentsFrameAlive', () => {
+  test('marca como muerto un webContents ya destruido o con frame descartado', () => {
+    assert.equal(isWebContentsFrameAlive({ isDestroyed: () => true }), false);
+    assert.equal(isWebContentsFrameAlive({ isDestroyed: () => false, mainFrame: { isDestroyed: () => true } }), false);
+  });
+  test('rechaza un webContents sin mainFrame usable o en estado de frame descartado', () => {
+    assert.equal(isWebContentsFrameAlive({ isDestroyed: () => false }), false);
+    assert.equal(isWebContentsFrameAlive({ isDestroyed: () => false, mainFrame: null }), false);
+  });
+  test('acepta un webContents vivo sin frame roto', () => {
+    assert.equal(isWebContentsFrameAlive({ isDestroyed: () => false, mainFrame: { isDestroyed: () => false } }), true);
+  });
+});
+
 describe('isSitePermissionAllowed', () => {
   test('true solo cuando la regla "site" es exactamente "allow"', () => {
     assert.equal(isSitePermissionAllowed('example.com', { permissions: { 'example.com': { site: 'allow' } } }), true);
     assert.equal(isSitePermissionAllowed('example.com', { permissions: { 'example.com': { site: 'deny' } } }), false);
     assert.equal(isSitePermissionAllowed('example.com', { permissions: {} }), false);
+  });
+});
+
+describe('sanitizeAiConfigForPublic', () => {
+  test('enmascara claves sensibles antes de exponer la configuración', () => {
+    const cfg = {
+      provider: 'openai',
+      openaiKey: 'sk-real-key',
+      groqKey: 'groq-secret',
+      geminiKey: 'gemini-secret',
+      opencodeKey: 'opencode-secret',
+      openaiModel: 'gpt-4o'
+    };
+
+    const publicCfg = sanitizeAiConfigForPublic(cfg);
+
+    assert.equal(publicCfg.provider, 'openai');
+    assert.equal(publicCfg.openaiKey, '***');
+    assert.equal(publicCfg.groqKey, '***');
+    assert.equal(publicCfg.geminiKey, '***');
+    assert.equal(publicCfg.opencodeKey, '***');
+    assert.equal(publicCfg.openaiModel, 'gpt-4o');
   });
 });
 

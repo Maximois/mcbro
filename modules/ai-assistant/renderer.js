@@ -655,7 +655,8 @@ const AI = {
   async debugCfg() {
     try {
       const raw = await mc.aiConfigGet();
-      addSidebarLog('info', '[AI-CFG] Config actual: ' + JSON.stringify(raw, null, 2).slice(0, 500));
+      const safe = { ...raw, opencodeKey: raw?.opencodeKey ? '***' : '', groqKey: raw?.groqKey ? '***' : '', openaiKey: raw?.openaiKey ? '***' : '', geminiKey: raw?.geminiKey ? '***' : '' };
+      addSidebarLog('info', '[AI-CFG] Config actual: ' + JSON.stringify(safe, null, 2).slice(0, 500));
     } catch (e) {
       addSidebarLog('error', '[AI-CFG] Error al leer config: ' + e.message);
     }
@@ -3201,4 +3202,5 @@ WebChat.init();
 WhatsAppChat.init();
 window.AI = AI;
 window.WebChat = WebChat;
+window.PanelResize = PanelResize;
 window.WhatsAppChat = WhatsAppChat;

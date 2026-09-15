@@ -125,6 +125,25 @@ const EMBEDDED_TYPES = new Set([
 ]);
 const VIDEO_PATH_RE = /(?:^|[/?_-])(embed|player|watch|video|stream|playlist|manifest|play|e|f)(?:[/?_.=-]|$)|\.(?:m3u8|mpd|mp4|webm|ts|m4s)(?:[?#]|$)/i;
 
+function isPerchanceHost(host) {
+  const value = String(host || '').toLowerCase().replace(/^\.+/, '');
+  return value === 'perchance.org' || value.endsWith('.perchance.org');
+}
+
+function isPerchanceCompatibilityRequest(resourceHost, documentHost) {
+  if (!isPerchanceHost(documentHost)) return false;
+  const host = String(resourceHost || '').toLowerCase().replace(/^\.+/, '');
+  return isPerchanceHost(host) || host === 'esm.sh' || host.endsWith('.esm.sh') ||
+    host === 'user.uploads.dev' || host.endsWith('.user.uploads.dev') ||
+    host === 'aigc.uploads.dev' || host.endsWith('.aigc.uploads.dev') ||
+    host === 'editable.uploads.dev' || host.endsWith('.editable.uploads.dev') ||
+    host === 'cdn.jsdelivr.net' || host === 'cdnjs.cloudflare.com' || host === 'unpkg.com' ||
+    host === 'huggingface.co' || host.endsWith('.huggingface.co') ||
+    host === 'hf.co' || host.endsWith('.hf.co') || host === 'xethub.hf.co' ||
+    host === 'fonts.googleapis.com' || host === 'gstatic.com' || host.endsWith('.gstatic.com') ||
+    host === 'static.cloudflareinsights.com';
+}
+
 function isVideoHost(host) {
   return VIDEO_HOSTS.some(v => host === v || host.includes(v));
 }
@@ -254,6 +273,15 @@ function createBlockHandler(getEngine, allowedDomains, isEnabled, isCategoryEnab
     try {
       const url = new URL(details.url);
       const host = url.hostname.toLowerCase();
+      const documentUrl = details.documentUrl || details.referrer || '';
+      let documentHost = '';
+      try { documentHost = new URL(documentUrl).hostname.toLowerCase(); } catch {}
+
+      // Perchance ejecuta cada generador en un subdominio propio y depende de
+      // estos recursos; la excepción solo existe dentro de documentos Perchance.
+      if (isPerchanceCompatibilityRequest(host, documentHost)) {
+        return callback({ cancel: false });
+      }
 
       if (isExplicitlyBlocked(host, details.documentUrl || details.referrer || '')) {
         if (blockCb) blockCb(details, 'ads');
@@ -295,7 +323,6 @@ function createBlockHandler(getEngine, allowedDomains, isEnabled, isCategoryEnab
         return callback({ cancel: true });
       }
 
-      const documentUrl = details.documentUrl || details.referrer || '';
       const isEmbeddedContainer = documentUrl && EMBEDDED_TYPES.has(details.resourceType);
       if (isEmbeddedContainer) return callback({ cancel: false });
 

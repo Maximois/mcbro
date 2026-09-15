@@ -8,6 +8,22 @@ const { spawn, execFile } = require('child_process');
 const crypto = require('crypto');
 const { isAggressiveAdNavigation, isTrustedResource, isVideoHost } = require('./modules/adblocker/main');
 const Permissions = require('./lib/permissions');
+const { isWebContentsFrameAlive, sanitizeAiConfigForPublic } = Permissions;
+// Panel aislado de Perchance: vista nativa (WebContentsView) con partición
+// propia, allowlist, permisos, CSP/XFO y descargas blob/data (perchance-panel.js).
+const PerchancePanel = require('./perchance/perchance-panel');
+
+// Error conocido de Electron: "Render frame was disposed before WebFrameMain
+// could be accessed". Se dispara cuando un webview/iframe navega rápido y su
+// frame se descarta mientras Electron emite un evento de navegación (típico
+// de Perchance, que crea muchos iframes y navega entre subdominios). Es
+// inofensivo y no rompe la app; lo filtramos para que no ensucie la consola
+// sin ocultar otros errores reales.
+process.on('uncaughtException', (err) => {
+  const msg = String((err && err.message) || err || '');
+  if (msg.includes('Render frame was disposed before WebFrameMain could be accessed')) return;
+  console.error('[UNCAUGHT]', err);
+});
 
 // Unique data folder per build: dev and installed app keep separate data
 const DATA_DIR = app.isPackaged ? 'MC Browser' : 'mc-browser-v2-dev';
@@ -317,6 +333,42 @@ function createWindow() {
 // Global: identidad nativa de Electron/Chromium (sin override).
 // WhatsApp: regla especial — UA Chrome reciente que WhatsApp acepta.
 const UA_WHATSAPP = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
+const PERCHANCE_UA = UA_WHATSAPP;
+
+function isPerchanceHost(host) {
+  const value = String(host || '').toLowerCase().replace(/^\.+/, '');
+  return value === 'perchance.org' || value.endsWith('.perchance.org');
+}
+
+function isPerchanceRuntimeHost(host) {
+  const value = String(host || '').toLowerCase().replace(/^\.+/, '');
+  return isPerchanceHost(value) ||
+    value === 'user.uploads.dev' || value.endsWith('.user.uploads.dev') ||
+    value === 'aigc.uploads.dev' || value.endsWith('.aigc.uploads.dev') ||
+    value === 'editable.uploads.dev' || value.endsWith('.editable.uploads.dev') ||
+    value === 'cdn.jsdelivr.net' || value === 'cdnjs.cloudflare.com' ||
+    value === 'unpkg.com' || value === 'esm.sh' || value.endsWith('.esm.sh') ||
+    value === 'huggingface.co' || value.endsWith('.huggingface.co') ||
+    value === 'hf.co' || value.endsWith('.hf.co') ||
+    value === 'xethub.hf.co' || value === 'fonts.googleapis.com' ||
+    value === 'gstatic.com' || value.endsWith('.gstatic.com') ||
+    value === 'static.cloudflareinsights.com';
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Panel aislado de Perchance (webview en sidebar con partición persist:perchance)
+// ═══════════════════════════════════════════════════════════════════════
+// La partición se prepara aquí (allowlist, permisos, CSP/XFO y descargas
+// blob/data). El panel DOM (mini-navegador con marcadores) vive en
+// modules/perchance-panel/renderer.js y usa un <webview partition="persist:perchance">.
+function setupPerchancePanel() {
+  try {
+    PerchancePanel.installPerchanceNetwork(PerchancePanel.PERCHANCE_PARTITION);
+    PerchancePanel.installPerchanceDownloads(PerchancePanel.PERCHANCE_PARTITION, {
+      onEvent: (ev) => { try { mainWin?.webContents?.send('perchance:download', ev); } catch {} }
+    });
+  } catch (e) { console.error('[PERCHANCE][init]', e.message); }
+}
 
 // === AUTH DOMAINS (nunca bloquear estos) ===
 const AUTH_DOMAINS = [
@@ -411,7 +463,7 @@ async function saveBlobOrDataUrlToDownloads(wc, srcURL, hintName) {
 
     const dlId = 'dl-blob-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
     const pageUrl = wc?.getURL?.() || '';
-    ACTIONS.emit('dl-native', { id: dlId, url: srcURL.slice(0, 60) + '…', filename, totalBytes: buffer.length, pageUrl, state: 'active' });
+    ACTIONS.emit('dl-native', { id: dlId, url: srcURL.slice(0, 60) + '...', filename, totalBytes: buffer.length, pageUrl, state: 'active' });
     ACTIONS.emit('dl-native-progress', { id: dlId, url: srcURL, filename, received: buffer.length, totalBytes: buffer.length, pct: 100, state: 'progressing' });
     ACTIONS.emit('dl-native-done', { id: dlId, url: srcURL, filename, file: filePath, size: (buffer.length / 1048576).toFixed(1), state: 'completed', cancelled: false });
     return { ok: true, file: filePath };
@@ -724,6 +776,30 @@ function saveCfg() {
 }
 loadCfg();
 
+// === DOMINIOS CON SESIÓN PERSISTENTE POR DEFECTO ===
+// Cuando cookiePolicy es 'session', todas las cookies se degradan a sesión
+// (no persisten entre reinicios). Estos dominios necesitan cookies
+// persistentes para que el login funcione correctamente, pero NO están en
+// AUTH_DOMAINS para no desactivar el adblock en su contenido/anuncios.
+// Solo se añaden si el usuario no ha configurado ya una regla para ellos.
+const DEFAULT_SESSION_DOMAINS = [
+  'facebook.com', 'www.facebook.com', 'm.facebook.com', 'web.facebook.com',
+  'instagram.com', 'www.instagram.com', 'i.instagram.com', 'm.instagram.com'
+];
+function ensureDefaultSessionDomains() {
+  try {
+    if (!CFG.allowlist || typeof CFG.allowlist !== 'object') CFG.allowlist = {};
+    let changed = false;
+    for (const domain of DEFAULT_SESSION_DOMAINS) {
+      if (CFG.allowlist[domain] === undefined) {
+        CFG.allowlist[domain] = 'allow';
+        changed = true;
+      }
+    }
+    if (changed) saveCfg();
+  } catch (e) { console.error('[CFG] Error applying default session domains:', e.message); }
+}
+
 // === REGLAS NATIVAS SITE-SCOPED (publicidad en YouTube) ===
 // Se aplican solo dentro de youtube.com para no interferir en otros sitios.
 const DEFAULT_SITE_RULES = [
@@ -788,6 +864,7 @@ function ensureDefaultSiteRules() {
   }
 }
 ensureDefaultSiteRules();
+ensureDefaultSessionDomains();
 
 // === BOOKMARKS ===
 const BOOKMARKS_PATH = path.join(app.getPath('userData'), 'bookmarks.json');
@@ -859,6 +936,7 @@ ipcMain.on('nav-intent', (_event, opts) => {
 function cfgSnapshot() {
   return {
     ...CFG,
+    aiConfig: sanitizeAiConfigForPublic(CFG.aiConfig),
     gpuAccelerationActive: GPU_RUNTIME_ACTIVE,
     gpuAccelerationPendingRestart: CFG.gpuAcceleration === true !== GPU_RUNTIME_ACTIVE
   };
@@ -992,7 +1070,7 @@ async function sampleProcessMetrics() {
   try {
     const contexts = await mainWin.webContents.executeJavaScript(`(() => Array.from(document.querySelectorAll('webview')).map(wv => ({
       id: wv.id || '',
-      webContentsId: typeof wv.getWebContentsId === 'function' ? wv.getWebContentsId() : 0,
+      webContentsId: (() => { try { return wv.getWebContentsId(); } catch { return 0; } })(),
       url: (() => { try { return wv.getURL() || ''; } catch { return ''; } })()
     })))()`).catch(() => []);
     const contextByPid = new Map();
@@ -2162,9 +2240,13 @@ const STREAM_SCAN_SCRIPT = `
       };
       document.querySelectorAll('video,audio').forEach(el=>{
         const author = findAuthor(el);
-        if(el.src&&isMedia(el.src)) add(el.src,'DOM:'+el.tagName,author);
-        if(el.currentSrc&&el.currentSrc!==el.src&&isMedia(el.currentSrc)) add(el.currentSrc,'currentSrc',author);
-        el.querySelectorAll('source').forEach(s=>{if(s.src) add(s.src,'source',author);});
+        // Perchance y otros generadores usan URLs firmadas o sin extensión.
+        // La etiqueta multimedia es evidencia suficiente para incluirlas.
+        if(el.src && (isMedia(el.src) || /^https?:/i.test(el.src))) add(el.src,'DOM:'+el.tagName,author);
+        if(el.currentSrc && el.currentSrc!==el.src && (isMedia(el.currentSrc) || /^https?:/i.test(el.currentSrc))) add(el.currentSrc,'currentSrc',author);
+        el.querySelectorAll('source').forEach(s=>{
+          if(s.src && (isMedia(s.src) || /^https?:/i.test(s.src))) add(s.src,'source',author);
+        });
       });
       document.querySelectorAll('iframe').forEach(f=>{
         const author = findAuthor(f);
@@ -2422,6 +2504,140 @@ async function resolveCtxCssPoint(wc, params) {
   };
 }
 
+// Guarda contenido generado por la página (perchance y otros generadores):
+// imágenes en <canvas>, <img>/<video> con blob: o data:, etc. El JS inyectado
+// extrae el contenido como data URL; si es una URL http normal se delega en
+// el gestor de descargas nativo.
+async function saveGeneratedContent(wc, params) {
+  try {
+    if (!wc || wc.isDestroyed()) return;
+    const pt = await resolveCtxCssPoint(wc, params);
+    const code = `(async () => {
+      const px = ${pt.x};
+      const py = ${pt.y};
+      const toDataUrl = (blob) => new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = () => rej(new Error('FileReader error'));
+        r.readAsDataURL(blob);
+      });
+      const extFor = (mime) => mime.includes('png') ? 'png' : mime.includes('jpeg') || mime.includes('jpg') ? 'jpg'
+        : mime.includes('gif') ? 'gif' : mime.includes('webp') ? 'webp'
+        : mime.includes('webm') ? 'webm' : mime.includes('mp4') ? 'mp4'
+        : mime.includes('ogg') ? 'ogv' : 'png';
+      let target = null;
+      let node = document.elementFromPoint(px, py);
+      while (node && node.nodeType === 1) {
+        const tag = node.tagName;
+        if (tag === 'CANVAS' || tag === 'IMG' || tag === 'VIDEO') { target = node; break; }
+        node = node.parentElement;
+      }
+      if (!target) {
+        const cands = Array.from(document.querySelectorAll('img, video, canvas'))
+          .filter(e => e.offsetWidth > 50 && e.offsetHeight > 50)
+          .sort((a, b) => (b.offsetWidth * b.offsetHeight) - (a.offsetWidth * a.offsetHeight));
+        target = cands[0];
+      }
+      if (!target) return { error: 'No se encontró imagen/video generado en la página' };
+      if (target.tagName === 'CANVAS') {
+        try {
+          const dataUrl = target.toDataURL('image/png');
+          return { type: 'image', dataUrl, mimeType: 'image/png', name: 'generated.png' };
+        } catch (e) { return { error: 'Canvas no exportable: ' + e.message }; }
+      }
+      if (target.tagName === 'IMG') {
+        const src = target.currentSrc || target.src || '';
+        if (src.startsWith('data:')) {
+          const mime = (src.split(';')[0] || 'data:image/png').split(':')[1] || 'image/png';
+          return { type: 'image', dataUrl: src, mimeType: mime, name: 'generated.' + extFor(mime) };
+        }
+        if (src.startsWith('blob:')) {
+          try {
+            const resp = await fetch(src);
+            const blob = await resp.blob();
+            const dataUrl = await toDataUrl(blob);
+            const mime = blob.type || 'image/png';
+            return { type: 'image', dataUrl, mimeType: mime, name: 'generated.' + extFor(mime) };
+          } catch (e) { return { error: 'No se pudo leer la imagen: ' + e.message }; }
+        }
+        if (/^https?:/i.test(src)) return { type: 'url', url: src, name: 'generated.png' };
+        return { error: 'Imagen no soportada: ' + src.slice(0, 60) };
+      }
+      if (target.tagName === 'VIDEO') {
+        const src = target.currentSrc || target.src || '';
+        if (src.startsWith('blob:')) {
+          try {
+            const resp = await fetch(src);
+            const blob = await resp.blob();
+            const dataUrl = await toDataUrl(blob);
+            const mime = blob.type || 'video/mp4';
+            return { type: 'video', dataUrl, mimeType: mime, name: 'generated.' + extFor(mime) };
+          } catch (e) { return { error: 'No se pudo leer el video: ' + e.message }; }
+        }
+        if (/^https?:/i.test(src)) return { type: 'url', url: src, name: 'generated.mp4' };
+        return { error: 'Video no soportado: ' + src.slice(0, 60) };
+      }
+      return { error: 'Elemento no soportado' };
+    })()`;
+    const result = await wc.executeJavaScript(code, true);
+    if (!result || result.error) {
+      mainWin?.webContents?.send('save-generated-result', { ok: false, error: (result && result.error) || 'No se pudo extraer el contenido' });
+      return;
+    }
+    if (result.type === 'url') {
+      wc.downloadURL(result.url);
+      return;
+    }
+    if (result.dataUrl) {
+      const m = /^data:([^;,]+);base64,(.*)$/s.exec(result.dataUrl);
+      if (!m) {
+        mainWin?.webContents?.send('save-generated-result', { ok: false, error: 'Formato de datos no válido' });
+        return;
+      }
+      const mimeType = m[1];
+      const data = Buffer.from(m[2], 'base64');
+      const ext = mimeType.includes('png') ? '.png' : mimeType.includes('jpeg') || mimeType.includes('jpg') ? '.jpg'
+        : mimeType.includes('gif') ? '.gif' : mimeType.includes('webp') ? '.webp'
+        : mimeType.includes('webm') ? '.webm' : mimeType.includes('mp4') ? '.mp4'
+        : mimeType.includes('ogg') ? '.ogv' : '.bin';
+      const dlDir = CFG.downloadDir || app.getPath('downloads');
+      if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
+      const defaultName = 'generado-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + ext;
+      const saveRes = await dialog.showSaveDialog({
+        defaultPath: path.join(dlDir, defaultName),
+        filters: [
+          { name: 'Archivo generado', extensions: [ext.replace('.', '')] },
+          { name: 'Todos los archivos', extensions: ['*'] }
+        ]
+      });
+      if (saveRes.canceled || !saveRes.filePath) return;
+      fs.writeFileSync(saveRes.filePath, data);
+      const dlId = 'dl-save-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+      const pageUrl = wc.getURL();
+      ACTIONS.emit('dl-native', {
+        id: dlId,
+        url: pageUrl,
+        filename: path.basename(saveRes.filePath),
+        totalBytes: data.length,
+        pageUrl,
+        state: 'active'
+      });
+      ACTIONS.emit('dl-native-done', {
+        id: dlId,
+        url: pageUrl,
+        filename: path.basename(saveRes.filePath),
+        file: saveRes.filePath,
+        size: (data.length / 1048576).toFixed(1),
+        state: 'completed',
+        cancelled: false
+      });
+      mainWin?.webContents?.send('save-generated-result', { ok: true, path: saveRes.filePath });
+    }
+  } catch (err) {
+    mainWin?.webContents?.send('save-generated-result', { ok: false, error: err.message || String(err) });
+  }
+}
+
 // === WINDOW EVENTS (popups -> nueva pestaña) ────────────
 app.on('web-contents-created', (event, wc) => {
   wc.on('will-redirect', (navigationEvent, url, isInPlace, isMainFrame) => {
@@ -2444,7 +2660,7 @@ app.on('web-contents-created', (event, wc) => {
       if (isAuthRedirectFlow(targetHost, sourceHost)) return;
     } catch {}
     if (!allowNavigationTransition(sourceUrl, url)) {
-      navigationEvent.preventDefault();
+      try { navigationEvent.preventDefault(); } catch {}
       try { mainWin?.webContents?.send('req-blocked', { type: 'navigation', url, msg: 'Redirección externa bloqueada desde ' + sourceUrl }); } catch {}
     }
   });
@@ -2479,7 +2695,10 @@ app.on('web-contents-created', (event, wc) => {
       // "fullscreen" interno desincronizado y el siguiente intento de
       // fullscreen del sitio deja de disparar el evento por completo.
       win?.once('leave-html-full-screen', () => {
-        try { wc.executeJavaScript('document.exitFullscreen()', true).catch(() => {}); } catch {}
+        try {
+          if (!isWebContentsFrameAlive(wc)) return;
+          wc.executeJavaScript('document.exitFullscreen()', true).catch(() => {});
+        } catch {}
       });
     });
     wc.on('leave-html-full-screen', () => {
@@ -2626,6 +2845,15 @@ app.on('web-contents-created', (event, wc) => {
         }
       );
     }
+    // Guardar contenido generado por la página (perchance y otros generadores):
+    // imágenes en <canvas>, <img>/<video> con blob: o data:, etc.
+    template.push(
+      { type: 'separator' },
+      {
+        label: '💾 Guardar contenido generado',
+        click: () => saveGeneratedContent(wc, params)
+      }
+    );
     if (blockedRule) {
       template.push(
         { type: 'separator' },
@@ -2948,12 +3176,34 @@ app.on('web-contents-created', (event, wc) => {
     if (isAggressiveAdNavigation(url)) {
       return { action: 'deny' };
     }
+    // El panel de Perchance es un mini-navegador: sus ventanas nuevas deben
+    // convertirse en pestañas del propio panel, incluso si el destino es Google.
+    try {
+      const currentHost = new URL(wc.getURL()).hostname;
+      if (wc.getType() === 'webview' &&
+          wc.session === session.fromPartition(PerchancePanel.PERCHANCE_PARTITION) &&
+          isPerchanceHost(currentHost)) {
+        if (/^https?:\/\//i.test(url || '')) {
+          mainWin?.webContents?.send('perchance-open-tab', url);
+        }
+        return { action: 'deny' };
+      }
+    } catch {}
     // OAuth de Google/X debe abrirse normalmente dentro de la sesión actual.
     // Forzar deny/redirect aquí rompe el flujo y evita que aparezca la pantalla
     // de login del segundo usuario.
     if (isAuthPopupUrl(url)) {
       return { action: 'allow' };
     }
+    try {
+      const popupHost = new URL(url).hostname;
+      const currentHost = new URL(wc.getURL()).hostname;
+      if (isPerchanceHost(popupHost) && isPerchanceHost(currentHost)) {
+        // Perchance: los enlaces navegan DENTRO del panel (webview) vía el
+        // evento 'new-window' del renderer; nunca como ventana nativa.
+        return { action: 'deny' };
+      }
+    } catch {}
     // Para TODO lo demás, impedimos que Chromium abra una ventana nativa.
     // La conversión a pestaña (una sola vez) queda exclusivamente a cargo
     // del evento 'new-window' del webview en renderer.html, que filtra por
@@ -2993,6 +3243,9 @@ app.whenReady().then(() => {
   for (const s of (CFG.extraSessions || [])) {
     try { setupExtraSession(session.fromPartition(extraSessionPartition(s.id))); } catch (e) { console.error('[sessions:init]', e.message); }
   }
+  // Panel aislado de Perchance: vista nativa (WebContentsView) con partición
+  // propia, allowlist, permisos, CSP/XFO y descargas blob/data.
+  setupPerchancePanel();
   startProcessMetricsSampler();
   setupWhatsappSession();
   ACTIONS.emit = (ch, ...args) => { try { mainWin?.webContents?.send(ch, ...args); } catch {} };
@@ -3011,9 +3264,28 @@ app.whenReady().then(() => {
   sess.on('will-download', (event, item, webContents) => {
     try {
       const url = item.getURL() || '';
-      const filename = item.getFilename() || 'descarga';
-      const totalBytes = item.getTotalBytes();
       const pageUrl = webContents?.getURL?.() || '';
+      let filename = item.getFilename() || 'descarga';
+      // Perchance: los botones de descarga de la galería/t2i crean
+      // <a href="blob:/data:" download> y llaman .click(), lo que dispara
+      // will-download con URL blob:/data:. Aseguramos nombre/extensión legible
+      // (solo para páginas Perchance; el resto conserva el comportamiento).
+      if (isPerchanceHost(pageUrl) && /^(blob|data):/i.test(url)) {
+        if (!filename || filename === 'descarga') {
+          const m = /^data:([^;,]+)/i.exec(url);
+          const mime = m ? m[1] : '';
+          const ext = mime.includes('png') ? '.png'
+            : mime.includes('jpeg') || mime.includes('jpg') ? '.jpg'
+            : mime.includes('gif') ? '.gif'
+            : mime.includes('webp') ? '.webp'
+            : mime.includes('webm') ? '.webm'
+            : mime.includes('mp4') ? '.mp4'
+            : mime.includes('ogg') ? '.ogg'
+            : mime.includes('mp3') ? '.mp3' : '';
+          filename = 'perchance-' + Date.now() + ext;
+        }
+      }
+      const totalBytes = item.getTotalBytes();
       const dlId = 'dl-native-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
       const dlDir = CFG.downloadDir || app.getPath('downloads');
       if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
@@ -3077,6 +3349,9 @@ app.whenReady().then(() => {
     const isMainFrame = d.resourceType === 'mainFrame' || d.resourceType === 'main_frame';
     const targetHost = new URL(d.url).hostname;
     const docHost = d.documentUrl ? new URL(d.documentUrl).hostname : '';
+    if (isPerchanceHost(targetHost) || isPerchanceHost(docHost)) {
+      headers['User-Agent'] = PERCHANCE_UA;
+    }
     const isAuthDocument = !!docHost && isAuthDomain(docHost);
     if (isAuthDomain(targetHost) || isAuthDocument || isAuthRedirectFlow(targetHost, docHost)) {
       return cb({ requestHeaders: headers });
@@ -3119,6 +3394,13 @@ app.whenReady().then(() => {
       const host = new URL(d.url).hostname.toLowerCase();
       const docHost = d.documentUrl ? new URL(d.documentUrl).hostname.toLowerCase() : '';
       const isMediaRequest = d.resourceType === 'media' || /\.(?:m3u8|mpd|ts|m4s|mp4|aac|mp3|webm)(?:[?#]|$)|(?:segment|chunk|playlist|\/stream(?:\/|$))/i.test(d.url);
+      if (isPerchanceRuntimeHost(host) || isPerchanceHost(docHost)) {
+        for (const key of Object.keys(responseHeaders)) {
+          if (/^content-security-policy(?:-report-only)?$/i.test(key) || /^x-frame-options$/i.test(key)) {
+            delete responseHeaders[key];
+          }
+        }
+      }
       if (isAuthDomain(host) || isAuthDomain(docHost) || isAuthRedirectFlow(host, docHost)) {
         return cb({ responseHeaders });
       }
@@ -3304,13 +3586,16 @@ app.whenReady().then(() => {
   function checkMedia(u, pageUrl, resourceType) {
     if (!CFG.mediaDetect) return;
     if (SKIP_EXT_RE.test(u) || /^(about|data|javascript):/i.test(u)) return;
+    if (/\/(?:favicon|faviconv2|s2\/favicons)(?:[/?#]|$)/i.test(u) || /favicon/i.test(u)) return;
     // Omitir segmentos HLS sueltos — solo playlists y archivos directos
     if (/\.ts(\?|#|$)/i.test(u)) return;
     if (/\/seg(?:ment)?[\d._-]/i.test(u)) return;
     const hasMediaToken = /[?&](token|exp|sign|auth|st|nonce|signature|hls|m3u8|mpd|playlist)=/i.test(u);
-    if (!MEDIA_RE.test(u) && !(resourceType === 'media' && hasMediaToken)) return;
+    // Las imágenes genéricas incluyen favicons, avatares y miniaturas. No son
+    // evidencia de un stream; solo media/audio o una URL multimedia explícita.
+    if (!MEDIA_RE.test(u) && !hasMediaToken && !(resourceType === 'media' || resourceType === 'audio')) return;
     if (MEDIA_URLS.find(m => m.url === u)) return;
-    const type = HLS_RE.test(u) ? 'HLS' : u.includes('.mpd') ? 'DASH' : 'MP4';
+    const type = HLS_RE.test(u) ? 'HLS' : u.includes('.mpd') ? 'DASH' : resourceType === 'audio' ? 'AUDIO' : 'MP4';
     const entry = { url: u, pageUrl: pageUrl || '', type, ts: new Date().toISOString() };
     MEDIA_URLS.push(entry);
     if (MEDIA_URLS.length > 500) MEDIA_URLS.splice(0, MEDIA_URLS.length - 500);

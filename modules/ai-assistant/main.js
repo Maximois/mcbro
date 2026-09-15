@@ -11,6 +11,17 @@ function safeErr(...args) { try { console.error(...args); } catch {} }
 // ── Encrypt/decrypt API keys usando safeStorage (DPAPI en Windows) ──
 const SENSITIVE_KEYS = ['opencodeKey', 'groqKey', 'openaiKey', 'geminiKey'];
 
+function maskAiConfig(cfg) {
+  if (!cfg || typeof cfg !== 'object') return cfg;
+  const out = { ...cfg };
+  for (const key of SENSITIVE_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(out, key)) {
+      out[key] = out[key] ? '***' : '';
+    }
+  }
+  return out;
+}
+
 function encryptCfg(cfg) {
   if (!cfg || !safeStorage.isEncryptionAvailable()) return cfg;
   const out = { ...cfg };
@@ -209,18 +220,18 @@ function setup(ctx) {
   _getMainWin = ctx.getMainWin || null;
   _aiCfg = decryptCfg((ctx.aiConfig || ctx.cfg?.aiConfig) || _aiCfg);
   const persist = ctx.saveCfg || (() => {});
-  safeLog('[AI-MOD] Config loaded (decrypted):', JSON.stringify({ ..._aiCfg, opencodeKey: _aiCfg.opencodeKey ? '***' : '', groqKey: _aiCfg.groqKey ? '***' : '', openaiKey: _aiCfg.openaiKey ? '***' : '', geminiKey: _aiCfg.geminiKey ? '***' : '' }));
+  safeLog('[AI-MOD] Config loaded (decrypted):', JSON.stringify(maskAiConfig(_aiCfg)));
   // Emit initial config to renderer for debugging
-  if (ctx.emit) ctx.emit('ai:debug', { type: 'load', cfg: { ..._aiCfg, opencodeKey: _aiCfg.opencodeKey ? '***' : '', groqKey: _aiCfg.groqKey ? '***' : '', openaiKey: _aiCfg.openaiKey ? '***' : '', geminiKey: _aiCfg.geminiKey ? '***' : '' } });
+  if (ctx.emit) ctx.emit('ai:debug', { type: 'load', cfg: maskAiConfig(_aiCfg) });
 
   ipcMain.handle('ai:config:get', () => _aiCfg);
   ipcMain.handle('ai:config:save', (_e, cfg) => {
     _aiCfg = { ..._aiCfg, ...cfg };
     // Encrypt antes de persistir
     if (ctx.cfg) ctx.cfg.aiConfig = encryptCfg(_aiCfg);
-    safeLog('[AI-MOD] Config saved (encrypted on disk):', JSON.stringify({ ..._aiCfg, opencodeKey: _aiCfg.opencodeKey ? '***' : '', groqKey: _aiCfg.groqKey ? '***' : '', openaiKey: _aiCfg.openaiKey ? '***' : '', geminiKey: _aiCfg.geminiKey ? '***' : '' }));
+    safeLog('[AI-MOD] Config saved (encrypted on disk):', JSON.stringify(maskAiConfig(_aiCfg)));
     persist();
-    if (ctx.emit) ctx.emit('ai:debug', { type: 'save', cfg: { ..._aiCfg, opencodeKey: _aiCfg.opencodeKey ? '***' : '', groqKey: _aiCfg.groqKey ? '***' : '', openaiKey: _aiCfg.openaiKey ? '***' : '', geminiKey: _aiCfg.geminiKey ? '***' : '' } });
+    if (ctx.emit) ctx.emit('ai:debug', { type: 'save', cfg: maskAiConfig(_aiCfg) });
     return _aiCfg;
   });
 

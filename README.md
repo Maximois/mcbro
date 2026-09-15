@@ -65,7 +65,8 @@ Navegador de escritorio basado en Electron con **IA integrada bajo supervisión 
 - Stream Hunter asociado a la pestaña activa, incluyendo fuentes DOM, requests de red, `fetch`, XHR, `performance` y reproductores comunes
 
 ### Compatibilidad de sitios
-- **Google**: usa la identidad nativa de Electron/Chromium, sin cambios de User-Agent.
+- **Google**: usa la identidad nativa de Electron/Chromium tanto en el navegador principal como en el mini-navegador del panel de Perchance.
+- **Perchance**: el mini-navegador usa Chrome 140 únicamente para Perchance, aislado de las demás sesiones.
 - **WhatsApp Web**: aplica compatibilidad únicamente al navegar a `whatsapp.com` o `whatsapp.net`.
 - La compatibilidad de WhatsApp se configura en el `webContents` de esa navegación (`did-start-navigation` + `setUserAgent(UA_WHATSAPP)`); no modifica Google ni otras pestañas.
 - `UA_WHATSAPP` = Chrome 140 (WhatsApp rechaza versiones antiguas); los Client Hints (`sec-ch-ua`) se alinean solo para dominios WhatsApp.

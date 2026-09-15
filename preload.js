@@ -21,7 +21,7 @@ const ALLOWED = new Set([
   'auth-session-updated',
   'streams:found',
   'ytdlp-log',
-  'open-new-tab','page-extract-results','ai-element-selected','cosmetic-block-result','cosmetic-unblock-result',
+  'open-new-tab','perchance-open-tab','page-extract-results','ai-element-selected','cosmetic-block-result','cosmetic-unblock-result',
   // Bookmarks
   'bookmarks:list','bookmarks:add','bookmarks:remove','bookmarks:update','bookmarks:reorder',
   // Browser history
@@ -100,6 +100,9 @@ contextBridge.exposeInMainWorld('mc', {
   // redirecciones que forman parte de esa navegación (solo bloquea
   // redirecciones automáticas iniciadas por la propia página).
   navIntent: (opts) => { try { ipcRenderer.send('nav-intent', opts); } catch {} },
+
+  // Panel de Perchance: eventos de descarga (blob/data) del webview persist:perchance
+  onPerchanceDownload: (cb) => { ipcRenderer.on('perchance:download', (_e, d) => { try { cb(d); } catch {} }); },
 
   // Descargas
   downloadHLS:  (id,url,name,pageUrl) => ipcRenderer.invoke('dl-hls',  {id,url,name,pageUrl}),

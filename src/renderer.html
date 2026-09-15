@@ -488,7 +488,7 @@ input:checked + .tslider::before { transform: translateX(16px); }
    ventana, y ocultar la UI propia del navegador alrededor. */
 body.mc-html-fullscreen #topbar, body.mc-html-fullscreen #tabbar,
 body.mc-html-fullscreen #sidebar, body.mc-html-fullscreen #ai-sidebar,
-body.mc-html-fullscreen #webchat-sidebar, body.mc-html-fullscreen #wa-sidebar { display: none !important; }
+body.mc-html-fullscreen #webchat-sidebar, body.mc-html-fullscreen #wa-sidebar, body.mc-html-fullscreen #perchance-sidebar { display: none !important; }
 body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 99999; }
 .panel { display: none; height: 100%; overflow-y: auto; padding: 20px 24px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .panel.active { display: block; }
@@ -865,6 +865,41 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
 #session-sidebar { order: -1; }
 #session-sidebar.open { width: var(--panel-w, 400px); border-right: 1px solid var(--border); box-shadow: 4px 0 12px rgba(0,0,0,0.3); }
 #ai-sidebar.resizing, #webchat-sidebar.resizing, #wa-sidebar.resizing, #session-sidebar.resizing { transition: none; }
+#ai-sidebar.resizing, #webchat-sidebar.resizing, #wa-sidebar.resizing { transition: none; }
+#perchance-sidebar { width: 0; min-width: 0; flex-shrink: 0; background: var(--surface); border-left: none; display: flex; flex-direction: column; overflow: hidden; transition: width 0.25s ease; position: relative; z-index: 0; }
+#perchance-sidebar.open { width: var(--panel-w, 420px); border-left: 1px solid var(--border); box-shadow: -4px 0 12px rgba(0,0,0,0.3); }
+#perchance-sidebar.resizing { transition: none; }
+#perchance-sidebar .pch-header { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+#perchance-sidebar .pch-title-wrapper { display: flex; align-items: center; gap: 6px; }
+#perchance-sidebar .pch-sparkle { color: var(--accent); font-size: 1.231rem; }
+#perchance-sidebar h2 { font-size: 1.077rem; font-weight: 700; color: var(--text); margin: 0; }
+#perchance-sidebar .pch-toolbar { display: flex; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; align-items: center; }
+#perchance-sidebar .pch-nav-btn { width: 26px; height: 26px; flex-shrink: 0; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; justify-content: center; transition: background .15s, color .15s; }
+#perchance-sidebar .pch-nav-btn:hover { background: var(--accent); color: #000; }
+#perchance-sidebar #pch-urlbar { flex: 1; min-width: 0; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 4px 8px; font-size: 0.846rem; outline: none; font-family: inherit; transition: border-color .2s; }
+#perchance-sidebar #pch-urlbar:focus { border-color: var(--accent); }
+#perchance-sidebar .pch-bookmarks { max-height: 130px; overflow-y: auto; border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.15); flex-shrink: 0; scrollbar-width: thin; }
+#perchance-sidebar .pch-bm-empty { padding: 8px 12px; font-size: 0.769rem; color: var(--muted); text-align: center; }
+#perchance-sidebar .pch-bm-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 0.769rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+#perchance-sidebar .pch-bm-item:hover { background: rgba(255,255,255,0.04); }
+#perchance-sidebar .pch-bm-fav { flex-shrink: 0; width: 18px; text-align: center; font-size: 0.846rem; }
+#perchance-sidebar .pch-bm-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; color: var(--text); }
+#perchance-sidebar .pch-bm-title:hover { color: var(--accent); }
+#perchance-sidebar .pch-bm-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; flex-shrink: 0; padding: 0 2px; }
+#perchance-sidebar .pch-bm-del:hover { color: #f87171; }
+#perchance-sidebar .pch-tabs { display: flex; gap: 4px; padding: 6px 8px 0; border-bottom: 1px solid var(--border); flex-shrink: 0; align-items: flex-end; overflow-x: auto; scrollbar-width: thin; }
+#perchance-sidebar .pch-tab { display: flex; align-items: center; gap: 4px; max-width: 140px; min-width: 60px; padding: 4px 6px; background: var(--surface2); border: 1px solid var(--border); border-bottom: none; border-radius: var(--radius-sm) var(--radius-sm) 0 0; cursor: pointer; font-size: 0.769rem; color: var(--muted); flex-shrink: 0; }
+#perchance-sidebar .pch-tab.active { background: var(--surface); color: var(--text); border-color: var(--accent); }
+#perchance-sidebar .pch-tab-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#perchance-sidebar .pch-tab-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; flex-shrink: 0; padding: 0 2px; }
+#perchance-sidebar .pch-tab-close:hover { color: #f87171; }
+#perchance-sidebar .pch-tab-add { background: none; border: 1px solid var(--border); color: var(--muted); cursor: pointer; font-size: 0.85rem; width: 24px; height: 24px; border-radius: var(--radius-sm); flex-shrink: 0; }
+#perchance-sidebar .pch-tab-add:hover { color: var(--accent); border-color: var(--accent); }
+#perchance-sidebar .pch-history { max-height: 150px; overflow-y: auto; border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.15); flex-shrink: 0; scrollbar-width: thin; }
+#perchance-sidebar .pch-hist-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 0.769rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+#perchance-sidebar .pch-hist-item:hover { background: rgba(255,255,255,0.04); }
+#perchance-sidebar .pch-wv-container { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+#perchance-sidebar .pch-wv-container webview { flex: 1; border: none; min-height: 0; width: 100%; }
 .panel-resize-handle { position: absolute; left: -4px; top: 0; width: 8px; height: 100%; cursor: col-resize; z-index: 6; }
 .panel-resize-handle.right-edge { left: auto; right: -4px; }
 .panel-resize-handle::after { content: ''; position: absolute; left: 3px; top: 0; width: 2px; height: 100%; background: transparent; transition: background .15s; }
@@ -1196,6 +1231,10 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
           <div class="perm-section-title">Protección del sitio</div>
           <div class="perm-block-summary"><div class="perm-block-summary-icon">&#10003;</div><div><strong id="permissions-blocked-summary">Protección activa</strong><span>Los rastreadores y anuncios se filtran automáticamente</span></div></div>
           <div class="perm-block-toggles">
+            <div class="perm-block-row">
+              <div><div class="tog-label">Guardar sesión</div><div class="tog-sub">Cookies persistentes para este dominio</div></div>
+              <label class="toggle"><input type="checkbox" id="perm-save-session" onchange="setSaveSession(this.checked)"><span class="tslider"></span></label>
+            </div>
             <div class="perm-block-row">
               <div><div class="tog-label">Bloqueo leve</div><div class="tog-sub">Solo esta sesión</div></div>
               <label class="toggle"><input type="checkbox" id="perm-block-light" onchange="setDomainBlockLevel(this.checked ? 'light' : 'none')"><span class="tslider"></span></label>
@@ -1891,6 +1930,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
       <div id="chat-toggle-ai" class="chat-toggle closed" onclick="(window.AI?AI.toggle():toggleChatPanel('ai'))" title="Abrir IA (Ctrl+Shift+A)">&#9664;</div>
       <div id="chat-toggle-web" class="chat-toggle closed" onclick="(window.WebChat?WebChat.toggle():toggleChatPanel('web'))" title="Abrir WebChat (Ctrl+Shift+W)">&#9664;</div>
       <div id="chat-toggle-wa" class="chat-toggle closed" onclick="(window.WhatsAppChat?WhatsAppChat.toggle():toggleChatPanel('wa'))" title="Abrir WhatsApp (Ctrl+Shift+Q)">&#9664;</div>
+      <div id="chat-toggle-pch" class="chat-toggle closed" onclick="(window.PerchancePanel?PerchancePanel.toggle():toggleChatPanel('pch'))" title="Abrir Perchance (Ctrl+Shift+Y)">&#9664;</div>
     </div>
   </div>
 
@@ -2454,7 +2494,7 @@ const Sessions = {
 
 // ── Chat edge toggle (fallback si módulo AI no cargó) ──
 function toggleChatPanel(type) {
-  const id = type === 'ai' ? 'ai-sidebar' : type === 'web' ? 'webchat-sidebar' : 'wa-sidebar';
+  const id = type === 'ai' ? 'ai-sidebar' : type === 'web' ? 'webchat-sidebar' : type === 'wa' ? 'wa-sidebar' : 'perchance-sidebar';
   const sb = document.getElementById(id);
   const btn = document.getElementById('chat-toggle-' + type);
   if (!sb) return;
@@ -2463,20 +2503,20 @@ function toggleChatPanel(type) {
   if (btn) {
     btn.className = 'chat-toggle ' + (opening ? 'open' : 'closed');
     btn.innerHTML = opening ? '&#9654;' : '&#9664;';
-    btn.title = opening ? 'Cerrar' : 'Abrir ' + (type === 'ai' ? 'IA (Ctrl+Shift+A)' : type === 'web' ? 'WebChat (Ctrl+Shift+W)' : 'WhatsApp (Ctrl+Shift+Q)');
+    btn.title = opening ? 'Cerrar' : 'Abrir ' + (type === 'ai' ? 'IA (Ctrl+Shift+A)' : type === 'web' ? 'WebChat (Ctrl+Shift+W)' : type === 'wa' ? 'WhatsApp (Ctrl+Shift+Q)' : 'Perchance (Ctrl+Shift+Y)');
   }
 }
 
 // MutationObserver: sincroniza botones edge cuando módulos cambian el panel
 const chatToggleObserver = new MutationObserver(() => {
-  ['ai', 'web', 'wa'].forEach(t => {
-    const id = t === 'ai' ? 'ai-sidebar' : t === 'web' ? 'webchat-sidebar' : 'wa-sidebar';
+  ['ai', 'web', 'wa', 'pch'].forEach(t => {
+    const id = t === 'ai' ? 'ai-sidebar' : t === 'web' ? 'webchat-sidebar' : t === 'wa' ? 'wa-sidebar' : 'perchance-sidebar';
     const sb = document.getElementById(id);
     const btn = document.getElementById('chat-toggle-' + t);
     if (sb && btn) {
       const open = sb.classList.contains('open');
       if (open && btn.classList.contains('closed')) { btn.className = 'chat-toggle open'; btn.innerHTML = '&#9654;'; btn.title = 'Cerrar'; }
-      if (!open && btn.classList.contains('open')) { btn.className = 'chat-toggle closed'; btn.innerHTML = '&#9664;'; btn.title = 'Abrir ' + (t === 'ai' ? 'IA (Ctrl+Shift+A)' : t === 'web' ? 'WebChat (Ctrl+Shift+W)' : 'WhatsApp (Ctrl+Shift+Q)'); }
+      if (!open && btn.classList.contains('open')) { btn.className = 'chat-toggle closed'; btn.innerHTML = '&#9664;'; btn.title = 'Abrir ' + (t === 'ai' ? 'IA (Ctrl+Shift+A)' : t === 'web' ? 'WebChat (Ctrl+Shift+W)' : t === 'wa' ? 'WhatsApp (Ctrl+Shift+Q)' : 'Perchance (Ctrl+Shift+Y)'); }
     }
   });
 });
@@ -3823,7 +3863,7 @@ function addTab(url, pageUrl, isPopup) {
   wv.className = 'tab-webview';
   wv.setAttribute('partition', 'persist:mc');
   wv.setAttribute('preload', selectionPreloadPath);
-  wv.setAttribute('allow', 'autoplay; media; encrypted-media');
+  wv.setAttribute('allow', 'autoplay; media; encrypted-media; fullscreen');
   wv.setAttribute('allowpopups', '');
   container.appendChild(wv);
   bindWebviewToTab(id, wv);
@@ -5191,7 +5231,7 @@ function dlMedia(url, type, pageUrl, displayName) {
    +  '<button class="dl-btn" data-act="cancel" onclick="dlAction(\'cancel\',\''+dlId+'\')" title="Cancelar">✕</button>'
    +  '<button class="dl-btn" data-act="retry" onclick="dlAction(\'retry\',\''+dlId+'\')" title="Reintentar" style="display:none">↻</button>'
    +'</div>';
-  queue.appendChild(el);
+  queue.insertBefore(el, queue.firstChild);
 
   const name = el.dataset.name;
   // Registrar en historial persistente
@@ -5356,7 +5396,7 @@ function bindDownloadEvents() {
      +'<div class="dl-actions">'
      +  '<button class="dl-btn" data-act="cancel" onclick="dlNativeCancel(\''+dlId+'\')" title="Cancelar">✕</button>'
      +'</div>';
-    queue.appendChild(el);
+    queue.insertBefore(el, queue.firstChild);
     // Registrar en historial persistente
     trackDownload({
       id: dlId, url: d.url || '', type: 'FILE', page: d.pageUrl || '',
@@ -5421,6 +5461,15 @@ function bindDownloadEvents() {
     setText('dl-count-badge', dlActive+' activas');
     const dot = $('dl-badge-dot'); if (dot) dot.style.display = dlActive > 0 ? 'block' : 'none';
     if (!d.cancelled) addSidebarLog('allowed', '[DL] Descarga nativa completada: ' + (d.filename || ''));
+  });
+
+  // Resultado de "Guardar contenido generado" (menú contextual)
+  mc.on('save-generated-result', d => {
+    if (d && d.ok) {
+      addSidebarLog('allowed', '[SAVE] Contenido generado guardado: ' + (d.path || ''));
+    } else {
+      addSidebarLog('blocked', '[SAVE] No se pudo guardar: ' + ((d && d.error) || 'error desconocido'));
+    }
   });
 }
 
@@ -5628,9 +5677,16 @@ document.addEventListener('keydown', e => {
         e.preventDefault(); showPanel('settings'); break;
       case 'n': // Inicio / Nueva pestaña
         e.preventDefault(); showPanel('newtab'); break;
+      case 'y': // Perchance
+        e.preventDefault();
+        if (window.PerchancePanel && typeof PerchancePanel.toggle === 'function') PerchancePanel.toggle();
+        else toggleChatPanel('pch');
+        break;
     }
   }
 });
+
+// ── Panel de Perchance: mini-navegador en sidebar (modules/perchance-panel/renderer.js) ──
 
 // ════════════════════════════════════════════════
 //  INIT
@@ -5828,7 +5884,7 @@ function resetShortcuts() {
     wv.setAttribute('partition', 'persist:mc');
     wv.setAttribute('preload', selectionPreloadPath);
     wv.setAttribute('src', 'about:blank');
-    wv.setAttribute('allow', 'autoplay; media; encrypted-media');
+    wv.setAttribute('allow', 'autoplay; media; encrypted-media; fullscreen');
     wv.setAttribute('allowpopups', '');
     // No se establece display inline; la clase .tab-webview controla la visibilidad
     container.appendChild(wv);
@@ -6201,6 +6257,8 @@ async function loadPermissionsList() {
   const blockLight = $('perm-block-light');
   const blockPermanent = $('perm-block-permanent');
   const blockGlobal = $('perm-block-global');
+  const saveSession = $('perm-save-session');
+  if (saveSession) saveSession.checked = activeDomain && state.cfg?.allowlist?.[activeDomain] === 'allow';
   if (blockLight) blockLight.checked = activeDomain && state.cfg?.allowlist?.[activeDomain] === 'session';
   if (blockPermanent) blockPermanent.checked = activeDomain && state.customBlocks.some(b => patternMatchesHost(b, activeDomain));
   if (blockGlobal) blockGlobal.checked = activeDomain && state.customBlocks.some(b => patternMatchesHost(b, '*.' + activeDomain));
@@ -6557,6 +6615,8 @@ async function setDomainBlockLevel(level) {
   }
 
   // Reset all toggles, then set the selected one
+  const saveSession = $('perm-save-session');
+  if (saveSession) saveSession.checked = false;
   light.checked = false;
   permanent.checked = false;
   global.checked = false;
@@ -6599,12 +6659,33 @@ async function setDomainBlockLevel(level) {
   }
 }
 
+async function setSaveSession(save) {
+  const domain = normalizeDomainInput($('permission-domain')?.value || getCurrentPageDomain());
+  if (!domain) return;
+  if (save) {
+    await mc.setCookiePolicyForDomain(domain, 'allow');
+    if (state.cfg) state.cfg.allowlist = { ...(state.cfg.allowlist || {}), [domain]: 'allow' };
+    addSidebarLog('allowed', '[PERM] ' + domain + ' → cookies persistentes');
+  } else {
+    await mc.removeCookieRule(domain);
+    if (state.cfg && state.cfg.allowlist) {
+      const next = { ...state.cfg.allowlist };
+      delete next[domain];
+      state.cfg.allowlist = next;
+    }
+    addSidebarLog('modified', '[PERM] ' + domain + ' → política global de cookies');
+  }
+  await renderPermissionsList();
+}
+
 async function clearDomainBlock(refresh = true) {
   const domain = normalizeDomainInput($('permission-domain')?.value || getCurrentPageDomain());
   if (!domain) return;
+  const saveSession = $('perm-save-session');
   const light = $('perm-block-light');
   const permanent = $('perm-block-permanent');
   const global = $('perm-block-global');
+  if (saveSession) saveSession.checked = true; // clearDomainBlock → allow → cookies persistentes
   if (light) light.checked = false;
   if (permanent) permanent.checked = false;
   if (global) global.checked = false;
@@ -6660,5 +6741,7 @@ hookPermissionsRefresh();
 <script src="../modules/stream-enhancer/renderer.js"></script>
 <!-- WhatsApp extractor module: extracción de multimedia de WhatsApp Web -->
 <script src="../modules/whatsapp-extractor/renderer.js"></script>
+<!-- Perchance panel module: mini-navegador en sidebar con marcadores propios -->
+<script src="../modules/perchance-panel/renderer.js"></script>
 </body>
 </html>
