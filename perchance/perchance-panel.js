@@ -24,6 +24,9 @@ const EXACT_HOSTS = new Set([
   "perchance.org",
   "null.perchance.org",
   "static.cloudflareinsights.com",
+  "challenges.cloudflare.com",
+  "challenge.cloudflare.com",
+  "turnstile.cloudflare.com",
   "clients3.google.com",
 ]);
 
@@ -63,9 +66,16 @@ function isGoogleHost(host) {
 function isAllowedUrl(rawUrl) {
   let u;
   try { u = new URL(rawUrl); } catch { return true; }         // data:, blob:, about:
-  if (u.protocol === "ws:" || u.protocol === "wss:") return isPerchanceHost(u.hostname);
+  if (u.protocol === "ws:" || u.protocol === "wss:") return isPerchanceHost(u.hostname) || isCloudflareChallengeHost(u.hostname);
   if (u.protocol !== "http:" && u.protocol !== "https:") return true;
   return isPerchanceHost(u.hostname) || isGoogleHost(u.hostname);
+}
+
+function isCloudflareChallengeHost(host) {
+  const h = String(host || "").toLowerCase().replace(/\.$/, "");
+  return h === "challenges.cloudflare.com" || h.endsWith(".challenges.cloudflare.com") ||
+    h === "challenge.cloudflare.com" || h.endsWith(".challenge.cloudflare.com") ||
+    h === "turnstile.cloudflare.com";
 }
 
 // ===========================================================================
@@ -144,10 +154,6 @@ function installPerchanceDownloads(partition = PERCHANCE_PARTITION, opts = {}) {
 // 3. Red + permisos del panel
 // ===========================================================================
 
-// Mismo UA que usa el navegador normal para Perchance (PERCHANCE_UA en main.js).
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-  "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
-
 const PERMISSIONS_TO_ALLOW = new Set([
   "fullscreen", "pointerLock", "clipboard-read", "clipboard-sanitized-write",
   "display-capture", "media", "notifications", "background-sync",
@@ -157,6 +163,10 @@ const PERMISSIONS_TO_ALLOW = new Set([
 
 function installPerchanceNetwork(partition = PERCHANCE_PARTITION) {
   const ses = session.fromPartition(partition);
+  // No tocar cookies, localStorage ni IndexedDB: solo retirar caches persistentes
+  // que pueden dejar una versión vieja del generador atrapada entre reinicios.
+  ses.clearCache().catch(() => {});
+  ses.clearStorageData({ storages: ["cachestorage", "serviceworkers"] }).catch(() => {});
   const nativeUA = session.defaultSession.getUserAgent();
 
   // Allowlist: cancela lo ajeno, deja pasar el frame raíz para no romper la barra.
@@ -185,13 +195,11 @@ function installPerchanceNetwork(partition = PERCHANCE_PARTITION) {
   ses.setPermissionRequestHandler((_wc, permission, cb) => cb(PERMISSIONS_TO_ALLOW.has(permission)));
   ses.setPermissionCheckHandler((_wc, permission) => PERMISSIONS_TO_ALLOW.has(permission));
 
-  ses.setUserAgent(UA);
-
-  // Perchance necesita Chrome 140; Google conserva la identidad nativa de
-  // Electron/Chromium para evitar mezclar un UA falsificado con su sesión.
+  // Perchance, Google y Turnstile usan la identidad nativa de Electron/Chromium.
   ses.webRequest.onBeforeSendHeaders({ urls: ['<all_urls>'] }, (d, cb) => {
     const headers = { ...(d.requestHeaders || {}) };
-    headers['User-Agent'] = isGoogleHost(safeHost(d.url)) ? nativeUA : UA;
+    const host = safeHost(d.url);
+    headers['User-Agent'] = nativeUA;
     cb({ requestHeaders: headers });
   });
 
@@ -267,7 +275,6 @@ module.exports = {
   createPerchancePanel,
   downloadFolder,
   DEFAULT_FOLDER,
-  UA,
 };
 
 // ===========================================================================

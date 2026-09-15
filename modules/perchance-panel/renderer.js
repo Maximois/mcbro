@@ -12,10 +12,6 @@
   const NEW_TAB = 'https://www.google.com/';
   const PARTITION = 'persist:perchance';
   const NATIVE_UA = navigator.userAgent;
-  // Mismo UA que usa el navegador normal para Perchance (PERCHANCE_UA en main.js).
-  // Se fija como atributo del <webview> para que navigator.userAgent coincida
-  // exactamente (el rewrite del header solo afecta al servidor, no a la página).
-  const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
   const BM_KEY = 'mc_perchance_bookmarks';
   const HIST_KEY = 'mc_perchance_history';
   const WIDTH_KEY = 'mc-panel-w-pch';
@@ -26,6 +22,8 @@
   let tabs = [];
   let activeId = null;
   let tabSeq = 0;
+  const loadTimers = new WeakMap();
+  const loadRetries = new WeakMap();
 
   function load(key, fallback) {
     try { const v = JSON.parse(localStorage.getItem(key) || 'null'); return v == null ? fallback : v; } catch { return fallback; }
@@ -73,7 +71,7 @@
   function createWebview() {
     const wv = document.createElement('webview');
     wv.setAttribute('partition', PARTITION);
-    wv.setAttribute('useragent', UA);
+    wv.setAttribute('useragent', NATIVE_UA);
     wv.setAttribute('allowpopups', '');
     wv.style.display = 'none';
     const container = document.getElementById('pch-wv-container');
@@ -92,7 +90,15 @@
       if (tab && e.title) { tab.title = e.title; renderTabs(); }
     });
     wv.addEventListener('did-start-loading', () => { const i = document.getElementById('pch-urlbar'); if (i) i.style.opacity = '0.55'; });
-    wv.addEventListener('did-stop-loading', () => { const i = document.getElementById('pch-urlbar'); if (i) i.style.opacity = '1'; });
+    wv.addEventListener('did-start-loading', () => {
+      clearTimeout(loadTimers.get(wv));
+      loadTimers.set(wv, setTimeout(() => recoverStalledLoad(wv), 20000));
+    });
+    wv.addEventListener('did-stop-loading', () => {
+      clearTimeout(loadTimers.get(wv));
+      loadRetries.delete(wv);
+      const i = document.getElementById('pch-urlbar'); if (i) i.style.opacity = '1';
+    });
     wv.addEventListener('did-fail-load', (e) => {
       if (e.errorCode !== -3) console.warn('[PCH] carga fallida:', e.errorDescription, e.errorCode, e.validatedURL);
     });
@@ -113,14 +119,21 @@
     return wv;
   }
 
+  function recoverStalledLoad(wv) {
+    if (!wv || !wv.isConnected) return;
+    const retries = loadRetries.get(wv) || 0;
+    if (retries >= 2) return;
+    loadRetries.set(wv, retries + 1);
+    try {
+      if (typeof wv.reloadIgnoringCache === 'function') wv.reloadIgnoringCache();
+      else wv.reload();
+    } catch {}
+  }
+
   function setUserAgentForUrl(wv, url) {
     try {
-      const host = new URL(url || '').hostname.toLowerCase();
-      const google = host === 'google.com' || /(^|\.)google\.[a-z.]+$/.test(host) ||
-        host.endsWith('.gstatic.com') || host.endsWith('.googleapis.com') ||
-        host.endsWith('.googleusercontent.com');
-      wv.setAttribute('useragent', google ? NATIVE_UA : UA);
-    } catch { wv.setAttribute('useragent', UA); }
+      wv.setAttribute('useragent', NATIVE_UA);
+    } catch { wv.setAttribute('useragent', NATIVE_UA); }
   }
 
   // Intercepta window.open y clics en <a target="_blank"> para navegar dentro
@@ -242,7 +255,14 @@
 
   function goBack() { const wv = getWv(); if (wv && wv.canGoBack && wv.canGoBack()) wv.goBack(); }
   function goForward() { const wv = getWv(); if (wv && wv.canGoForward && wv.canGoForward()) wv.goForward(); }
-  function reload() { const wv = getWv(); if (wv && wv.reload) wv.reload(); }
+  function reload() {
+    const wv = getWv();
+    if (!wv) return;
+    try {
+      if (typeof wv.reloadIgnoringCache === 'function') wv.reloadIgnoringCache();
+      else if (wv.reload) wv.reload();
+    } catch {}
+  }
   function home() { navigate(HOME); }
 
   function syncActive() {
