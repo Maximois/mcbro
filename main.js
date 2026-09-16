@@ -2781,15 +2781,15 @@ app.on('web-contents-created', (event, wc) => {
       { label: 'Adelante', enabled: wc.canGoForward(), click: () => wc.goForward() },
       { label: 'Recargar', click: () => wc.reload() },
       { type: 'separator' },
-      { role: 'copy', enabled: Boolean(params.selectionText) },
-      { role: 'selectAll', enabled: Boolean(params.isEditable || params.selectionText) },
+      { role: 'copy', label: 'Copiar', enabled: Boolean(params.selectionText) },
+      { role: 'selectAll', label: 'Seleccionar todo', enabled: Boolean(params.isEditable || params.selectionText) },
     ];
 
     if (params.isEditable) {
       template.push(
         { type: 'separator' },
-        { role: 'cut' },
-        { role: 'paste' }
+        { role: 'cut', label: 'Cortar' },
+        { role: 'paste', label: 'Pegar' }
       );
     }
     if (params.linkURL) {

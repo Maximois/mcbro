@@ -13,6 +13,7 @@
 const { app, session, WebContentsView, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
+const { shouldAutoClearPerchanceStorage } = require("../lib/perchance");
 
 const PERCHANCE_PARTITION = "persist:perchance";
 
@@ -163,10 +164,19 @@ const PERMISSIONS_TO_ALLOW = new Set([
 
 function installPerchanceNetwork(partition = PERCHANCE_PARTITION) {
   const ses = session.fromPartition(partition);
-  // No tocar cookies, localStorage ni IndexedDB: solo retirar caches persistentes
-  // que pueden dejar una versión vieja del generador atrapada entre reinicios.
-  ses.clearCache().catch(() => {});
-  ses.clearStorageData({ storages: ["cachestorage", "serviceworkers"] }).catch(() => {});
+  const autoClear = shouldAutoClearPerchanceStorage({
+    force: process.env.MC_PERCHANCE_CLEAR_STORAGE === '1' || process.argv.includes('--perchance-clear-storage')
+  });
+
+  // Por defecto no borramos el almacenamiento persistente del panel. Perchance
+  // guarda trabajos del usuario y Scratchpad en localStorage/IndexedDB; limpiarlo
+  // al arrancar hace que Chromium muestre exactamente el aviso de "not allowing
+  // scratchpad/input text to be permanently stored".
+  if (autoClear) {
+    ses.clearCache().catch(() => {});
+    ses.clearStorageData({ storages: ["localstorage", "indexdb", "serviceworkers", "cachestorage", "shadercache", "websql"] }).catch(() => {});
+  }
+
   const nativeUA = session.defaultSession.getUserAgent();
 
   // Allowlist: cancela lo ajeno, deja pasar el frame raíz para no romper la barra.
