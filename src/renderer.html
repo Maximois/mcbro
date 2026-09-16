@@ -80,6 +80,7 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 /* MAIN */
 #main { display: flex; flex: 1; overflow: hidden; }
 #sidebar { width: 250px; min-width: 0; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: var(--border) transparent; transition: width 0.25s ease, padding 0.25s ease, border 0.25s ease; position: relative; z-index: 0; }
+#sidebar { width: 292px; min-width: 0; flex-shrink: 0; background: linear-gradient(180deg, var(--surface), rgba(19,22,31,.96)); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: var(--border) transparent; transition: width 0.25s ease, padding 0.25s ease, border 0.25s ease; position: relative; z-index: 0; }
 #sidebar #sidebar-bg { position: absolute; inset: 0; background-size: cover; background-position: center; z-index: -1; pointer-events: none; }
 #sidebar.has-bg { background: transparent !important; }
 #sidebar.has-bg .sb-section { background: var(--panel-overlay, rgba(0,0,0,.4)); border-bottom-color: rgba(255,255,255,.06); }
@@ -126,6 +127,7 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 .resource-row { display: flex; align-items: center; gap: 5px; padding: 6px 2px; border-bottom: 1px solid rgba(255,255,255,.05); min-width: 0; }
 .resource-kind { width: 42px; color: var(--accent); font-size: 0.692rem; text-transform: uppercase; flex-shrink: 0; }
 .resource-url { flex: 1; min-width: 0; color: var(--muted2); font-size: 0.692rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resource-meta { display: block; margin-top: 2px; color: var(--muted); font-size: 0.615rem; }
 .resource-actions { display: flex; gap: 2px; flex-shrink: 0; }
 .resource-summary { flex: 1; min-width: 0; overflow: hidden; }
 .resource-name { color: var(--text); font-size: 0.769rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -254,12 +256,12 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 #permissions-panel .perm-block-summary span { display: block; color: var(--muted2); font-size: 0.692rem; margin-top: 2px; }
 #permissions-panel .bp-empty { text-align: center; color: var(--muted); font-size: 0.846rem; padding: 14px 0; }
 #permissions-panel .bp-empty-icon { font-size: 1.692rem; margin-bottom: 4px; }
-#permissions-panel details.perm-details { border-top: 1px solid rgba(255,255,255,.07); padding-top: 10px; }
-#permissions-panel details.perm-details summary { cursor: pointer; list-style: none; color: var(--muted); font-size: 0.769rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+#permissions-panel details.perm-details { flex: 0 0 auto; min-height: 34px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,.07); border-radius: 6px; background: var(--panel-view-bg, rgba(10,12,18,.1)); overflow: hidden; }
+#permissions-panel details.perm-details summary { cursor: pointer; list-style: none; min-height: 34px; box-sizing: border-box; display: flex; align-items: center; padding: 8px 9px; color: var(--muted); font-size: 0.769rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; user-select: none; }
 #permissions-panel details.perm-details summary::-webkit-details-marker { display: none; }
-#permissions-panel details.perm-details summary::after { content: '+'; float: right; color: var(--muted2); font-size: 1.077rem; line-height: 10px; }
+#permissions-panel details.perm-details summary::after { content: '+'; margin-left: auto; color: var(--muted2); font-size: 1.077rem; line-height: 10px; }
 #permissions-panel details.perm-details[open] summary::after { content: '−'; }
-#permissions-panel details.perm-details > .perm-detail-body { padding-top: 10px; }
+#permissions-panel details.perm-details > .perm-detail-body { padding: 0 9px 9px; }
 #permissions-panel .perm-cookie-summary { color: var(--muted2); font-size: 0.769rem; line-height: 1.45; margin: -2px 0 8px; }
 #permissions-panel .perm-section-scripts { order: 3; }
 #permissions-panel .perm-script-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 9px; margin-bottom: 5px; border: 1px solid rgba(255,255,255,.08); border-radius: 6px; background: var(--panel-view-bg, rgba(10,12,18,.1)); }
@@ -327,7 +329,7 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 #bookmarks-panel .bp-folder-chip:hover { border-color: var(--accent); color: var(--accent); }
 #bookmarks-panel .bp-folder-chip.active { background: rgba(0,212,170,.12); border-color: var(--accent); color: var(--accent); font-weight: 700; }
 #bookmarks-panel .bp-list {
-  flex: 1; overflow-y: auto; padding: 6px 0;
+  flex: 1; overflow-y: auto; padding: 8px 10px;
   scrollbar-width: thin; scrollbar-color: var(--border) transparent;
   background: rgba(10,12,18,.12);
 }
@@ -337,10 +339,10 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 #bookmarks-panel .bp-empty-icon { font-size: 2.154rem; margin-bottom: 8px; opacity: .4; }
 #bookmarks-panel .bp-item {
   display: flex; align-items: center; gap: 8px;
-  padding: 7px 12px; cursor: pointer; transition: background .12s;
-  position: relative;
+  padding: 8px 9px; margin-bottom: 6px; cursor: pointer; transition: background .12s, border-color .12s;
+  position: relative; background: rgba(31,35,47,.62); border: 1px solid rgba(255,255,255,.08); border-radius: 7px;
 }
-#bookmarks-panel .bp-item:hover { background: var(--surface2); }
+#bookmarks-panel .bp-item:hover { background: var(--surface2); border-color: rgba(0,212,170,.45); }
 #bookmarks-panel .bp-item.dragging { opacity: .4; }
 #bookmarks-panel .bp-item .bp-item-icon {
   width: 18px; height: 18px; border-radius: 3px; flex-shrink: 0;
@@ -399,22 +401,40 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 }
 #bookmark-star:hover { color: var(--accent); }
 #bookmark-star.bookmarked { color: var(--accent); }
-.sb-section { padding: 12px; border-bottom: 1px solid var(--border); }
+.sb-section { width: 100%; min-width: 0; padding: 14px; border-bottom: 1px solid rgba(255,255,255,.07); }
+.sb-section.sidebar-card { margin: 10px 10px 0; width: calc(100% - 20px); padding: 12px; border: 1px solid rgba(255,255,255,.08); border-radius: 9px; background: rgba(24,27,38,.78); box-shadow: 0 6px 18px rgba(0,0,0,.12); }
+.sb-section.sidebar-card:last-child { margin-bottom: 10px; }
+.sb-section.sidebar-card.sidebar-log-card { flex: 1 1 auto !important; min-height: 180px; overflow: hidden; }
+.sb-section.sidebar-card.sidebar-log-card #sidebar-log { min-width: 0; overflow: auto; padding-right: 2px; }
 .sb-title { font-size: 0.692rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; font-weight: 600; }
-.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.stat-box { background: var(--surface2); border-radius: var(--radius); padding: 8px; text-align: center; border: 1px solid var(--border); }
+.stat-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 7px; width: 100%; min-width: 0; }
+.stat-box { background: rgba(31,35,47,.72); border-radius: 7px; padding: 9px 7px; text-align: center; border: 1px solid rgba(255,255,255,.08); min-height: 48px; }
 .stat-box-clickable { cursor: pointer; transition: border-color .15s, background .15s; }
 .stat-box-clickable:hover, .stat-box-clickable:focus { border-color: var(--accent); background: var(--surface3, var(--surface)); outline: none; }
 .stat-detail { display:flex; justify-content:center; gap:5px; margin-top:4px; font-size: 0.615rem; color:var(--muted); }
 .stat-detail b { color:var(--text); font-weight:600; }
-.stat-num { font-size: 1.538rem; font-weight: 700; color: var(--accent); line-height: 1; }
+.stat-num { font-size: 1.538rem; font-weight: 700; color: var(--accent); line-height: 1; text-shadow: 0 0 14px rgba(0,212,170,.16); }
 .stat-lbl { font-size: 0.692rem; color: var(--muted); margin-top: 3px; }
 .stat-box.danger .stat-num { color: var(--danger); }
 .stat-box.warn .stat-num { color: var(--warn); }
 .stat-box.info .stat-num { color: var(--info); }
+.sidebar-protections-summary { color: var(--text); }
+#sidebar-protections-details > summary { margin: -2px -2px 0; padding: 5px 2px 7px; border-bottom: 1px solid rgba(255,255,255,.06); color: var(--text); }
+#sidebar-protections-details, #sidebar-protections-details > div { display: block; width: 100%; min-width: 0; }
+#sidebar-protections-details > summary { min-width: 0; overflow: hidden; }
+#sidebar-protections-details > summary span { transition: transform .2s; }
+#sidebar-protections-details[open] > summary span { transform: rotate(90deg); }
+.sidebar-bg-details { flex: 0 0 auto; }
+.sidebar-bg-details > details > summary { cursor: pointer; list-style: none; user-select: none; }
+.sidebar-bg-details > details > summary::-webkit-details-marker { display: none; }
+.sidebar-bg-details > details > summary::after { content: '+'; float: right; color: var(--muted2); font-size: 1.077rem; line-height: 10px; }
+.sidebar-bg-details > details[open] > summary::after { content: '−'; }
+.sidebar-bg-details .sidebar-bg-body { padding-top: 8px; }
 
 /* toggles */
-.tog-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; }
+.tog-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-width: 0; width: 100%; padding: 5px 0; }
+.tog-row > div:first-child { min-width: 0; overflow: hidden; }
+.tog-row .tog-label, .tog-row .tog-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tog-label { font-size: 0.923rem; color: var(--text); }
 .tog-sub { font-size: 0.769rem; color: var(--muted); margin-top: 1px; }
 .toggle { position: relative; width: 34px; height: 18px; flex-shrink: 0; }
@@ -425,6 +445,8 @@ input:checked + .tslider { background: var(--accent); }
 input:checked + .tslider::before { transform: translateX(16px); }
 
 .log-entry { font-size: 0.769rem; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.03); display: flex; align-items: center; gap: 5px; animation: fadein .2s ease; overflow: hidden; }
+.log-entry { font-size: 0.769rem; padding: 4px 5px; margin: 2px 0; border: 1px solid transparent; border-radius: 4px; display: flex; align-items: center; gap: 6px; animation: fadein .2s ease; overflow: hidden; }
+.log-entry:hover { background: rgba(255,255,255,.035); border-color: rgba(255,255,255,.06); }
 .log-entry.blocked { color: var(--danger); }
 .log-entry.allowed { color: var(--success); }
 .log-entry.modified { color: var(--warn); }
@@ -434,7 +456,7 @@ input:checked + .tslider::before { transform: translateX(16px); }
 .log-entry.allowed .log-dot { background: var(--success); }
 .log-entry.modified .log-dot { background: var(--warn); }
 .log-entry.info .log-dot { background: var(--info); }
-.log-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.log-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 
 /* elementos bloqueados (reglas cosméticas) */
 .cosmetic-rule-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.03); }
@@ -458,6 +480,18 @@ input:checked + .tslider::before { transform: translateX(16px); }
 .extractor-type { width:54px; color:var(--accent); font-size: 0.769rem; text-transform:uppercase; }
 .extractor-url { flex:1; min-width:0; color:var(--muted2); font-size: 0.846rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .extractor-actions { display:flex; gap:4px; }
+.resource-category-bar { display:flex; gap:4px; margin:0 0 7px; overflow-x:auto; padding-bottom:2px; }
+.resource-category { flex:0 0 auto; border:1px solid var(--border); border-radius:4px; background:var(--surface2); color:var(--muted2); padding:4px 7px; cursor:pointer; font:inherit; font-size:.692rem; }
+.resource-category.active { color:var(--accent); border-color:var(--accent); }
+.resource-category span { color:var(--muted); margin-left:2px; }
+.resource-category.active span { color:var(--accent); }
+.perm-collapsible { flex: 0 0 auto; min-height: 34px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,.07); border-radius: 6px; background: var(--panel-view-bg, rgba(10,12,18,.1)); overflow: hidden; }
+.perm-collapsible > summary { cursor: pointer; list-style: none; min-height: 34px; box-sizing: border-box; display: flex; align-items: center; padding: 8px 9px; color: var(--muted); font-size: .769rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; user-select: none; }
+.perm-collapsible > summary::-webkit-details-marker { display: none; }
+.perm-collapsible > summary .section-count { margin-left: 8px; color: var(--muted2); font-size: .692rem; font-weight: 400; letter-spacing: 0; text-transform: none; white-space: nowrap; }
+.perm-collapsible > summary::after { content: '+'; margin-left: auto; color: var(--muted2); font-size: 1.077rem; line-height: 10px; }
+.perm-collapsible[open] > summary::after { content: '−'; }
+.perm-collapsible-body { padding: 0 9px 9px; }
 /* WhatsApp extractor (módulo independiente) */
 #wa-sidebar { overflow: visible; }
 #wa-extractor-overlay { display:none; position:fixed; top:0; left:0; width:min(340px,31vw); z-index:10001; background:var(--surface); border-right:1px solid var(--border2); box-shadow:0 0 40px rgba(0,0,0,.5); overflow:hidden; }
@@ -710,6 +744,12 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
+.panel-bg-controls > details { width: 100%; }
+.panel-bg-controls > details > summary { cursor: pointer; list-style: none; color: var(--muted); font-size: .692rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; user-select: none; }
+.panel-bg-controls > details > summary::-webkit-details-marker { display: none; }
+.panel-bg-controls > details > summary::after { content: '+'; float: right; color: var(--muted2); font-size: 1rem; line-height: 10px; }
+.panel-bg-controls > details[open] > summary::after { content: '−'; }
+.panel-bg-controls > details > .panel-bg-body { display: flex; flex-direction: column; gap: 6px; padding-top: 7px; }
 .panel-bg-controls .panel-bg-row {
   display: flex; gap: 6px; align-items: center;
 }
@@ -951,6 +991,22 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
 #ai-sidebar .send-btn, #webchat-sidebar .send-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: #000; border: none; cursor: pointer; font-size: 1.231rem; flex-shrink: 0; transition: opacity .2s; display: flex; align-items: center; justify-content: center; }
 #ai-sidebar .send-btn:disabled { opacity: .3; cursor: default; }
 #ai-sidebar .send-btn:hover:not(:disabled) { opacity: .8; }
+#ai-sidebar .ai-header { padding: 14px 16px; background: linear-gradient(180deg, rgba(0,212,170,.08), rgba(0,0,0,.18)); }
+#ai-sidebar .ai-tabs { gap: 2px; padding: 4px 4px 0; background: var(--surface); }
+#ai-sidebar .ai-tab { flex: 1; min-width: 0; padding: 8px 5px; border: 1px solid transparent; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: inherit; font-size: .769rem; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#ai-sidebar .ai-tab:hover { color: var(--text); background: rgba(255,255,255,.035); }
+#ai-sidebar .ai-tab.active { color: var(--accent); border-color: var(--border); border-bottom-color: var(--accent); background: var(--surface2); }
+#ai-sidebar #ai-sb-cfg > summary { padding: 8px 12px; background: rgba(255,255,255,.025); }
+#ai-sidebar #ai-session-bar { margin: 8px 12px 0; padding: 7px 8px !important; border: 1px solid rgba(0,212,170,.22); border-radius: 7px; background: rgba(0,212,170,.055); }
+#ai-sidebar #ai-session-name { font-weight: 700; }
+#ai-sidebar #ai-session-list { margin: 4px 12px 0; border: 1px solid var(--border); border-radius: 6px; }
+#ai-sidebar .chat-container { padding: 14px 12px; gap: 10px; }
+#ai-sidebar .quick-actions { padding: 8px 12px 9px; border-top: 1px solid rgba(255,255,255,.06); background: rgba(0,0,0,.08); }
+#ai-sidebar .ai-mode-pills { padding: 7px 12px 4px !important; background: var(--surface); }
+#ai-sidebar .ai-mode-pill { width: 28px; height: 25px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); color: var(--muted2); cursor: pointer; }
+#ai-sidebar .ai-mode-pill.active { color: var(--accent); border-color: rgba(0,212,170,.55); background: rgba(0,212,170,.1); }
+#ai-sidebar .input-container { padding: 8px 12px 10px; background: linear-gradient(180deg, rgba(22,24,32,.96), var(--surface)); }
+#ai-sidebar .input-container textarea { border-radius: 8px; min-height: 40px; }
 #ai-sidebar .attach-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--surface2); color: var(--muted); border: 1px solid var(--border); cursor: pointer; font-size: 1.154rem; flex-shrink: 0; transition: all .2s; display: flex; align-items: center; justify-content: center; }
 #ai-sidebar .attach-btn:hover { border-color: var(--accent); color: var(--accent); }
 #ai-sidebar .attach-preview { display: flex; gap: 6px; flex-wrap: wrap; padding: 4px 0 2px; }
@@ -998,7 +1054,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
 #ai-wv, #wch-wv, #wa-wv { flex: 1; border: none; min-height: 0; }
 /* Chat edge toggle buttons (mismo formato que sidebar) */
 #chat-toggles { display: flex; flex-direction: column; flex-shrink: 0; width: 18px; min-width: 18px; background: var(--surface); border-left: 1px solid var(--border); }
-#session-toggle-wrap { display: flex; flex-direction: column; flex-shrink: 0; width: 18px; min-width: 18px; background: var(--surface); border-right: 1px solid var(--border); order: -1; }
+#session-toggle-wrap { display: none; }
 .chat-toggle { width: 18px; min-width: 18px; flex: 1; background: var(--surface); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.769rem; transition: color 0.2s, background 0.2s; user-select: none; }
 .chat-toggle:hover { background: var(--surface2); color: var(--accent); }
 .chat-toggle + .chat-toggle { border-top: 1px solid var(--border); }
@@ -1104,7 +1160,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
     <!-- SIDEBAR -->
     <div id="sidebar">
       <div id="sidebar-bg"></div>
-      <div class="sb-section">
+      <div class="sb-section sidebar-card">
         <div class="sb-title">Sesión actual</div>
         <div class="stat-grid">
           <div class="stat-box danger stat-box-clickable" onclick="openRequestLog('ads')" title="Abrir log de Ads"><div class="stat-num" id="stat-ads">0</div><div class="stat-lbl">Ads</div><div class="stat-detail">Detectados <b id="stat-ads-blocked">0</b> bloqueados</div></div>
@@ -1118,9 +1174,9 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
         </div>
       </div>
 
-      <div class="sb-section">
+      <div class="sb-section sidebar-card">
         <details id="sidebar-protections-details">
-          <summary class="sb-title" style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">Protecciones <span style="font-size: 0.769rem;color:var(--muted);">▸</span></summary>
+          <summary class="sb-title sidebar-protections-summary" style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">Protecciones <span style="font-size: 0.769rem;color:var(--muted);">▸</span></summary>
           <div style="padding-top:8px;">
         <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap;">
           <button class="btn ghost" onclick="setPrivacyLevel('custom')" style="padding:4px 8px;font-size: 0.769rem;">Custom</button>
@@ -1155,12 +1211,14 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
 
       <!-- Elementos bloqueados: solo en panel de permisos -->
 
-      <div class="sb-section" style="flex:1;">
+      <div class="sb-section sidebar-card sidebar-log-card" style="flex:1;">
         <div class="sb-title">Log en vivo</div>
         <div id="sidebar-log"></div>
       </div>
-      <div class="sb-section" style="border-top:1px solid var(--border);flex-shrink:0;">
-        <div class="sb-title">Fondo del sidebar</div>
+      <div class="sb-section sidebar-bg-details" style="border-top:1px solid var(--border);flex-shrink:0;">
+        <details>
+          <summary class="sb-title">Fondo del sidebar</summary>
+          <div class="sidebar-bg-body">
         <div style="font-size: 0.769rem;color:var(--muted);margin-bottom:6px;">
           <input type="file" id="side-bg-file" accept="image/*" style="width:100%;color:var(--muted);font-size: 0.769rem;" onchange="handleSideBgFile(event)">
         </div>
@@ -1169,6 +1227,8 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
           <button class="btn btn-sm ghost" onclick="applySideBgUrl()" style="font-size: 0.692rem;">OK</button>
           <button class="btn btn-sm ghost" onclick="clearSideBg()" style="font-size: 0.692rem;">✕</button>
         </div>
+          </div>
+        </details>
       </div>
     </div>
 
@@ -1197,6 +1257,9 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
         </div>
       </div>
       <div class="panel-bg-controls">
+        <details>
+          <summary>Fondo del panel</summary>
+          <div class="panel-bg-body">
         <div class="panel-bg-row">
           <input class="panel-bg-file" type="file" accept="image/*" onchange="handlePanelBgFile('bookmarks', event)">
           <button class="btn ghost btn-sm panel-bg-btn" onclick="clearPanelBg('bookmarks')">✕</button>
@@ -1205,6 +1268,8 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
           <input class="text-input panel-bg-url" id="bookmarks-panel-bg-url" placeholder="URL de imagen" onkeydown="if(event.key==='Enter') applyPanelBgUrl('bookmarks')">
           <button class="btn ghost btn-sm panel-bg-btn" onclick="applyPanelBgUrl('bookmarks')">OK</button>
         </div>
+          </div>
+        </details>
       </div>
     </div>
 
@@ -1223,9 +1288,19 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
       <div class="resources-view" data-resources-view="extract">
         <input id="resources-search" type="search" placeholder="Buscar por tipo, nombre o URL..." oninput="filterResourceList(this.value)">
         <div style="display:flex;gap:4px;margin-bottom:7px;"><button class="btn btn-sm" onclick="extractPageResources()">Extraer ahora</button><button class="btn ghost btn-sm" onclick="clearExtractedResources()">Limpiar</button></div>
+        <div class="resource-category-bar" id="resource-category-bar">
+          <button class="resource-category active" data-resource-filter="all" onclick="setResourceFilter('all')">Todos <span>0</span></button>
+          <button class="resource-category" data-resource-filter="image" onclick="setResourceFilter('image')">Imágenes <span>0</span></button>
+          <button class="resource-category" data-resource-filter="video" onclick="setResourceFilter('video')">Vídeos <span>0</span></button>
+          <button class="resource-category" data-resource-filter="link" onclick="setResourceFilter('link')">Enlaces <span>0</span></button>
+          <button class="resource-category" data-resource-filter="audio" onclick="setResourceFilter('audio')">Audio <span>0</span></button>
+        </div>
         <div id="resources-extract-list"></div>
       </div>
       <div class="panel-bg-controls">
+        <details>
+          <summary>Fondo del panel</summary>
+          <div class="panel-bg-body">
         <div class="panel-bg-row">
           <input class="panel-bg-file" type="file" accept="image/*" onchange="handlePanelBgFile('resources', event)">
           <button class="btn ghost btn-sm panel-bg-btn" onclick="clearPanelBg('resources')">✕</button>
@@ -1234,6 +1309,8 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
           <input class="text-input panel-bg-url" id="resources-panel-bg-url" placeholder="URL de imagen" onkeydown="if(event.key==='Enter') applyPanelBgUrl('resources')">
           <button class="btn ghost btn-sm panel-bg-btn" onclick="applyPanelBgUrl('resources')">OK</button>
         </div>
+          </div>
+        </details>
       </div>
     </div>
 
@@ -1278,8 +1355,10 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
           <button class="btn ghost perm-add-btn" onclick="clearDomainBlock()">&#10003; Desbloquear dominio</button>
         </div>
 
-        <div class="perm-section perm-section-form">
-          <div class="perm-section-title">Agregar permiso <span class="section-count">Para este dominio</span></div>
+        <details class="perm-collapsible">
+          <summary onclick="togglePermissionSection(this);return false;">Agregar permiso <span class="section-count">Para este dominio</span></summary>
+          <div class="perm-collapsible-body">
+          <div class="perm-section perm-section-form">
           <div class="perm-cookie-summary">Define qué puede hacer este sitio. “Sitio confiable” permite navegación/1ª parte y no trata sus URLs como tracker heurístico; el adblock por listas sigue activo.</div>
           <div class="perm-form">
             <div class="perm-form-row">
@@ -1304,33 +1383,49 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
             <button class="btn perm-add-btn" onclick="addPermissionRule()">&#43; Añadir regla</button>
             <button class="btn ghost perm-add-btn" onclick="showPermissionHosts()">Elegir dominio o subdominio</button>
           </div>
-        </div>
+          </div>
+          </div>
+        </details>
 
-        <div class="perm-section perm-section-scripts">
-          <div class="perm-section-title">Scripts individuales <span class="section-count" id="permissions-script-count">0 detectados</span></div>
+        <details class="perm-collapsible">
+          <summary onclick="togglePermissionSection(this);return false;">Scripts individuales <span class="section-count" id="permissions-script-count">0 detectados</span></summary>
+          <div class="perm-collapsible-body">
+          <div class="perm-section perm-section-scripts">
           <div class="perm-cookie-summary">Decide uno por uno qué script permitir o bloquear.</div>
           <div id="site-script-list">
             <div class="bp-empty"><div class="bp-empty-icon">&#128196;</div><div>Aún no se detectaron scripts</div></div>
           </div>
-        </div>
+          </div>
+          </div>
+        </details>
 
-        <div class="perm-section perm-section-cookies">
-          <div class="perm-section-title">Cookies y datos del sitio</div>
+        <details class="perm-collapsible">
+          <summary onclick="togglePermissionSection(this);return false;">Cookies y datos del sitio</summary>
+          <div class="perm-collapsible-body">
+          <div class="perm-section perm-section-cookies">
           <div class="perm-cookie-summary">Datos guardados por este sitio y dominios relacionados.</div>
           <div id="page-cookies-list">
             <div class="bp-empty"><div class="bp-empty-icon">&#127850;</div><div>Sin dominio activo</div></div>
           </div>
-        </div>
+          </div>
+          </div>
+        </details>
 
-        <div class="perm-section perm-section-rules">
-          <div class="perm-section-title">Reglas guardadas <span class="section-count">Solo reglas activas</span></div>
+        <details class="perm-collapsible">
+          <summary onclick="togglePermissionSection(this);return false;">Reglas guardadas <span class="section-count">Solo reglas activas</span></summary>
+          <div class="perm-collapsible-body">
+          <div class="perm-section perm-section-rules">
           <div id="permissions-list">
             <div class="bp-empty"><div class="bp-empty-icon">&#128274;</div><div>Sin permisos por dominio</div></div>
           </div>
-        </div>
+          </div>
+          </div>
+        </details>
 
-        <div class="perm-section perm-section-cosmetic">
-          <div class="perm-section-title">Elementos bloqueados <span class="section-count" id="permissions-cosmetic-count">0</span></div>
+        <details class="perm-collapsible">
+          <summary onclick="togglePermissionSection(this);return false;">Elementos bloqueados <span class="section-count" id="permissions-cosmetic-count">0</span></summary>
+          <div class="perm-collapsible-body">
+          <div class="perm-section perm-section-cosmetic">
           <div class="perm-cookie-summary">Elementos ocultos con "Bloquear este elemento" del menú contextual.</div>
           <div id="permissions-cosmetic-list">
             <div class="bp-empty"><div class="bp-empty-icon">&#128683;</div><div>Sin elementos bloqueados</div></div>
@@ -1339,7 +1434,9 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
             <button class="btn ghost perm-add-btn" onclick="reapplyCosmeticFilters()" style="flex:1;width:auto;">&#128260; Reaplicar filtros</button>
             <button class="btn ghost perm-add-btn" onclick="unblockAllCosmeticRules()" style="flex:1;width:auto;">&#10003; Desbloquear todo</button>
           </div>
-        </div>
+          </div>
+          </div>
+        </details>
 
         <details class="perm-details">
           <summary>Reglas y dominios relacionados</summary>
@@ -1354,6 +1451,9 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
         </details>
       </div>
       <div class="panel-bg-controls">
+        <details>
+          <summary>Fondo del panel</summary>
+          <div class="panel-bg-body">
         <div class="panel-bg-row">
           <input class="panel-bg-file" type="file" accept="image/*" onchange="handlePanelBgFile('permissions', event)">
           <button class="btn ghost btn-sm panel-bg-btn" onclick="clearPanelBg('permissions')">✕</button>
@@ -1362,6 +1462,8 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
           <input class="text-input panel-bg-url" id="permissions-panel-bg-url" placeholder="URL de imagen" onkeydown="if(event.key==='Enter') applyPanelBgUrl('permissions')">
           <button class="btn ghost btn-sm panel-bg-btn" onclick="applyPanelBgUrl('permissions')">OK</button>
         </div>
+          </div>
+        </details>
       </div>
     </div>
 
@@ -1398,6 +1500,9 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
         </div>
       </div>
       <div class="panel-bg-controls">
+        <details>
+          <summary>Fondo del panel</summary>
+          <div class="panel-bg-body">
         <div class="panel-bg-row">
           <input class="panel-bg-file" type="file" accept="image/*" onchange="handlePanelBgFile('utility', event)">
           <button class="btn ghost btn-sm panel-bg-btn" onclick="clearPanelBg('utility')">✕</button>
@@ -1406,6 +1511,8 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
           <input class="text-input panel-bg-url" id="utility-panel-bg-url" placeholder="URL de imagen" onkeydown="if(event.key==='Enter') applyPanelBgUrl('utility')">
           <button class="btn ghost btn-sm panel-bg-btn" onclick="applyPanelBgUrl('utility')">OK</button>
         </div>
+          </div>
+        </details>
       </div>
     </div>
 
@@ -2022,6 +2129,7 @@ const state = {
   streamItems: new Map(),
   blockedScripts: [],
   downloads: [], // historial persistente de descargas
+  permissionHostHints: {},
   authReturnUrls: {},
 };
 
@@ -2518,6 +2626,7 @@ const Sessions = {
     });
   }
 };
+window.Sessions = Sessions;
 
 // ── Chat edge toggle (fallback si módulo AI no cargó) ──
 function toggleChatPanel(type) {
@@ -3772,6 +3881,7 @@ function bindWebviewToTab(id, wv) {
         te.textContent = tab.title;
       }
     }
+    renderCosmeticRules();
   });
 
   // Navegación interna (SPA, hash, history.pushState)
@@ -3794,6 +3904,7 @@ function bindWebviewToTab(id, wv) {
     $('urlinput').value = e.url;
     addHistory(e.url);
     updateBookmarkStar();
+    renderCosmeticRules();
   });
 
   wv.addEventListener('new-window', (e) => {
@@ -4041,7 +4152,16 @@ async function reapplyCosmeticFilters() {
   } catch {}
 }
 
-function renderCosmeticRules() {
+async function renderCosmeticRules() {
+  // La fuente de verdad vive en main/adblocker; el estado local puede quedar
+  // atrasado después de bloquear desde el menú contextual.
+  try {
+    const result = await mc.adblockListCosmetics();
+    if (result?.ok && Array.isArray(result.rules)) {
+      state.cfg = state.cfg || {};
+      state.cfg.userCosmeticRules = result.rules;
+    }
+  } catch {}
   const allRules = Array.isArray(state.cfg?.userCosmeticRules) ? state.cfg.userCosmeticRules : [];
   // Obtener dominio de la página activa
   let currentDomain = '';
@@ -4056,7 +4176,7 @@ function renderCosmeticRules() {
   } catch {}
   // Filtrar reglas aplicables al dominio actual
   const rules = allRules.filter(rule => {
-    const domain = String(rule).split('##')[0].trim().toLowerCase();
+    const domain = normalizeDomainInput(String(rule).split('##')[0].trim());
     if (!domain) return true; // reglas globales
     return currentDomain && (currentDomain === domain || currentDomain.endsWith('.' + domain));
   });
@@ -4071,28 +4191,28 @@ function renderCosmeticRules() {
       permList.innerHTML = rules.map((rule, i) => {
         const [domain, selector] = String(rule).split('##');
         const safeRule = escapeHtml(String(rule));
-        const globalIndex = allRules.indexOf(rule);
+        const ruleArgument = escapeHtml(JSON.stringify(String(rule)));
         return '<div class="perm-cosmetic-row">'
           + '<div class="perm-cosmetic-main">'
           + '<strong title="' + safeRule + '">' + escapeHtml(selector || rule) + '</strong>'
           + '<span>' + escapeHtml(domain || 'todos los sitios') + '</span>'
           + '</div>'
-          + '<div class="perm-cookie-actions"><button class="mini-btn danger" onclick="unblockCosmeticRule(' + globalIndex + ')" title="Quitar este bloqueo">Desbloquear</button></div>'
+          + '<div class="perm-cookie-actions"><button class="mini-btn danger" onclick="unblockCosmeticRule(' + ruleArgument + ')" title="Quitar este bloqueo">Desbloquear</button></div>'
           + '</div>';
       }).join('');
     }
   }
 }
 
-async function unblockCosmeticRule(index) {
+async function unblockCosmeticRule(rule) {
   const rules = Array.isArray(state.cfg?.userCosmeticRules) ? state.cfg.userCosmeticRules : [];
-  const rule = rules[index];
-  if (!rule) return;
-  const r = await mc.adblockRemoveCosmetic({ raw: rule });
+  const target = String(rule || '');
+  if (!target || !rules.includes(target)) return;
+  const r = await mc.adblockRemoveCosmetic({ raw: target });
   if (r?.ok) {
-    state.cfg.userCosmeticRules = rules.filter((_, i) => i !== index);
-    renderCosmeticRules();
-    addSidebarLog('allowed', '[ELEMENT] Desbloqueado: ' + rule);
+    state.cfg.userCosmeticRules = rules.filter(item => item !== target);
+    await renderCosmeticRules();
+    addSidebarLog('allowed', '[ELEMENT] Desbloqueado: ' + target);
     const wv = $('webview-' + state.activeTab);
     if (wv && typeof wv.reload === 'function') wv.reload();
   } else {
@@ -4321,9 +4441,11 @@ function copyIdentity() {
 
 let extractedResources = [];
 let extractedFilter = 'all';
+let extractedResourceFilter = 'all';
 function showExtractor(data) {
   extractedResources = Array.isArray(data?.resources) ? data.resources : [];
   extractedFilter = 'all';
+  extractedResourceFilter = 'all';
   openResourcesPanel('extract');
   renderExtractedResources(data?.error);
 }
@@ -4348,7 +4470,7 @@ function downloadExtracted(index) {
   if (!item?.url) return;
   const type = item.type === 'image' ? 'image' : item.type === 'video' ? 'video' : item.type === 'audio' ? 'audio' : 'file';
   const pageUrl = getActivePageUrl();
-  dlMedia(item.url, type, pageUrl, item.label || describeResource(item.url, item.type).title);
+  dlMedia(item.url, type, pageUrl);
   addSidebarLog('info', '[EXTRACT] Descargando: ' + item.url.substring(0, 60));
 }
 function renderExtractedResources(error) {
@@ -4358,21 +4480,65 @@ function renderExtractedResources(error) {
   if (!extractedResources.length) { list.innerHTML = '<div style="padding:18px;text-align:center;color:var(--muted);">No se encontraron imágenes ni enlaces directos.</div>'; return; }
   filterResourceList($('resources-search')?.value || '');
 }
+function setResourceFilter(type) {
+  extractedResourceFilter = type;
+  document.querySelectorAll('.resource-category').forEach(button => {
+    button.classList.toggle('active', button.dataset.resourceFilter === type);
+  });
+  filterResourceList($('resources-search')?.value || '');
+}
+function updateResourceCategoryCounts() {
+  const counts = { all: extractedResources.length, image: 0, video: 0, link: 0, audio: 0 };
+  extractedResources.forEach(item => {
+    if (Object.prototype.hasOwnProperty.call(counts, item.type)) counts[item.type]++;
+  });
+  document.querySelectorAll('.resource-category').forEach(button => {
+    const count = button.querySelector('span');
+    if (count) count.textContent = counts[button.dataset.resourceFilter] || 0;
+  });
+}
 function filterResourceList(query) {
   const list = $('resources-extract-list');
   if (!list) return;
+  updateResourceCategoryCounts();
   const q = String(query || '').trim().toLowerCase();
-  const items = extractedResources.map((item, index) => ({ item, index })).filter(({ item }) => !q || [item.type, item.label, item.url].some(value => String(value || '').toLowerCase().includes(q)));
+  const items = extractedResources.map((item, index) => ({ item, index })).filter(({ item }) => {
+    const matchesType = extractedResourceFilter === 'all' || item.type === extractedResourceFilter;
+    const matchesSearch = !q || [item.type, item.label, item.url].some(value => String(value || '').toLowerCase().includes(q));
+    return matchesType && matchesSearch;
+  });
   if (!items.length) { list.innerHTML = '<div style="padding:18px;text-align:center;color:var(--muted);">No hay coincidencias.</div>'; return; }
-  list.innerHTML = items.map(({ item, index }) => `<div class="resource-row" onmouseenter="previewResource(${index}, event)" onmouseleave="hideResourcePreview()"><span class="resource-kind">${escapeHtml(item.type)}</span><span class="resource-url">${escapeHtml(item.label || describeResource(item.url, item.type).title)}</span><div class="resource-actions"><button class="btn ghost btn-sm" onclick="openExtracted(${index})" title="Abrir en pestaña">↗</button><button class="btn ghost btn-sm" onclick="copyExtracted(${index})" title="Copiar URL completa">⧉</button><button class="btn warn btn-sm" onclick="downloadExtracted(${index})" title="Descargar recurso">⬇</button></div></div>`).join('');
+  list.innerHTML = items.map(({ item, index }) => `<div class="resource-row" onmouseenter="previewResource(${index}, event)" onmouseleave="hideResourcePreview()"><span class="resource-kind">${escapeHtml(item.type)}</span><span class="resource-url">${escapeHtml(item.label || describeResource(item.url, item.type).title)}${item.dimensions ? '<span class="resource-meta">' + escapeHtml(item.dimensions) + '</span>' : ''}</span><div class="resource-actions"><button class="btn ghost btn-sm" onclick="openExtracted(${index})" title="Abrir en pestaña">↗</button><button class="btn ghost btn-sm" onclick="copyExtracted(${index})" title="Copiar URL completa">⧉</button><button class="btn warn btn-sm" onclick="downloadExtracted(${index})" title="Descargar recurso">⬇</button></div></div>`).join('');
 }
 function previewResource(index, event) {
   const item = extractedResources[index];
-  if (!item) return;
+  if (!item || !['image', 'video'].includes(item.type) || !item.url) {
+    hideResourcePreview();
+    return;
+  }
   let preview = $('resource-preview');
   if (!preview) { preview = document.createElement('div'); preview.id = 'resource-preview'; document.body.appendChild(preview); }
-  const media = item.type === 'image' ? `<img src="${escapeHtml(item.url)}" alt="">` : item.type === 'video' ? `<video src="${escapeHtml(item.url)}" muted autoplay loop></video>` : '';
-  preview.innerHTML = media;
+  preview.replaceChildren();
+  const mediaUrl = item.preview || item.url;
+  const media = document.createElement(item.type === 'image' ? 'img' : 'video');
+  media.src = mediaUrl;
+  media.alt = item.label || '';
+  media.loading = 'eager';
+  media.referrerPolicy = 'no-referrer-when-downgrade';
+  if (item.type === 'video') {
+    media.muted = true;
+    media.autoplay = true;
+    media.loop = true;
+    media.playsInline = true;
+  }
+  media.addEventListener('error', () => {
+    preview.replaceChildren();
+    const message = document.createElement('span');
+    message.textContent = 'Vista previa no disponible';
+    message.style.cssText = 'display:block;padding:12px;color:var(--muted);font-size:.769rem;text-align:center;';
+    preview.appendChild(message);
+  }, { once: true });
+  preview.appendChild(media);
   const rect = event.currentTarget.getBoundingClientRect();
   preview.style.left = Math.min(window.innerWidth - 270, Math.max(8, rect.right + 8)) + 'px';
   preview.style.top = Math.min(window.innerHeight - 230, Math.max(8, rect.top)) + 'px';
@@ -4414,14 +4580,28 @@ async function extractPageResources() {
     const data = await wv.executeJavaScript(`(() => {
       try {
         const found = [];
-        const add = (url, type, label) => {
+        const add = (url, type, label, dimensions) => {
           if (!url || !/^https?:\\/\\//i.test(url)) return;
           let absolute;
           try { absolute = new URL(url, location.href).href; } catch (e) { return; }
-          if (!found.some(item => item.url === absolute)) found.push({ url: absolute, type, label });
+          if (!found.some(item => item.url === absolute)) found.push({ url: absolute, type, label, dimensions: dimensions || '' });
         };
-        document.querySelectorAll('img').forEach((el, i) => add(el.currentSrc || el.src, 'image', el.alt || 'Imagen ' + (i + 1)));
-        document.querySelectorAll('video, audio').forEach((el, i) => { add(el.currentSrc || el.src, el.tagName.toLowerCase(), el.getAttribute('title') || el.tagName + ' ' + (i + 1)); el.querySelectorAll('source').forEach(source => add(source.src, el.tagName.toLowerCase(), source.type || 'source')); });
+        document.querySelectorAll('img').forEach((el, i) => {
+          const width = el.naturalWidth || el.width;
+          const height = el.naturalHeight || el.height;
+          // Ignorar iconos, avatares y miniaturas pequeñas; conservar banners
+          // o imágenes panorámicas si al menos una dimensión llega al umbral.
+          if (width && height && Math.max(width, height) < 400) return;
+          const dimensions = width && height ? width + ' × ' + height + ' px' : '';
+          add(el.currentSrc || el.src, 'image', el.alt || 'Imagen ' + (i + 1), dimensions);
+        });
+        document.querySelectorAll('video, audio').forEach((el, i) => {
+          const width = el.videoWidth || el.width;
+          const height = el.videoHeight || el.height;
+          const dimensions = el.tagName.toLowerCase() === 'video' && width && height ? width + ' × ' + height + ' px' : '';
+          add(el.currentSrc || el.src, el.tagName.toLowerCase(), el.getAttribute('title') || el.tagName + ' ' + (i + 1), dimensions);
+          el.querySelectorAll('source').forEach(source => add(source.src, el.tagName.toLowerCase(), source.type || 'source'));
+        });
         document.querySelectorAll('a[href]').forEach((el, i) => add(el.href, 'link', (el.innerText || el.textContent || '').trim().slice(0, 100) || 'Enlace ' + (i + 1)));
         document.querySelectorAll('meta[property="og:image"], meta[name="twitter:image"]').forEach(el => add(el.content, 'image', 'Imagen social'));
         return { title: document.title || location.hostname, resources: found.slice(0, 500) };
@@ -4644,6 +4824,8 @@ function shouldShowStreamItem(item) {
   if (role === 'segment') return false;
   // Segmentos .m4s (DASH) nunca son útiles por sí solos
   if (/\.m4s(\?|#|$)/i.test(item.url)) return false;
+  // Rangos MP4 parciales del reproductor tampoco son descargables completos.
+  if (isStreamFragment(item.url)) return false;
   return true;
 }
 
@@ -5059,35 +5241,13 @@ function toggleDlOverlay() {
 }
 // Extraer un nombre de archivo legible de una URL multimedia
 function friendlyFileName(url, type, pageUrl, displayName) {
-  const literalPage = (pageUrl && /^https?:\/\//i.test(pageUrl)) ? pageUrl :
-    (typeof displayName === 'string' && /^https?:\/\//i.test(displayName)) ? displayName : '';
-
-  if (literalPage) {
-    return String(literalPage)
-      .replace(/^https?:\/\//i, '')
-      .replace(/[\\/:*?"<>|]/g, '_')
-      .replace(/\s+/g, '_')
-      .replace(/_+/g, '_')
-      .replace(/^_+|_+$/g, '')
-      .slice(0, 80) || 'page_url';
+  // Un nombre explícito lo aporta Stream Hunter; conservarlo evita cambiar
+  // su nomenclatura por el nombre de la página de origen.
+  if (typeof displayName === 'string' && /^https?:\/\//i.test(displayName)) {
+    return displayName.replace(/^https?:\/\//i, '').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || 'page_url';
   }
-
-  const origin = detectStreamOrigin(pageUrl || getActivePageUrl());
-  if (origin) {
-    return String(origin)
-      .replace(/^https?:\/\//i, '')
-      .replace(/[\\/:*?"<>|]/g, '_')
-      .replace(/\s+/g, '_')
-      .replace(/_+/g, '_')
-      .replace(/^_+|_+$/g, '')
-      .slice(0, 80) || 'page_url';
-  }
-
-  const container = detectStreamContainer(pageUrl || getActivePageUrl());
-  if (container) {
-    const role = classifyStreamUrl(url);
-    const suffix = role === 'master' ? 'principal' : role === 'playlist' ? 'hls' : role === 'file' ? 'video' : 'media';
-    return ((container) + '_' + suffix).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+  if (typeof displayName === 'string' && displayName.trim() && !/^https?:\/\//i.test(displayName)) {
+    return displayName.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_').slice(0, 80) || 'media';
   }
 
   try {
@@ -5097,7 +5257,9 @@ function friendlyFileName(url, type, pageUrl, displayName) {
     if (!file || file === '/' || /^[a-z0-9]+$/i.test(file) && !/\./.test(file)) {
       file = parsed.hostname.replace(/^www\./i, '').split('.')[0] || 'media';
     }
-    let name = decodeURIComponent(file).replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[_-]+/g, ' ').trim();
+    let name = decodeURIComponent(file).replace(/[\\/:*?"<>|]/g, '_').trim();
+    if (/\.[a-z0-9]{2,5}$/i.test(name)) return name.slice(0, 100);
+    name = name.replace(/[_-]+/g, ' ').trim();
     if (name.length < 3 || /^(index|master|playlist|stream|video|media|seg|segment|chunk|part)$/i.test(name)) {
       let host = parsed.hostname.replace(/^www\./i, '').split('.')[0];
       if (host.length > 20) host = host.substring(0, 20);
@@ -5190,7 +5352,10 @@ function renderPersistedDownloads() {
     el.dataset.state = d.state || 'done';
     el.dataset.file = d.file || '';
     const dom = (d.url || '').replace(/https?:\/\//, '').split('/')[0] || '';
-    const friendly = d.name ? d.name.replace(/_\d+$/, '') : (d.filename || 'descarga');
+    const fullName = d.state === 'done' && d.filename
+      ? d.filename
+      : (d.name ? d.name.replace(/_\d+$/, '') : (d.filename || 'descarga'));
+    const friendly = compactDownloadName(fullName);
     const stateLabel = d.state === 'done' ? '✓ ' + (d.size || '') + ' MB' :
                        d.state === 'error' ? '✗ ERROR' :
                        d.state === 'cancelled' ? '✕ Cancelado' : '—';
@@ -5198,13 +5363,12 @@ function renderPersistedDownloads() {
                        d.state === 'error' ? 'var(--danger)' :
                        d.state === 'cancelled' ? 'var(--danger)' : 'var(--warn)';
     const metaHtml = d.state === 'done' && d.file
-      ? escapeHtml(d.filename || d.file.split('\\').pop().split('/').pop()) + ' &mdash; <a href="#" onclick="openDlFile(\'' + d.id + '\');return false;" style="color:var(--accent);text-decoration:underline;">Abrir archivo</a> &middot; <a href="#" onclick="mc.openDlFolder();return false;" style="color:var(--accent);text-decoration:underline;">Abrir carpeta</a>'
+      ? '<a href="#" onclick="openDlFile(\'' + d.id + '\');return false;" style="color:var(--accent);text-decoration:underline;">Abrir archivo</a> &middot; <a href="#" onclick="mc.openDlFolder();return false;" style="color:var(--accent);text-decoration:underline;">Abrir carpeta</a>'
       : escapeHtml(d.filename || friendly);
     el.innerHTML =
-      '<div class="dl-header"><span class="dl-name">⬇ '+escapeHtml(friendly)+' — '+(d.type||'MP4')+'</span><span class="dl-pct" id="pct-'+d.id+'" style="color:'+stateColor+'">'+stateLabel+'</span></div>'
-     +'<div class="dl-url">'+escapeHtml(dom)+'</div>'
+      '<div class="dl-header"><span class="dl-name" title="'+escapeHtml(fullName)+'">'+escapeHtml(friendly)+'</span><span class="dl-pct" id="pct-'+d.id+'" style="color:'+stateColor+'">'+stateLabel+'</span></div>'
      +'<div class="pbar"><div class="pfill" id="fill-'+d.id+'" style="width:'+(d.state==='done'?'100%':'0%')+'"'+(d.state==='error'||d.state==='cancelled'?' class="error"':'')+'></div></div>'
-     +'<div class="dl-meta"><span id="meta-'+d.id+'">'+metaHtml+'</span><span id="speed-'+d.id+'">— KB/s</span></div>'
+    +'<div class="dl-meta"><span id="meta-'+d.id+'">'+metaHtml+'</span><span id="speed-'+d.id+'">'+(d.state === 'done' ? '' : '— KB/s')+'</span></div>'
      +'<div class="dl-actions">'
      +  (d.state === 'error' || d.state === 'cancelled'
          ? '<button class="dl-btn" data-act="retry" onclick="dlAction(\'retry\',\''+d.id+'\')" title="Reintentar">↻</button>'
@@ -5236,7 +5400,8 @@ function dlMedia(url, type, pageUrl, displayName) {
   const ph = queue.querySelector('.dl-empty-msg') || queue.querySelector('div[style*="center"]'); if (ph) ph.remove();
   const dlId = 'dl-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
   const dom  = url.replace(/https?:\/\//,'').split('/')[0];
-  const friendly = friendlyFileName(url, type, resolvedPage, displayName);
+  const fullName = friendlyFileName(url, type, resolvedPage, displayName);
+  const friendly = compactDownloadName(fullName);
   dlActive++;
   setText('dl-count-badge', dlActive+' activas');
   const dot = $('dl-badge-dot'); if (dot) dot.style.display = 'block';
@@ -5245,11 +5410,10 @@ function dlMedia(url, type, pageUrl, displayName) {
   el.dataset.url = url;
   el.dataset.type = type;
   el.dataset.page = resolvedPage || '';
-  el.dataset.name = friendly + '_' + Date.now();
+  el.dataset.name = fullName + '_' + Date.now();
   el.dataset.state = 'active';
   el.innerHTML =
-    '<div class="dl-header"><span class="dl-name">⬇ '+escapeHtml(friendly)+' — '+type+'</span><span class="dl-pct" id="pct-'+dlId+'">0%</span></div>'
-   +'<div class="dl-url">'+escapeHtml(dom)+'</div>'
+    '<div class="dl-header"><span class="dl-name" title="'+escapeHtml(fullName)+'">'+escapeHtml(friendly)+'</span><span class="dl-pct" id="pct-'+dlId+'">0%</span></div>'
    +'<div class="pbar"><div class="pfill" id="fill-'+dlId+'" style="width:0%"></div></div>'
    +'<div class="dl-meta"><span id="meta-'+dlId+'">0 / ? segmentos</span><span id="speed-'+dlId+'">— KB/s</span></div>'
    +'<div class="dl-actions">'
@@ -5333,6 +5497,16 @@ function fmtBytes(n) {
   return (i === 0 ? n : n.toFixed(1)) + ' ' + u[i];
 }
 
+function compactDownloadName(name, maxLength = 48) {
+  const fullName = String(name || 'descarga');
+  if (fullName.length <= maxLength) return fullName;
+  const match = fullName.match(/^(.*)(\.[^.]*)$/);
+  const extension = match ? match[2] : '';
+  const base = match ? match[1] : fullName;
+  const available = Math.max(8, maxLength - extension.length - 3);
+  return base.slice(0, available) + '...' + extension;
+}
+
 function bindDownloadEvents() {
   mc.on('dl-progress', d => {
     const item = document.getElementById(d.id);
@@ -5353,10 +5527,16 @@ function bindDownloadEvents() {
       item.dataset.state = 'done';
       setDlButtons(item, 'done');
       const fn = d.filename || (d.file ? d.file.split('\\').pop().split('/').pop() : '');
+      const nameEl = item.querySelector('.dl-name');
+      if (nameEl && fn) {
+        nameEl.textContent = compactDownloadName(fn);
+        nameEl.title = fn;
+      }
       const p = $('pct-'+id); if (p){ p.textContent='✓ '+d.size+' MB'; p.style.color='var(--success)'; }
       const f = $('fill-'+id); if (f) f.style.width='100%';
       const meta = $('meta-'+id);
-      if (meta) meta.innerHTML = escapeHtml(fn) + ' &mdash; <a href="#" onclick="openDlFile(\'' + id + '\');return false;" style="color:var(--accent);text-decoration:underline;">Abrir archivo</a> &middot; <a href="#" onclick="mc.openDlFolder();return false;" style="color:var(--accent);text-decoration:underline;">Abrir carpeta</a>';
+      if (meta) meta.innerHTML = '<a href="#" onclick="openDlFile(\'' + id + '\');return false;" style="color:var(--accent);text-decoration:underline;">Abrir archivo</a> &middot; <a href="#" onclick="mc.openDlFolder();return false;" style="color:var(--accent);text-decoration:underline;">Abrir carpeta</a>';
+      const speed = $('speed-'+id); if (speed) speed.textContent = '';
     }
     // Persistir en historial
     trackDownload({
@@ -5404,7 +5584,8 @@ function bindDownloadEvents() {
     if (ov && !ov.classList.contains('open')) ov.classList.add('open');
     const dlId = d.id;
     const dom = (d.url || '').replace(/https?:\/\//, '').split('/')[0] || '';
-    const friendly = (d.filename || 'descarga').replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[_-]+/g, ' ').trim() || 'descarga';
+    const fullName = d.filename || 'descarga';
+    const friendly = compactDownloadName(fullName);
     dlActive++;
     setText('dl-count-badge', dlActive+' activas');
     const dot = $('dl-badge-dot'); if (dot) dot.style.display = 'block';
@@ -5416,8 +5597,7 @@ function bindDownloadEvents() {
     el.dataset.name = d.filename || 'descarga';
     el.dataset.state = 'active';
     el.innerHTML =
-      '<div class="dl-header"><span class="dl-name">⬇ '+escapeHtml(friendly)+' — FILE</span><span class="dl-pct" id="pct-'+dlId+'">0%</span></div>'
-     +'<div class="dl-url">'+escapeHtml(dom)+'</div>'
+      '<div class="dl-header"><span class="dl-name" title="'+escapeHtml(fullName)+'">'+escapeHtml(friendly)+'</span><span class="dl-pct" id="pct-'+dlId+'">0%</span></div>'
      +'<div class="pbar"><div class="pfill" id="fill-'+dlId+'" style="width:0%"></div></div>'
      +'<div class="dl-meta"><span id="meta-'+dlId+'">0 B / '+fmtBytes(d.totalBytes||0)+'</span><span id="speed-'+dlId+'">— KB/s</span></div>'
      +'<div class="dl-actions">'
@@ -5474,8 +5654,14 @@ function bindDownloadEvents() {
         else { p.textContent = '✓ '+d.size+' MB'; p.style.color = 'var(--success)'; }
       }
       if (!d.cancelled) {
+        const nameEl = item.querySelector('.dl-name');
+        if (nameEl && d.filename) {
+          nameEl.textContent = compactDownloadName(d.filename);
+          nameEl.title = d.filename;
+        }
         const meta = $('meta-'+id);
-        if (meta) meta.innerHTML = escapeHtml(d.filename || '') + ' &mdash; <a href="#" onclick="openDlFile(\'' + id + '\');return false;" style="color:var(--accent);text-decoration:underline;">Abrir archivo</a> &middot; <a href="#" onclick="mc.openDlFolder();return false;" style="color:var(--accent);text-decoration:underline;">Abrir carpeta</a>';
+        if (meta) meta.innerHTML = '<a href="#" onclick="openDlFile(\'' + id + '\');return false;" style="color:var(--accent);text-decoration:underline;">Abrir archivo</a> &middot; <a href="#" onclick="mc.openDlFolder();return false;" style="color:var(--accent);text-decoration:underline;">Abrir carpeta</a>';
+        const speed = $('speed-'+id); if (speed) speed.textContent = '';
       }
     }
     // Persistir en historial
@@ -6245,6 +6431,11 @@ function togglePermissionsPanel() {
   }
 }
 
+function togglePermissionSection(summary) {
+  const details = summary?.closest('details.perm-collapsible');
+  if (details) details.open = !details.open;
+}
+
 function refreshPermissionsForActivePage() {
   syncPermissionsDomainField();
   renderPermissionsList().catch(error => addSidebarLog('blocked', '[PERM] No se pudo actualizar el panel: ' + (error.message || error)));
@@ -6255,10 +6446,29 @@ async function loadPermissionsList() {
   const hostList = $('detected-hosts-list');
   if (!list) return;
   const perms = await mc.getPermissions().catch(() => ({}));
+  const permissionOrigins = typeof mc.getPermissionOrigins === 'function'
+    ? await mc.getPermissionOrigins().catch(() => [])
+    : [];
   const activeDomain = normalizeDomainInput($('permission-domain')?.value || getCurrentPageDomain());
   const discoveredPageHosts = await collectPageRelatedHosts().catch(() => []);
   const discoveredStreamHosts = Array.from(state.streamItems.values()).map(item => normalizeDomainInput(item?.url || '')).filter(Boolean);
-  const allDiscoveredHosts = [...new Set([...discoveredPageHosts, ...discoveredStreamHosts, ...(activeDomain ? [activeDomain] : [])])];
+  const hintedHosts = activeDomain ? (state.permissionHostHints[activeDomain] || []) : [];
+  const allDiscoveredHosts = [...new Set([...discoveredPageHosts, ...discoveredStreamHosts, ...hintedHosts, ...(activeDomain ? [activeDomain] : [])])];
+  const originsByPermission = new Map();
+  for (const item of Array.isArray(permissionOrigins) ? permissionOrigins : []) {
+    const target = normalizeDomainInput(item?.domain || '');
+    const permission = String(item?.permission || '');
+    const origin = normalizeDomainInput(item?.origin || '');
+    if (!target || !permission || !origin) continue;
+    const key = target + '|' + permission;
+    if (!originsByPermission.has(key)) originsByPermission.set(key, new Set());
+    originsByPermission.get(key).add(origin);
+  }
+  const permissionEntryVisible = (domain, rules) => Object.keys(rules || {}).some(permission => {
+    const scopedOrigins = originsByPermission.get(domain + '|' + permission);
+    if (scopedOrigins?.size) return !!activeDomain && scopedOrigins.has(activeDomain);
+    return !!activeDomain && (domain === activeDomain || allDiscoveredHosts.includes(domain));
+  });
   const domainMap = new Map();
   for (const [domain, rules] of Object.entries(perms || {})) {
     const normalized = normalizeDomainInput(domain) || String(domain || '').trim().replace(/^\.+/, '').toLowerCase();
@@ -6270,7 +6480,10 @@ async function loadPermissionsList() {
     if (!domainMap.has(host)) domainMap.set(host, { raw: host, rules: {} });
   }
   const entries = Array.from(domainMap.entries())
-    .filter(([, value]) => Object.keys(value.rules || {}).length > 0)
+    // Mostrar el dominio activo y los hosts que la página actual realmente
+    // utiliza (por ejemplo Instagram durante un login iniciado en Facebook).
+    // Las reglas de sitios no relacionados siguen ocultas.
+    .filter(([domain, value]) => activeDomain && permissionEntryVisible(domain, value.rules) && Object.keys(value.rules || {}).length > 0)
     .map(([domain, value]) => ({ domain, raw: value.raw || domain, rules: value.rules || {} }));
 
   const activeDomainCard = $('permissions-active-domain');
@@ -6339,12 +6552,7 @@ async function loadPermissionsList() {
     return;
   }
   const relatedHosts = new Set(allDiscoveredHosts);
-  entries.sort((a, b) => {
-    const aPriority = (a.domain === activeDomain ? 0 : relatedHosts.has(a.domain) ? 1 : 2);
-    const bPriority = (b.domain === activeDomain ? 0 : relatedHosts.has(b.domain) ? 1 : 2);
-    if (aPriority !== bPriority) return aPriority - bPriority;
-    return a.domain.localeCompare(b.domain);
-  });
+  entries.sort((a, b) => a.domain.localeCompare(b.domain));
 
   list.innerHTML = entries.map(({ domain, raw, rules }) => {
     const host = normalizeDomainInput(domain) || domain;
@@ -6603,10 +6811,11 @@ async function unblockHost(domain) {
 
 async function addPermissionRule() {
   const domain = normalizeDomainInput($('permission-domain')?.value || getCurrentPageDomain());
+  const origin = normalizeDomainInput(getCurrentPageDomain());
   const permission = ($('permission-permission')?.value || 'camera');
   const mode = ($('permission-mode')?.value || 'allow');
   if (!domain) return;
-  const result = await mc.setSitePermission(domain, permission, mode);
+  const result = await mc.setSitePermission(domain, permission, mode, origin);
   if (result && result.ok) {
     $('permission-domain').value = domain;
     const wv = $('webview-' + state.activeTab);
@@ -6617,6 +6826,11 @@ async function addPermissionRule() {
 
 async function removePermissionRule(domain, permission) {
   if (!domain || !permission) return;
+  const origin = normalizeDomainInput(getCurrentPageDomain());
+  const target = normalizeDomainInput(domain);
+  if (origin && target) {
+    state.permissionHostHints[origin] = [...new Set([...(state.permissionHostHints[origin] || []), target])];
+  }
   await mc.removeSitePermission(domain, permission);
   await loadPermissionsList();
 }

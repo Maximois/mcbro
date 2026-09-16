@@ -143,9 +143,10 @@ contextBridge.exposeInMainWorld('mc', {
   // Permisos granulares por dominio
   addPermission:   (domain,permission,value='allow') => ipcRenderer.invoke('add-permission',    {domain,permission,value}),
   removePermission:(domain,permission) => ipcRenderer.invoke('remove-permission', {domain,permission}),
-  setSitePermission:(domain,permission,value='allow') => ipcRenderer.invoke('set-site-permission', {domain,permission,value}),
+  setSitePermission:(domain,permission,value='allow',origin='') => ipcRenderer.invoke('set-site-permission', {domain,permission,value,origin}),
   removeSitePermission:(domain,permission) => ipcRenderer.invoke('remove-site-permission', {domain,permission}),
   getPermissions:  ()                  => ipcRenderer.invoke('get-permissions'),
+  getPermissionOrigins: ()             => ipcRenderer.invoke('get-permission-origins'),
   getSiteCookies:  (domain)            => ipcRenderer.invoke('get-site-cookies', {domain}),
   removeSiteCookie:(domain,name,path)   => ipcRenderer.invoke('remove-site-cookie', {domain,name,path}),
   setCookiePolicyForDomain:(domain,policy) => ipcRenderer.invoke('set-cookie-policy-for-domain',{domain,policy}),

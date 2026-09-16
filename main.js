@@ -752,7 +752,7 @@ let CFG = {
   uiTextSize: 'x1',
   currentUA: 'win-chrome', rotateUA: false,
   language: '', refererPolicy: '',
-  downloadDir: '', allowlist: {}, customRules: [], permissions: {}, resourceRules: [], userCosmeticRules: [],
+  downloadDir: '', allowlist: {}, customRules: [], permissions: {}, permissionOrigins: [], resourceRules: [], userCosmeticRules: [],
   extraSessions: [],
   aiConfig: {
     provider: 'ollama', ollamaUrl: 'http://localhost:11434', ollamaModel: 'qwen2.5:1.5b',
@@ -2027,6 +2027,10 @@ function normalizePermissionMap(value) {
   return Permissions.normalizePermissionMap(value);
 }
 
+function normalizePermissionOrigin(value) {
+  return String(value || '').trim().replace(/^www\./i, '').replace(/^\.+/, '').toLowerCase();
+}
+
 function removePermissionEntry(domain, permission) {
   const host = String(domain || '').trim().replace(/^\.+/, '').toLowerCase();
   if (!host) return { ok: false, error: 'dominio obligatorio' };
@@ -2038,27 +2042,39 @@ function removePermissionEntry(domain, permission) {
   } else {
     delete CFG.permissions[host];
   }
+  if (Array.isArray(CFG.permissionOrigins)) {
+    CFG.permissionOrigins = CFG.permissionOrigins.filter(item =>
+      item && (item.domain !== host || (permission && item.permission !== permission))
+    );
+  }
   saveCfg();
   return { ok: true };
 }
 
-function setPermissionEntry(domain, permission, value = 'allow') {
+function setPermissionEntry(domain, permission, value = 'allow', origin) {
   const host = String(domain || '').trim().replace(/^\.+/, '').toLowerCase();
   const key = String(permission || '').trim();
   if (!host || !key) return { ok: false, error: 'faltan dominio o permiso' };
   CFG.permissions[host] = normalizePermissionMap(CFG.permissions[host]);
   CFG.permissions[host][key] = value;
+  const source = normalizePermissionOrigin(origin);
+  if (source) {
+    if (!Array.isArray(CFG.permissionOrigins)) CFG.permissionOrigins = [];
+    CFG.permissionOrigins = CFG.permissionOrigins.filter(item => !(item && item.domain === host && item.permission === key));
+    CFG.permissionOrigins.push({ domain: host, permission: key, origin: source });
+  }
   saveCfg();
   return { ok: true, permissions: CFG.permissions[host] };
 }
 
 ipcMain.handle('add-permission', (e, { domain, permission, value = 'allow' }) =>
   setPermissionEntry(domain, permission, value));
-ipcMain.handle('set-site-permission', (e, { domain, permission, value = 'allow' }) =>
-  setPermissionEntry(domain, permission, value));
+ipcMain.handle('set-site-permission', (e, { domain, permission, value = 'allow', origin }) =>
+  setPermissionEntry(domain, permission, value, origin));
 ipcMain.handle('remove-permission', (e, { domain, permission }) => removePermissionEntry(domain, permission));
 ipcMain.handle('remove-site-permission', (e, { domain, permission }) => removePermissionEntry(domain, permission));
 ipcMain.handle('get-permissions', () => ({ ...CFG.permissions }));
+ipcMain.handle('get-permission-origins', () => (Array.isArray(CFG.permissionOrigins) ? [...CFG.permissionOrigins] : []));
 // DoH
 ipcMain.handle('resolve-doh', async (e, host) => {
   const normalizedHost = String(host || '').trim().replace(/\.$/, '').toLowerCase();
@@ -2839,14 +2855,26 @@ app.on('web-contents-created', (event, wc) => {
         }
       );
     }
-    if (params.srcURL && params.mediaType !== 'none') {
+    const contextMediaUrl = String(params.srcURL || '');
+    const isDirectContextMedia = /^https?:\/\//i.test(contextMediaUrl) &&
+      /\.(?:m3u8|mpd|mp4|webm|mkv|m4v|mov|avi)(?:\?|#|$)/i.test(contextMediaUrl);
+    const isContextHls = /\.m3u8(?:\?|#|$)/i.test(contextMediaUrl);
+    const isContextDash = /\.mpd(?:\?|#|$)/i.test(contextMediaUrl);
+    const isContextVideo = params.mediaType === 'video' ||
+      /\.(?:mp4|webm|mkv|m4v|mov|avi)(?:\?|#|$)/i.test(contextMediaUrl);
+    const contextMediaLabel = isContextHls ? 'Descargar playlist HLS'
+      : isContextDash ? 'Descargar stream DASH'
+      : /^(blob|data):/i.test(contextMediaUrl) && isContextVideo ? 'Guardar vídeo blob'
+      : isContextVideo ? 'Descargar vídeo'
+      : 'Descargar multimedia';
+    if (params.srcURL && (params.mediaType !== 'none' || isDirectContextMedia)) {
       template.push(
         {
           label: 'Abrir recurso multimedia',
           click: () => mainWin?.webContents?.send('open-new-tab', params.srcURL)
         },
         {
-          label: 'Descargar multimedia',
+          label: contextMediaLabel,
           click: () => {
             if (/^https?:\/\//i.test(params.srcURL)) mainWin?.webContents?.downloadURL(params.srcURL);
             else if (/^(blob|data):/i.test(params.srcURL)) {
@@ -3602,6 +3630,9 @@ app.whenReady().then(() => {
     // Omitir segmentos HLS sueltos — solo playlists y archivos directos
     if (/\.ts(\?|#|$)/i.test(u)) return;
     if (/\/seg(?:ment)?[\d._-]/i.test(u)) return;
+    // Facebook/Instagram solicitan muchos rangos MP4 parciales para llenar
+    // el reproductor; no son archivos descargables independientes.
+    if (/[?&](?:bytestart|byteend|range|start|end)=/i.test(u)) return;
     const hasMediaToken = /[?&](token|exp|sign|auth|st|nonce|signature|hls|m3u8|mpd|playlist)=/i.test(u);
     // Las imágenes genéricas incluyen favicons, avatares y miniaturas. No son
     // evidencia de un stream; solo media/audio o una URL multimedia explícita.
