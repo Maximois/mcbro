@@ -15,6 +15,7 @@ const {
   isWebContentsFrameAlive,
   sanitizeAiConfigForPublic
 } = require('../lib/permissions');
+const { isSameNavigationSite, siteRootIdentity } = require('../lib/navigation-guard');
 
 // ── normalizeSiteHost ──────────────────────────────────────────────────
 describe('normalizeSiteHost', () => {
@@ -196,5 +197,20 @@ describe('parseGlobalBlockRule / isGlobalBlockMatch', () => {
   test('valor vacío no genera regla', () => {
     assert.equal(parseGlobalBlockRule(''), null);
     assert.equal(parseGlobalBlockRule('   '), null);
+  });
+});
+
+describe('navigation guard redirects', () => {
+  test('trata como mismo sitio un dominio migrado al canónico correcto', () => {
+    assert.equal(siteRootIdentity('vww.monoschinos2.net'), 'monoschinos');
+    assert.equal(siteRootIdentity('monoschinos.st'), 'monoschinos');
+    assert.equal(isSameNavigationSite('https://monoschinos2.net/anime', 'https://vww.monoschinos2.net/anime'), true);
+    assert.equal(isSameNavigationSite('https://monoschinos2.net/anime', 'https://monoschinos.st/anime'), true);
+    assert.equal(isSameNavigationSite('https://example.com/anime', 'https://example.net/anime'), true);
+  });
+
+  test('mantiene bloqueadas redirecciones entre sitios distintos', () => {
+    assert.equal(isSameNavigationSite('https://example.com/a', 'https://evil-example.com/b'), false);
+    assert.equal(isSameNavigationSite('https://example.com/a', 'https://blog.example.net/b'), false);
   });
 });

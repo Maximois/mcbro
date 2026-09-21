@@ -15,9 +15,24 @@ const WEB_PROVIDERS = {
 const PanelResize = {
   MIN: 300,
   MAX_RATIO: 0.85,
+  MIN_CONTENT: 240,
+
+  maxWidth(panelEl) {
+    const parent = panelEl && panelEl.parentElement;
+    if (!parent) return Math.round(window.innerWidth * PanelResize.MAX_RATIO);
+    const otherWidth = Array.from(parent.children)
+      .filter(child => child !== panelEl && child.id !== 'content')
+      .reduce((total, child) => total + child.getBoundingClientRect().width, 0);
+    const available = parent.clientWidth - otherWidth - PanelResize.MIN_CONTENT;
+    const ratioMax = Math.round(window.innerWidth * PanelResize.MAX_RATIO);
+    return Math.min(ratioMax, Math.max(PanelResize.MIN, Math.floor(available)));
+  },
 
   clampWidth(width, defaultWidth, storageKey) {
-    const max = Math.round(window.innerWidth * PanelResize.MAX_RATIO);
+    const max = Math.max(PanelResize.MIN, Math.min(
+      Math.round(window.innerWidth * PanelResize.MAX_RATIO),
+      Math.round(window.innerWidth - PanelResize.MIN_CONTENT)
+    ));
     const saved = Number(width);
     if (!Number.isFinite(saved) || saved < PanelResize.MIN || saved > max) {
       try { localStorage.setItem(storageKey, String(defaultWidth)); } catch {}
@@ -47,7 +62,7 @@ const PanelResize = {
     const onMove = (e) => {
       if (activePointerId === null || e.pointerId !== activePointerId) return;
       e.preventDefault();
-      const max = Math.round(window.innerWidth * PanelResize.MAX_RATIO);
+      const max = PanelResize.maxWidth(panelEl);
       // Panel anclado a la derecha: arrastrar a la izquierda agranda.
       // Panel anclado a la izquierda (dockSide:'left'): es al revés, arrastrar
       // a la derecha agranda — el handle está en el borde opuesto del panel.

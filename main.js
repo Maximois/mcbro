@@ -8,6 +8,7 @@ const { spawn, execFile } = require('child_process');
 const crypto = require('crypto');
 const { isAggressiveAdNavigation, isTrustedResource, isVideoHost } = require('./modules/adblocker/main');
 const Permissions = require('./lib/permissions');
+const { isSameNavigationSite: isSameNavigationSiteShared } = require('./lib/navigation-guard');
 const { isWebContentsFrameAlive, sanitizeAiConfigForPublic } = Permissions;
 // Panel aislado de Perchance: vista nativa (WebContentsView) con partición
 // propia, allowlist, permisos, CSP/XFO y descargas blob/data (perchance-panel.js).
@@ -73,9 +74,34 @@ let mainWin;
 
 // WebContents con una navegación EXPLÍCITA del usuario en curso (barra de
 // URL, marcador, historial, atajo, clic en enlace). Mientras una webContents
-// está en este set, `will-redirect` NO bloquea sus redirecciones: las reglas
+// está en este estado, `will-redirect` NO bloquea sus redirecciones: las reglas
 // anti-redirección solo aplican a auto-redirecciones iniciadas por la página.
-const userNavWebContents = new Set();
+const userNavWebContents = new Map();
+const EXPLICIT_NAV_SETTLE_MS = 2500;
+
+function markExplicitNavigation(wcId) {
+  const previous = userNavWebContents.get(wcId);
+  if (previous?.timer) clearTimeout(previous.timer);
+  userNavWebContents.set(wcId, { timer: null });
+}
+
+function keepExplicitNavigationAlive(wcId) {
+  const navigation = userNavWebContents.get(wcId);
+  if (!navigation) return false;
+  if (navigation.timer) clearTimeout(navigation.timer);
+  navigation.timer = setTimeout(() => userNavWebContents.delete(wcId), EXPLICIT_NAV_SETTLE_MS);
+  return true;
+}
+
+function clearExplicitNavigation(wcId) {
+  const navigation = userNavWebContents.get(wcId);
+  if (navigation?.timer) clearTimeout(navigation.timer);
+  userNavWebContents.delete(wcId);
+}
+
+function hasExplicitNavigation(wcId) {
+  return userNavWebContents.has(wcId);
+}
 
 function normalizeSiteHost(url) {
   return Permissions.normalizeSiteHost(url);
@@ -95,14 +121,7 @@ function baseNavigationDomain(host) {
 }
 
 function isSameNavigationSite(sourceUrl, targetUrl) {
-  try {
-    const source = new URL(sourceUrl);
-    const target = new URL(targetUrl);
-    if (!/^https?:$/.test(source.protocol) || !/^https?:$/.test(target.protocol)) return true;
-    return baseNavigationDomain(source.hostname) === baseNavigationDomain(target.hostname);
-  } catch {
-    return true;
-  }
+  return isSameNavigationSiteShared(sourceUrl, targetUrl);
 }
 
 function isExplicitNavigationSite(host) {
@@ -295,6 +314,11 @@ function createWindow() {
   });
 
   mainWin.loadFile(path.join(__dirname, 'src', 'renderer.html'));
+  mainWin.webContents.on('will-attach-webview', (_event, webPreferences, params) => {
+    if (params && params.partition === 'persist:perchance') {
+      webPreferences.disableDialogs = true;
+    }
+  });
   mainWin.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.control && input.shift && input.key.toLowerCase() === 'i') {
       event.preventDefault();
@@ -943,7 +967,7 @@ ipcMain.handle('webview:destroy', (_event, webContentsId) => {
 // webview. Mientras dure, `will-redirect` no bloquea sus redirecciones.
 ipcMain.on('nav-intent', (_event, opts) => {
   const wcId = Number(opts && opts.wcId);
-  if (Number.isInteger(wcId) && wcId > 0) userNavWebContents.add(wcId);
+  if (Number.isInteger(wcId) && wcId > 0) markExplicitNavigation(wcId);
 });
 function cfgSnapshot() {
   return {
@@ -2668,11 +2692,30 @@ async function saveGeneratedContent(wc, params) {
 
 // === WINDOW EVENTS (popups -> nueva pestaña) ────────────
 app.on('web-contents-created', (event, wc) => {
+  // Una navegación iniciada desde la página (por ejemplo, un enlace con
+  // destino externo) también es una intención explícita. Marcarla aquí
+  // permite que el servidor complete su cadena HTTP de redirecciones sin que
+  // la política anti-redirección la corte en el primer dominio externo.
+  wc.on('will-navigate', () => markExplicitNavigation(wc.id));
+  wc.on('did-start-navigation', (_event, url, isInPlace, isMainFrame) => {
+    if (isMainFrame) {
+      // El navegador debe distinguir la navegación iniciada por el usuario de la
+      // auto-redirect de la página. `will-redirect` puede dispararse antes de que
+      // la cadena principal quede estabilizada; marcar el webContents aquí evita
+      // partir la navegación real por un redirect que pertenece al mismo flujo.
+      markExplicitNavigation(wc.id);
+    }
+  });
   wc.on('will-redirect', (navigationEvent, url, isInPlace, isMainFrame) => {
     // Navegación explícita del usuario (barra de URL, marcador, historial,
     // atajo, clic en enlace): NO bloquear sus redirecciones. Las reglas
     // anti-redirección solo aplican a auto-redirecciones de la página.
-    if (userNavWebContents.has(wc.id)) return;
+    if (hasExplicitNavigation(wc.id)) {
+      // Cada salto mantiene abierta la autorización; la cadena puede pasar
+      // por dominios distintos antes de llegar a su destino real.
+      keepExplicitNavigationAlive(wc.id);
+      return;
+    }
     let targetHost = '';
     try {
       targetHost = new URL(url).hostname.toLowerCase();
@@ -2697,9 +2740,12 @@ app.on('web-contents-created', (event, wc) => {
   // confirma (tras la cadena de redirecciones), así que limpiar ahí permite
   // la cadena inicial pero vuelve a bloquear auto-redirecciones posteriores
   // de la página (anuncios) durante el resto de la carga.
-  wc.on('did-navigate', () => userNavWebContents.delete(wc.id));
-  wc.on('did-fail-load', () => userNavWebContents.delete(wc.id));
-  wc.on('did-stop-loading', () => userNavWebContents.delete(wc.id));
+  // No borrar inmediatamente en `did-navigate`: algunas versiones de
+  // Chromium lo emiten para un salto intermedio de la cadena. El temporizador
+  // permite el siguiente salto y vuelve a bloquear auto-redirecciones después
+  // de que la navegación se estabiliza.
+  wc.on('did-navigate', () => keepExplicitNavigationAlive(wc.id));
+  wc.on('did-fail-load', () => clearExplicitNavigation(wc.id));
   wc.on('did-start-navigation', (_event, url, isInPlace, isMainFrame) => {
     if (isMainFrame && /^https?:\/\/(?:[^/]+\.)?whatsapp\.(?:com|net)(?:\/|$)/i.test(url)) {
       wc.setUserAgent(UA_WHATSAPP);

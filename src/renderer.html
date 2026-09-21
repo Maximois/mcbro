@@ -466,7 +466,7 @@ input:checked + .tslider::before { transform: translateX(16px); }
 .cosmetic-empty { font-size: 0.769rem; color: var(--muted); padding: 3px 0; }
 
 /* CONTENT */
-#content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+#content { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 #extractor-overlay { display:none; position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,.68); align-items:center; justify-content:center; }
 #extractor-overlay.open { display:flex; }
 #extractor-dialog { width:min(900px,92vw); height:min(720px,86vh); display:flex; flex-direction:column; background:var(--surface); border:1px solid var(--border2); border-radius:8px; box-shadow:0 18px 60px rgba(0,0,0,.55); overflow:hidden; }
@@ -967,8 +967,8 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
 .pch-extractor-section.active { display:flex; flex-direction:column; }
 #pch-extractor-overlay .pch-bookmarks, #pch-extractor-overlay .pch-history { max-height:none; flex:1; border-bottom:none; }
 #pch-extractor-overlay .pch-settings { max-height:none; flex:1; border-bottom:none; }
-.panel-resize-handle { position: absolute; left: -4px; top: 0; width: 8px; height: 100%; cursor: col-resize; z-index: 6; }
-.panel-resize-handle.right-edge { left: auto; right: -4px; }
+.panel-resize-handle { position: absolute; left: 0; top: 0; width: 8px; height: 100%; cursor: col-resize; z-index: 6; touch-action: none; user-select: none; }
+.panel-resize-handle.right-edge { left: auto; right: 0; }
 .panel-resize-handle::after { content: ''; position: absolute; left: 3px; top: 0; width: 2px; height: 100%; background: transparent; transition: background .15s; }
 .panel-resize-handle:hover::after, .panel-resize-handle.active::after { background: var(--accent); }
 #ai-sidebar .ai-header, #webchat-sidebar .ai-header { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
@@ -5378,12 +5378,17 @@ function renderPersistedDownloads() {
   });
 }
 function clearDownloads() {
-  state.downloads = [];
+  state.downloads = state.downloads.filter(d => d.state === 'active' || d.state === 'paused');
   saveDownloadsLS();
   const queue = $('download-queue');
-  if (queue) queue.innerHTML = '<div class="dl-empty-msg">Sin descargas activas</div>';
-  setText('dl-count-badge', '0 activas');
-  const dot = $('dl-badge-dot'); if (dot) dot.style.display = 'none';
+  if (queue) {
+    queue.querySelectorAll('.dl-item').forEach(item => {
+      if (item.dataset.state !== 'active' && item.dataset.state !== 'paused') item.remove();
+    });
+    if (!queue.querySelector('.dl-item')) queue.innerHTML = '<div class="dl-empty-msg">Sin descargas activas</div>';
+  }
+  setText('dl-count-badge', dlActive + ' activas');
+  const dot = $('dl-badge-dot'); if (dot) dot.style.display = dlActive > 0 ? 'block' : 'none';
   addSidebarLog('info', '[DL] Historial de descargas limpiado');
 }
 
