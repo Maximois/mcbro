@@ -387,7 +387,22 @@ function isPerchanceRuntimeHost(host) {
 // modules/perchance-panel/renderer.js y usa un <webview partition="persist:perchance">.
 function setupPerchancePanel() {
   try {
-    PerchancePanel.installPerchanceNetwork(PerchancePanel.PERCHANCE_PARTITION);
+    PerchancePanel.installPerchanceNetwork(PerchancePanel.PERCHANCE_PARTITION, {
+      // Reutiliza CFG.resourceRules (el mismo "Permitir"/"Bloquear" del panel
+      // de Permisos general) como override sobre la allowlist fija de Perchance.
+      resolveOverride: (url) => {
+        const rule = (Array.isArray(CFG.resourceRules) ? CFG.resourceRules : []).find(r => r && r.url === url);
+        return rule?.action || null;
+      },
+      // Reporta los bloqueos al mismo canal que usa el resto del navegador,
+      // para que el panel de Permisos vea (y pueda "Permitir") lo que se
+      // bloqueó dentro de Perchance — antes era invisible para esa UI.
+      onBlocked: (d) => {
+        if (d.resourceType === 'script' && mainWin && !mainWin.isDestroyed()) {
+          mainWin.webContents.send('req-blocked', { type: 'script', resourceType: d.resourceType, blocked: true, url: d.url, msg: d.url });
+        }
+      }
+    });
     PerchancePanel.installPerchanceDownloads(PerchancePanel.PERCHANCE_PARTITION, {
       onEvent: (ev) => { try { mainWin?.webContents?.send('perchance:download', ev); } catch {} }
     });

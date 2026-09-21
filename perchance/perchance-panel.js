@@ -162,7 +162,7 @@ const PERMISSIONS_TO_ALLOW = new Set([
   "speaker-selection",
 ]);
 
-function installPerchanceNetwork(partition = PERCHANCE_PARTITION) {
+function installPerchanceNetwork(partition = PERCHANCE_PARTITION, opts = {}) {
   const ses = session.fromPartition(partition);
   const autoClear = shouldAutoClearPerchanceStorage({
     force: process.env.MC_PERCHANCE_CLEAR_STORAGE === '1' || process.argv.includes('--perchance-clear-storage')
@@ -181,7 +181,16 @@ function installPerchanceNetwork(partition = PERCHANCE_PARTITION) {
 
   // Allowlist: cancela lo ajeno, deja pasar el frame raíz para no romper la barra.
   ses.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (d, cb) => {
+    // Override explícito desde el panel de Permisos general (mismo mecanismo
+    // que el resto del navegador: CFG.resourceRules, botón "Permitir"/"Bloquear").
+    // Sin esto, un script legítimo bloqueado por la allowlist fija de Perchance
+    // (p.ej. un CDN/plugin no listado en SUFFIX_HOSTS) queda bloqueado para
+    // siempre — el botón "Permitir" del panel general nunca llegaba hasta acá.
+    const override = opts.resolveOverride ? opts.resolveOverride(d.url, d.resourceType) : null;
+    if (override === 'allow') return cb({ cancel: false });
+    if (override === 'block') { if (opts.onBlocked) opts.onBlocked(d); return cb({ cancel: true }); }
     if (isAllowedUrl(d.url)) return cb({ cancel: false });
+    if (opts.onBlocked) opts.onBlocked(d);
     cb({ cancel: d.resourceType !== "mainFrame" });
   });
 
