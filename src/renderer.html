@@ -78,7 +78,7 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 #newtab-btn:hover { color: var(--accent); }
 
 /* MAIN */
-#main { display: flex; flex: 1; overflow: hidden; }
+#main { display: flex; flex: 1; overflow: hidden; position: relative; }
 #sidebar { width: 250px; min-width: 0; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: var(--border) transparent; transition: width 0.25s ease, padding 0.25s ease, border 0.25s ease; position: relative; z-index: 0; }
 #sidebar { width: 292px; min-width: 0; flex-shrink: 0; background: linear-gradient(180deg, var(--surface), rgba(19,22,31,.96)); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: var(--border) transparent; transition: width 0.25s ease, padding 0.25s ease, border 0.25s ease; position: relative; z-index: 0; }
 #sidebar #sidebar-bg { position: absolute; inset: 0; background-size: cover; background-position: center; z-index: -1; pointer-events: none; }
@@ -109,26 +109,40 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 }
 #bookmarks-panel.has-panel-bg > *:not(.panel-bg) { position: relative; z-index: 1; }
 #bookmarks-panel.collapsed { width: 0; padding: 0; border: none; overflow: hidden; }
-#resources-panel { width: 300px; min-width: 0; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; transition: width .25s ease; position: relative; z-index: 1; }
+#resources-panel { width: 300px; min-width: 0; flex-shrink: 0; background: linear-gradient(180deg, #151a23 0%, #10131a 72%, #0d1016 100%); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; transition: width .25s ease; position: relative; z-index: 1; box-shadow: 10px 0 28px rgba(0,0,0,.16); }
 #resources-panel.collapsed { width: 0; border: none; }
 #resources-panel.has-panel-bg { background: var(--panel-overlay, rgba(10,12,18,.42)); backdrop-filter: blur(10px); }
 #resources-panel .panel-bg {
   position: absolute; inset: 0; background-size: cover; background-position: center; z-index: 0; pointer-events: none; opacity: 0.9;
 }
 #resources-panel.has-panel-bg > *:not(.panel-bg) { position: relative; z-index: 1; }
-.resources-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,.08); flex-shrink: 0; }
-.resources-title { font-size: 0.846rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .05em; }
+.resources-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 13px 11px; border-bottom: 1px solid rgba(255,255,255,.08); flex-shrink: 0; background: linear-gradient(110deg,rgba(0,212,170,.07),transparent 58%); }
+.resources-title { font-size: 0.846rem; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: .08em; }
+.resources-title:before { content: '◈'; color: var(--accent); margin-right: 7px; font-size: .75rem; }
+.resources-head:after { content: 'LIVE'; margin-left: auto; margin-right: 8px; padding: 3px 5px; border: 1px solid rgba(0,212,170,.25); border-radius: 3px; color: var(--accent); font: 700 .55rem ui-monospace,SFMono-Regular,Consolas,monospace; letter-spacing: .1em; }
 .resources-close { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 1.231rem; }
-.resources-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.resources-tab { flex: 1; padding: 8px 4px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 0.769rem; }
-.resources-tab.active { color: var(--accent); box-shadow: inset 0 -2px var(--accent); }
-.resources-view { display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
+.resources-tabs { display: flex; gap: 3px; padding: 7px 8px 0; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.resources-tab { flex: 1; padding: 8px 4px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 0.769rem; transition: color .15s,background .15s; }
+.resources-tab:hover { color: var(--muted2); background: rgba(255,255,255,.03); }
+.resources-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: rgba(0,212,170,.05); }
+.resources-view { display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 10px 9px; }
 .resources-view.active { display: block; }
-.resource-row { display: flex; align-items: center; gap: 5px; padding: 6px 2px; border-bottom: 1px solid rgba(255,255,255,.05); min-width: 0; }
-.resource-kind { width: 42px; color: var(--accent); font-size: 0.692rem; text-transform: uppercase; flex-shrink: 0; }
+.resources-toolbar { display: flex; gap: 5px; margin-bottom: 10px; padding-bottom: 9px; border-bottom: 1px solid rgba(255,255,255,.06); }
+.resources-toolbar .btn { flex: 1; border-color: rgba(255,255,255,.1); background: rgba(255,255,255,.035); }
+.resources-toolbar .btn:hover { background: rgba(0,212,170,.1); border-color: rgba(0,212,170,.35); }
+.stream-row { display: flex; align-items: center; gap: 6px; min-width: 0; margin-bottom: 6px; padding: 8px 6px; background: linear-gradient(110deg,rgba(255,255,255,.045),rgba(255,255,255,.015)); border: 1px solid rgba(255,255,255,.07); border-radius: 6px; transition: border-color .15s,background .15s,transform .15s; }
+.stream-row:hover { background: linear-gradient(110deg,rgba(0,212,170,.08),rgba(255,255,255,.025)); border-color: rgba(0,212,170,.28); transform: translateX(1px); }
+.stream-row > span:first-child { filter: saturate(.8); opacity: .9; }
+.stream-actions { display: flex; gap: 3px; flex-shrink: 0; }
+.stream-actions .btn { padding: 3px 5px !important; font-size: .615rem !important; border-radius: 4px; }
+.streams-empty { padding: 25px 12px; border: 1px dashed rgba(255,255,255,.12); border-radius: 7px; color: var(--muted); text-align: center; font-size: .692rem; }
+.resource-row { display: flex; align-items: center; gap: 7px; min-width: 0; margin-bottom: 6px; padding: 8px 6px; background: linear-gradient(110deg,rgba(255,255,255,.045),rgba(255,255,255,.015)); border: 1px solid rgba(255,255,255,.07); border-radius: 6px; transition: border-color .15s,background .15s,transform .15s; }
+.resource-row:hover { background: linear-gradient(110deg,rgba(108,99,255,.1),rgba(255,255,255,.025)); border-color: rgba(108,99,255,.34); transform: translateX(1px); }
+.resource-kind { width: 38px; color: var(--accent); font: 700 0.615rem ui-monospace,SFMono-Regular,Consolas,monospace; letter-spacing: .05em; text-transform: uppercase; flex-shrink: 0; }
 .resource-url { flex: 1; min-width: 0; color: var(--muted2); font-size: 0.692rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resource-meta { display: block; margin-top: 2px; color: var(--muted); font-size: 0.615rem; }
-.resource-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.resource-actions { display: flex; gap: 3px; flex-shrink: 0; }
+.resource-actions .btn { padding: 3px 5px !important; font-size: .615rem !important; border-radius: 4px; }
 .resource-summary { flex: 1; min-width: 0; overflow: hidden; }
 .resource-name { color: var(--text); font-size: 0.769rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resource-details { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
@@ -136,8 +150,17 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 .resource-badge.warn { color: var(--warn); background: rgba(255,177,92,.12); }
 .resource-badge.good { color: var(--success); background: rgba(77,220,151,.12); }
 .resource-badge.danger { color: var(--danger); background: rgba(255,82,112,.12); }
-#resources-search { width: 100%; margin-bottom: 7px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 6px 8px; font: inherit; font-size: 0.769rem; outline: none; }
+#resources-search { width: 100%; margin-bottom: 8px; background: rgba(5,8,12,.45); border: 1px solid var(--border); color: var(--text); border-radius: 5px; padding: 8px 9px; font: inherit; font-size: 0.769rem; outline: none; }
 #resources-search:focus { border-color: var(--accent); }
+.extract-intro { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; padding: 8px 9px; background: linear-gradient(110deg,rgba(108,99,255,.12),rgba(0,212,170,.04)); border: 1px solid rgba(108,99,255,.2); border-radius: 6px; color: var(--muted2); font-size: .692rem; }
+.extract-intro strong { color: var(--text); font-size: .769rem; }
+.extract-intro-icon { color: var(--accent2); font-size: 1rem; }
+.extract-toolbar { display: flex; gap: 5px; margin-bottom: 9px; }
+.extract-toolbar .btn { flex: 1; min-height: 31px; border-color: rgba(255,255,255,.1); background: rgba(255,255,255,.035); }
+.extract-toolbar .btn:first-child { color: #06110f; font-weight: 700; border-color: var(--accent); background: linear-gradient(135deg,#00d4aa,#35e5c0); box-shadow: 0 4px 14px rgba(0,212,170,.16); }
+.extract-toolbar .btn:first-child:hover { color: #06110f; background: linear-gradient(135deg,#35e5c0,#00d4aa); box-shadow: 0 5px 18px rgba(0,212,170,.28); }
+.extract-toolbar .btn:hover { background: rgba(108,99,255,.12); border-color: rgba(108,99,255,.4); }
+.extract-empty { padding: 25px 12px; border: 1px dashed rgba(255,255,255,.12); border-radius: 7px; color: var(--muted); text-align: center; font-size: .692rem; }
 #resource-preview { position: fixed; z-index: 20000; width: 260px; max-height: 220px; padding: 6px; background: #090b10; border: 1px solid var(--accent); border-radius: 5px; box-shadow: 0 8px 24px rgba(0,0,0,.55); pointer-events: none; }
 #resource-preview img, #resource-preview video { display: block; max-width: 248px; max-height: 170px; margin: 0 auto 5px; object-fit: contain; }
 
@@ -162,14 +185,14 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 #permissions-panel.has-panel-bg > *:not(.panel-bg) { position: relative; z-index: 1; }
 #permissions-panel .perm-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 13px 15px 12px; border-bottom: 1px solid rgba(255,255,255,.08); flex-shrink: 0;
+  padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,.08); flex-shrink: 0;
   background: var(--panel-header-bg, rgba(10,12,18,.24));
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
 #permissions-panel .perm-title {
-  font-size: 0.923rem; font-weight: 700; color: var(--text);
-  display: flex; align-items: center; gap: 7px; letter-spacing: .01em;
+  font-size: 0.846rem; font-weight: 700; color: var(--text);
+  display: flex; align-items: center; gap: 6px; letter-spacing: .08em; text-transform: uppercase;
 }
 #permissions-panel .perm-subtitle { display: block; margin-top: 3px; color: var(--muted2); font-size: 0.692rem; font-weight: 400; letter-spacing: 0; }
 #permissions-panel .perm-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.231rem; padding: 2px 6px; border-radius: 4px; transition: all .15s; }
@@ -406,6 +429,21 @@ body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono',
 .sb-section.sidebar-card:last-child { margin-bottom: 10px; }
 .sb-section.sidebar-card.sidebar-log-card { flex: 1 1 auto !important; min-height: 180px; overflow: hidden; }
 .sb-section.sidebar-card.sidebar-log-card #sidebar-log { min-width: 0; overflow: auto; padding-right: 2px; }
+.sb-section.session-summary-card {
+  background: linear-gradient(145deg, #17212d, #141b26) !important;
+  border-color: rgba(0,212,170,.42) !important;
+  box-shadow: 0 8px 22px rgba(0,0,0,.2), inset 0 1px rgba(255,255,255,.035);
+}
+.session-summary-card .stat-box {
+  background: rgba(28,36,49,.82);
+  border-color: rgba(255,255,255,.09);
+}
+.session-summary-card .stat-box-clickable:hover,
+.session-summary-card .stat-box-clickable:focus {
+  background: rgba(0,212,170,.1);
+  border-color: rgba(0,212,170,.55);
+  box-shadow: 0 0 12px rgba(0,212,170,.08);
+}
 .sb-title { font-size: 0.692rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; font-weight: 600; }
 .stat-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 7px; width: 100%; min-width: 0; }
 .stat-box { background: rgba(31,35,47,.72); border-radius: 7px; padding: 9px 7px; text-align: center; border: 1px solid rgba(255,255,255,.08); min-height: 48px; }
@@ -466,7 +504,7 @@ input:checked + .tslider::before { transform: translateX(16px); }
 .cosmetic-empty { font-size: 0.769rem; color: var(--muted); padding: 3px 0; }
 
 /* CONTENT */
-#content { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+#content { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; position: relative; }
 #extractor-overlay { display:none; position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,.68); align-items:center; justify-content:center; }
 #extractor-overlay.open { display:flex; }
 #extractor-dialog { width:min(900px,92vw); height:min(720px,86vh); display:flex; flex-direction:column; background:var(--surface); border:1px solid var(--border2); border-radius:8px; box-shadow:0 18px 60px rgba(0,0,0,.55); overflow:hidden; }
@@ -480,8 +518,8 @@ input:checked + .tslider::before { transform: translateX(16px); }
 .extractor-type { width:54px; color:var(--accent); font-size: 0.769rem; text-transform:uppercase; }
 .extractor-url { flex:1; min-width:0; color:var(--muted2); font-size: 0.846rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .extractor-actions { display:flex; gap:4px; }
-.resource-category-bar { display:flex; gap:4px; margin:0 0 7px; overflow-x:auto; padding-bottom:2px; }
-.resource-category { flex:0 0 auto; border:1px solid var(--border); border-radius:4px; background:var(--surface2); color:var(--muted2); padding:4px 7px; cursor:pointer; font:inherit; font-size:.692rem; }
+.resource-category-bar { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; margin:0 0 9px; overflow:hidden; padding:0; }
+.resource-category { min-width:0; border:1px solid var(--border); border-radius:4px; background:rgba(255,255,255,.035); color:var(--muted2); padding:5px 3px; cursor:pointer; font:inherit; font-size:.615rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .resource-category.active { color:var(--accent); border-color:var(--accent); }
 .resource-category span { color:var(--muted); margin-left:2px; }
 .resource-category.active span { color:var(--accent); }
@@ -738,6 +776,62 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
 #dl-overlay .dl-empty-msg {
   color: var(--muted); font-size: 0.846rem; text-align: center; padding: 18px 0;
 }
+
+/* Shared panel language: Stream Hunt's green signal, soft surfaces and active hover states. */
+#bookmarks-panel, #dl-overlay, #permissions-panel {
+  background: linear-gradient(180deg, #151a23 0%, #10131a 72%, #0d1016 100%);
+  box-shadow: 10px 0 28px rgba(0,0,0,.14);
+}
+#bookmarks-panel .bp-header,
+#dl-overlay .dl-overlay-header,
+#permissions-panel .perm-header {
+  background: linear-gradient(110deg, rgba(0,212,170,.07), transparent 58%);
+  border-bottom-color: rgba(255,255,255,.1);
+}
+#permissions-panel .perm-header { min-height: 38px; padding: 8px 12px; }
+#permissions-panel .perm-title,
+#dl-overlay .dl-overlay-header .dl-ov-title { line-height: 1.15; }
+#dl-overlay .dl-overlay-header { min-height: 42px; padding: 11px 12px; }
+#bookmarks-panel .bp-title,
+#dl-overlay .dl-overlay-header .dl-ov-title,
+#permissions-panel .perm-title { color: var(--text); letter-spacing: .08em; text-transform: uppercase; }
+#bookmarks-panel .bp-title:before,
+#dl-overlay .dl-overlay-header .dl-ov-title:before,
+#permissions-panel .perm-title:before { content: '◈'; color: var(--accent); margin-right: 2px; font-size: .75rem; }
+#bookmarks-panel .bp-search,
+#bookmarks-panel .bp-folder-bar,
+#dl-overlay .utility-tabs { background: rgba(10,14,19,.34); border-bottom-color: rgba(255,255,255,.08); }
+#bookmarks-panel .bp-search input { background: rgba(5,8,12,.45); border-color: rgba(255,255,255,.1); }
+#bookmarks-panel .bp-search input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(0,212,170,.1); }
+#bookmarks-panel .bp-item,
+#dl-overlay .dl-item {
+  background: linear-gradient(110deg, rgba(255,255,255,.045), rgba(255,255,255,.015));
+  border-color: rgba(255,255,255,.08);
+  transition: border-color .15s, background .15s, transform .15s, box-shadow .15s;
+}
+#bookmarks-panel .bp-item:hover,
+#dl-overlay .dl-item:hover {
+  background: linear-gradient(110deg, rgba(0,212,170,.1), rgba(255,255,255,.025));
+  border-color: rgba(0,212,170,.35);
+  box-shadow: 0 5px 16px rgba(0,0,0,.16);
+  transform: translateX(1px);
+}
+#dl-overlay .utility-tab { border-bottom: 2px solid transparent; transition: color .15s, background .15s; }
+#dl-overlay .utility-tab:hover { color: var(--muted2); background: rgba(0,212,170,.05); }
+#dl-overlay .utility-tab.active { background: rgba(0,212,170,.05); box-shadow: none; border-bottom-color: var(--accent); }
+#dl-overlay .dl-overlay-body,
+#dl-overlay .utility-view,
+#bookmarks-panel .bp-list { background: transparent; }
+#sidebar .sb-section.sidebar-card {
+  background: linear-gradient(145deg, rgba(28,34,44,.9), rgba(18,22,30,.82));
+  border-color: rgba(255,255,255,.08);
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+#sidebar .sb-section.sidebar-card:hover {
+  background: linear-gradient(145deg, rgba(0,212,170,.09), rgba(18,22,30,.9));
+  border-color: rgba(0,212,170,.28);
+  box-shadow: 0 8px 22px rgba(0,0,0,.2);
+}
 .panel-bg-controls {
   display: flex; flex-direction: column; gap: 6px;
   padding: 8px 10px; border-top: 1px solid rgba(255,255,255,.08); background: var(--panel-controls-bg, rgba(10,12,18,.2));
@@ -902,13 +996,64 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
 .ai-selection-btn:hover { opacity: .85; }
 #ai-sidebar, #webchat-sidebar, #wa-sidebar, #session-sidebar { width: 0; min-width: 0; flex-shrink: 0; background: var(--surface); border-left: none; display: flex; flex-direction: column; overflow: hidden; transition: width 0.25s ease; position: relative; z-index: 0; }
 #ai-sidebar.open, #webchat-sidebar.open, #wa-sidebar.open { width: var(--panel-w, 400px); border-left: 1px solid var(--border); box-shadow: -4px 0 12px rgba(0,0,0,0.3); }
-#session-sidebar { order: -1; border-top: 3px solid var(--session-accent, transparent); box-sizing: border-box; }
+#session-sidebar { position: absolute; top: 0; left: 0; bottom: 0; z-index: 10; }
 #session-sidebar.open { width: var(--panel-w, 400px); border-right: 1px solid var(--border); box-shadow: 4px 0 12px rgba(0,0,0,0.3); }
-/* Modo "sesión completa": mismo panel/estado, se muestra como overlay a pantalla
-   completa en vez de sidebar angosto — no abre otra ventana ni recarga nada. */
-#session-sidebar.fullwidth { position: fixed; inset: 0; width: 100% !important; height: 100%; z-index: 50; border-right: none; box-shadow: none; }
-.session-color-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; flex-shrink: 0; padding: 0; }
-.session-color-dot.active { border-color: var(--text); }
+#session-sidebar {
+  --session-surface: #182234;
+  --session-surface2: #202d43;
+  --session-border: rgba(148, 163, 184, .22);
+  --session-text: #f4f7fb;
+  --session-muted: #9eacc1;
+  --session-accent: #f6b860;
+}
+#session-sidebar.full {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity .2s ease, transform .2s ease, visibility .2s ease;
+  background: #111827;
+  color: var(--session-text);
+}
+#session-sidebar.full.open { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0); }
+#session-sidebar .session-topbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; min-height: 48px; background: var(--session-surface); border-bottom: 1px solid var(--session-border); }
+#session-sidebar .session-brand { display: flex; align-items: center; gap: 7px; min-width: 145px; color: var(--session-accent); font-weight: 800; letter-spacing: .03em; }
+#session-sidebar .session-brand-mark { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid rgba(246,184,96,.55); border-radius: 7px; background: rgba(246,184,96,.12); }
+#session-sidebar .session-select { flex: 1; min-width: 130px; max-width: 340px; padding: 6px 8px; background: var(--session-surface2); color: var(--session-text); border: 1px solid var(--session-border); border-radius: 5px; font: inherit; }
+#session-sidebar .session-action-btn { width: 31px; height: 31px; padding: 0; background: transparent; color: var(--session-muted); border: 1px solid var(--session-border); border-radius: 5px; cursor: pointer; font: inherit; font-size: .95rem; }
+#session-sidebar .session-action-btn:hover { color: var(--session-accent); border-color: var(--session-accent); background: rgba(246,184,96,.1); }
+#session-sidebar .session-nav { display: flex; align-items: center; gap: 5px; padding: 7px 10px; background: #111827; border-bottom: 1px solid var(--session-border); }
+#session-sidebar .session-urlbar { flex: 1; min-width: 0; padding: 7px 10px; background: var(--session-surface); color: var(--session-text); border: 1px solid var(--session-border); border-radius: 5px; font: inherit; outline: none; }
+#session-sidebar .session-urlbar:focus { border-color: var(--session-accent); box-shadow: 0 0 0 2px rgba(246,184,96,.12); }
+#session-sidebar .session-webview-wrap { position: relative; flex: 1; min-height: 0; background: #fff; }
+#session-sidebar .session-webview-wrap webview { display: flex; width: 100%; height: 100%; border: 0; }
+#session-sidebar .session-empty { display: grid; place-items: center; height: 100%; color: var(--session-muted); text-align: center; }
+#session-sidebar .session-tools { display: none; position: absolute; top: 0; left: 0; bottom: 0; z-index: 3; width: min(320px, 86%); flex-direction: column; background: var(--session-surface); border-right: 1px solid var(--session-border); box-shadow: 8px 0 24px rgba(0,0,0,.25); }
+#session-sidebar .session-tools.open { display: flex; }
+#session-sidebar .session-tools-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; color: var(--session-accent); font-weight: 800; border-bottom: 1px solid var(--session-border); }
+#session-sidebar .session-tools-close { margin-left: auto; }
+#session-sidebar .session-tools-tabs { display: flex; border-bottom: 1px solid var(--session-border); }
+#session-sidebar .session-tools-tab { flex: 1; padding: 8px 5px; border: 0; background: transparent; color: var(--session-muted); cursor: pointer; font: inherit; font-size: .78rem; }
+#session-sidebar .session-tools-tab.active { color: var(--session-accent); box-shadow: inset 0 -2px var(--session-accent); }
+#session-sidebar .session-tools-content { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
+#session-sidebar .session-tool-item { display: flex; align-items: center; gap: 7px; padding: 7px 6px; border-bottom: 1px solid rgba(148,163,184,.1); }
+#session-sidebar .session-tool-item-main { flex: 1; min-width: 0; cursor: pointer; }
+#session-sidebar .session-tool-item-title, #session-sidebar .session-tool-item-url { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#session-sidebar .session-tool-item-title { color: var(--session-text); font-size: .8rem; }
+#session-sidebar .session-tool-item-url { margin-top: 2px; color: var(--session-muted); font-size: .68rem; }
+#session-sidebar .session-tool-delete { border: 0; background: transparent; color: var(--session-muted); cursor: pointer; }
+#session-sidebar .session-tool-delete:hover { color: #f87171; }
+#session-sidebar .session-settings { display: flex; flex-direction: column; gap: 7px; color: var(--session-muted); font-size: .76rem; }
+#session-sidebar .session-settings input { width: 100%; box-sizing: border-box; padding: 7px; background: var(--session-surface2); color: var(--session-text); border: 1px solid var(--session-border); border-radius: 5px; }
+#session-sidebar .session-settings button { padding: 7px; background: rgba(246,184,96,.1); color: var(--session-accent); border: 1px solid rgba(246,184,96,.35); border-radius: 5px; cursor: pointer; }
+.session-color-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--session-border); }
+.session-color-dot { width: 14px; height: 14px; padding: 0; border: 2px solid transparent; border-radius: 50%; cursor: pointer; }
+.session-color-dot.active { border-color: var(--session-text); }
 #ai-sidebar.resizing, #webchat-sidebar.resizing, #wa-sidebar.resizing, #session-sidebar.resizing { transition: none; }
 #ai-sidebar.resizing, #webchat-sidebar.resizing, #wa-sidebar.resizing { transition: none; }
 #perchance-sidebar { width: 0; min-width: 0; flex-shrink: 0; background: var(--surface); border-left: none; display: flex; flex-direction: column; overflow: hidden; transition: width 0.25s ease; position: relative; z-index: 0; }
@@ -1059,7 +1204,6 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
 #ai-wv, #wch-wv, #wa-wv { flex: 1; border: none; min-height: 0; }
 /* Chat edge toggle buttons (mismo formato que sidebar) */
 #chat-toggles { display: flex; flex-direction: column; flex-shrink: 0; width: 18px; min-width: 18px; background: var(--surface); border-left: 1px solid var(--border); }
-#session-toggle-wrap { display: none; }
 .chat-toggle { width: 18px; min-width: 18px; flex: 1; background: var(--surface); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.769rem; transition: color 0.2s, background 0.2s; user-select: none; }
 .chat-toggle:hover { background: var(--surface2); color: var(--accent); }
 .chat-toggle + .chat-toggle { border-top: 1px solid var(--border); }
@@ -1165,7 +1309,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
     <!-- SIDEBAR -->
     <div id="sidebar">
       <div id="sidebar-bg"></div>
-      <div class="sb-section sidebar-card">
+      <div class="sb-section sidebar-card session-summary-card">
         <div class="sb-title">Sesión actual</div>
         <div class="stat-grid">
           <div class="stat-box danger stat-box-clickable" onclick="openRequestLog('ads')" title="Abrir log de Ads"><div class="stat-num" id="stat-ads">0</div><div class="stat-lbl">Ads</div><div class="stat-detail">Detectados <b id="stat-ads-blocked">0</b> bloqueados</div></div>
@@ -1244,7 +1388,6 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
         <div class="bp-title">&#9733; Marcadores</div>
         <div class="bp-actions">
           <button class="bp-btn" onclick="addBookmarkFromPanel()" title="Añadir marcador actual">&#43;</button>
-          <button class="bp-btn" onclick="toggleBookmarksPanel()" title="Cerrar panel">&#10005;</button>
         </div>
       </div>
       <div class="bp-search">
@@ -1281,18 +1424,19 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
     <!-- STREAMS AND EXTRACTOR PANEL -->
     <div id="resources-panel" class="collapsed">
       <div class="panel-bg" id="resources-panel-bg"></div>
-      <div class="resources-head"><span class="resources-title">Recursos de página</span><button class="resources-close" onclick="toggleResourcesPanel()" title="Cerrar">&#215;</button></div>
+      <div class="resources-head"><span class="resources-title">Stream Hunt</span></div>
       <div class="resources-tabs">
         <button class="resources-tab active" data-resources-tab="streams" onclick="setResourcesTab('streams')">Streams</button>
         <button class="resources-tab" data-resources-tab="extract" onclick="setResourcesTab('extract')">Extraer</button>
       </div>
       <div class="resources-view active" data-resources-view="streams">
-        <div style="display:flex;gap:4px;margin-bottom:7px;"><button class="btn ghost btn-sm" onclick="scanStreams()">Escanear</button><button class="btn ghost btn-sm" onclick="clearStreams()">Limpiar</button></div>
+        <div class="resources-toolbar"><button class="btn ghost btn-sm" onclick="scanStreams()">Escanear</button><button class="btn ghost btn-sm" onclick="clearStreams()">Limpiar</button></div>
         <div id="resources-streams-list"></div>
       </div>
       <div class="resources-view" data-resources-view="extract">
+        <div class="extract-intro"><span class="extract-intro-icon">⌁</span><span><strong>Extractor de recursos</strong><br>Imágenes, vídeos, audio y enlaces de la página activa</span></div>
         <input id="resources-search" type="search" placeholder="Buscar por tipo, nombre o URL..." oninput="filterResourceList(this.value)">
-        <div style="display:flex;gap:4px;margin-bottom:7px;"><button class="btn btn-sm" onclick="extractPageResources()">Extraer ahora</button><button class="btn ghost btn-sm" onclick="clearExtractedResources()">Limpiar</button></div>
+        <div class="extract-toolbar"><button class="btn btn-sm" onclick="extractPageResources()">Extraer ahora</button><button class="btn ghost btn-sm" onclick="clearExtractedResources()">Limpiar</button></div>
         <div class="resource-category-bar" id="resource-category-bar">
           <button class="resource-category active" data-resource-filter="all" onclick="setResourceFilter('all')">Todos <span>0</span></button>
           <button class="resource-category" data-resource-filter="image" onclick="setResourceFilter('image')">Imágenes <span>0</span></button>
@@ -1323,8 +1467,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
     <div id="permissions-panel" class="collapsed">
       <div class="panel-bg" id="permissions-panel-bg"></div>
       <div class="perm-header">
-        <div><div class="perm-title">&#128737; Privacidad del sitio</div><span class="perm-subtitle">Controla lo que este dominio puede hacer</span></div>
-        <button class="perm-close" onclick="togglePermissionsPanel()" title="Cerrar panel">&#10005;</button>
+        <div><div class="perm-title">&#128737; Privacidad y control</div></div>
       </div>
       <div class="perm-body">
         <div class="perm-section perm-section-site">
@@ -1476,8 +1619,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
     <div id="dl-overlay">
       <div class="panel-bg" id="utility-panel-bg"></div>
       <div class="dl-overlay-header">
-        <span class="dl-ov-title">Panel</span>
-        <button class="btn ghost btn-sm" onclick="toggleUtilityPanel()" style="padding:2px 6px;font-size: 1.077rem;line-height:1;" title="Cerrar">&#215;</button>
+        <span class="dl-ov-title">Actividad</span>
       </div>
       <div class="utility-tabs">
         <button class="utility-tab active" data-utility-tab="history" onclick="setUtilityPanelTab('history')">Historial</button>
@@ -1585,8 +1727,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
               <div class="nt-sc-ref-item" onclick="(window.AI?AI.toggle():toggleChatPanel('ai'))" title="Panel IA"><span class="nt-sc-ref-key">Ctrl+Shift+A</span> IA</div>
               <div class="nt-sc-ref-item" onclick="(window.WebChat?WebChat.toggle():toggleChatPanel('web'))" title="WebChat"><span class="nt-sc-ref-key">Ctrl+Shift+W</span> WebChat</div>
               <div class="nt-sc-ref-item" onclick="(window.WhatsAppChat?WhatsAppChat.toggle():toggleChatPanel('wa'))" title="WhatsApp Web"><span class="nt-sc-ref-key">Ctrl+Shift+Q</span> WhatsApp</div>
-              <div class="nt-sc-ref-item" onclick="(window.Sessions?Sessions.toggle():null)" title="Sesiones aisladas"><span class="nt-sc-ref-key">Ctrl+Shift+N</span> Sesiones</div>
-              <div class="nt-sc-ref-item" onclick="(window.Sessions?Sessions.toggleFullwidth():null)" title="Sesión aislada en modo completo"><span class="nt-sc-ref-key">Ctrl+Shift+M</span> Sesión completa</div>
+              <div class="nt-sc-ref-item" onclick="(window.Sessions?Sessions.toggle():null)" title="MC"><span class="nt-sc-ref-key">Ctrl+Shift+N</span> MC</div>
               <div class="nt-sc-ref-item" onclick="openReader()" title="Reader"><span class="nt-sc-ref-key">Ctrl+Shift+E</span> Reader</div>
               <div class="nt-sc-ref-item" onclick="showPanel('lab')" title="Laboratorio"><span class="nt-sc-ref-key">Ctrl+Shift+G</span> Lab</div>
               <div class="nt-sc-ref-item" onclick="showPanel('settings')" title="Configuración"><span class="nt-sc-ref-key">Ctrl+Shift+,</span> Config</div>
@@ -2060,11 +2201,6 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
       </div>
     </div>
 
-    <!-- SESSION EDGE TOGGLE (izquierda) -->
-    <div id="session-toggle-wrap">
-      <div id="session-toggle" class="chat-toggle closed" onclick="(window.Sessions?Sessions.toggle():null)" title="Abrir sesiones aisladas (Ctrl+Shift+N)">&#9654;</div>
-    </div>
-
     <!-- CHAT EDGE TOGGLE BUTTONS -->
     <div id="chat-toggles">
       <div id="chat-toggle-ai" class="chat-toggle closed" onclick="(window.AI?AI.toggle():toggleChatPanel('ai'))" title="Abrir IA (Ctrl+Shift+A)">&#9664;</div>
@@ -2493,7 +2629,22 @@ const Sessions = {
   activeId: null,
   _wv: null,
   _injected: false,
+  bookmarks: [],
+  history: [],
+  settings: { home: 'https://duckduckgo.com/' },
+  toolsTab: 'bookmarks',
   PALETTE: ['#ff6b6b', '#ffa94d', '#ffd43b', '#69db7c', '#4dabf7', '#748ffc', '#da77f2', '#f783ac'],
+
+  storageKey(kind) { return 'mc-session-' + this.activeId + '-' + kind; },
+  loadData() {
+    const read = (kind, fallback) => { try { return JSON.parse(localStorage.getItem(this.storageKey(kind)) || 'null') ?? fallback; } catch { return fallback; } };
+    this.bookmarks = read('bookmarks', []);
+    this.history = read('history', []);
+    this.settings = read('settings', { home: 'https://duckduckgo.com/' });
+  },
+  saveData(kind, value) { try { localStorage.setItem(this.storageKey(kind), JSON.stringify(value)); } catch {} },
+  currentUrl() { try { return this._wv?.getURL() || ''; } catch { return ''; } },
+  currentTitle() { try { return this._wv?.getTitle() || this.currentUrl(); } catch { return this.currentUrl(); } },
 
   async injectSidebar() {
     if (this._injected) return;
@@ -2501,71 +2652,84 @@ const Sessions = {
     const sb = document.createElement('div');
     sb.id = 'session-sidebar';
     sb.innerHTML = `
-      <div style="display:flex;align-items:center;gap:6px;padding:8px;border-bottom:1px solid var(--border);">
-        <select id="session-select" style="flex:1;min-width:0;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:0.85rem;"></select>
-        <button class="wch-action-btn" onclick="Sessions.createNew()" title="Nueva sesión">&#43;</button>
-        <button class="wch-action-btn" onclick="Sessions.renameCurrent()" title="Renombrar esta sesión">&#9998;</button>
-        <button class="wch-action-btn" onclick="Sessions.clearData()" title="Borrar cookies/caché/datos de esta sesión (no afecta al resto del navegador)">🧹</button>
-        <button class="wch-action-btn" onclick="Sessions.deleteCurrent()" title="Eliminar esta sesión y todos sus datos">&#128465;</button>
-        <button class="wch-action-btn" id="session-fullwidth-btn" onclick="Sessions.toggleFullwidth()" title="Modo completo (Ctrl+Shift+M)">&#9974;</button>
+      <div class="session-topbar">
+        <div class="session-brand"><span class="session-brand-mark">MC</span></div>
+        <select id="session-select" class="session-select"></select>
+        <button class="session-action-btn" onclick="Sessions.createNew()" title="Nueva sesión">&#43;</button>
+        <button class="session-action-btn" onclick="Sessions.deleteCurrent()" title="Eliminar esta sesión y todos sus datos">&#128465;</button>
+        <button class="session-action-btn" onclick="Sessions.toggleTools()" title="Marcadores, historial y configuración">&#128209;</button>
+        <button class="session-action-btn" onclick="Sessions.toggleFullwidth()" title="Modo completo (Ctrl+Shift+M)">&#9974;</button>
       </div>
-      <div id="session-color-row" style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--border);"></div>
-      <div style="display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid var(--border);">
-        <button class="wch-action-btn" onclick="Sessions.goBack()" title="Atrás">&#8592;</button>
-        <button class="wch-action-btn" onclick="Sessions.goForward()" title="Adelante">&#8594;</button>
-        <button class="wch-action-btn" onclick="Sessions.reload()" title="Recargar">&#8635;</button>
-        <input id="session-urlbar" placeholder="URL o búsqueda..." spellcheck="false" autocomplete="off" style="flex:1;min-width:0;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:0.85rem;" onkeydown="if(event.key==='Enter') Sessions.navigate(this.value)"/>
+      <div id="session-color-row" class="session-color-row"></div>
+      <div class="session-nav">
+        <button class="session-action-btn" onclick="Sessions.goBack()" title="Atrás">&#8592;</button>
+        <button class="session-action-btn" onclick="Sessions.goForward()" title="Adelante">&#8594;</button>
+        <button class="session-action-btn" onclick="Sessions.reload()" title="Recargar">&#8635;</button>
+        <button class="session-action-btn" onclick="Sessions.home()" title="Inicio">&#8962;</button>
+        <input id="session-urlbar" class="session-urlbar" placeholder="URL o búsqueda..." spellcheck="false" autocomplete="off" onkeydown="if(event.key==='Enter') Sessions.navigate(this.value)"/>
+        <button class="session-action-btn" onclick="Sessions.toggleBookmark()" title="Marcar página">&#9734;</button>
       </div>
-      <div id="session-webview-wrap" style="flex:1;position:relative;"></div>
+      <div id="session-webview-wrap" class="session-webview-wrap">
+        <div id="session-tools" class="session-tools">
+          <div class="session-tools-head"><span>MC</span><button class="session-action-btn session-tools-close" onclick="Sessions.closeTools()" title="Cerrar">&#10005;</button></div>
+          <div class="session-tools-tabs">
+            <button class="session-tools-tab active" data-session-tool="bookmarks" onclick="Sessions.switchTools('bookmarks')">Marcadores</button>
+            <button class="session-tools-tab" data-session-tool="history" onclick="Sessions.switchTools('history')">Historial</button>
+            <button class="session-tools-tab" data-session-tool="settings" onclick="Sessions.switchTools('settings')">Config</button>
+          </div>
+          <div id="session-tools-content" class="session-tools-content"></div>
+        </div>
+      </div>
     `;
-    const main = document.getElementById('main');
-    if (main) main.appendChild(sb);
-    PanelResize.attach(sb, 'mc-panel-w-session', 400, 'left');
+    const content = document.getElementById('content');
+    if (content) content.appendChild(sb);
     document.getElementById('session-select')?.addEventListener('change', (e) => this.switchTo(e.target.value));
-    if (localStorage.getItem('mc-session-fullwidth') === '1') sb.classList.add('fullwidth');
     await this.refreshList();
   },
 
   async refreshList() {
-    try { this.list = await mc.sessionsList(); } catch { this.list = []; }
+    try {
+      this.list = await mc.sessionsList();
+      if (!this.list.length) {
+        const first = await mc.sessionsCreate();
+        if (first?.id) this.list = [first];
+      }
+    } catch { this.list = []; }
     const sel = document.getElementById('session-select');
     if (!sel) return;
     if (!this.list.length) {
-      sel.innerHTML = '<option value="">Sin sesiones — creá una con +</option>';
+      sel.innerHTML = '<option value="">MC</option>';
       this.activeId = null;
-      document.getElementById('session-color-row').innerHTML = '';
-      document.getElementById('session-sidebar')?.style.setProperty('--session-accent', 'transparent');
+      const wrap = document.getElementById('session-webview-wrap');
       if (this._wv) { try { this._wv.remove(); } catch {} this._wv = null; }
       return;
     }
     sel.innerHTML = this.list.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join('');
     if (!this.activeId || !this.list.some(s => s.id === this.activeId)) this.activeId = this.list[0].id;
     sel.value = this.activeId;
+    this.loadData();
     this.renderColorRow();
     this.applyAccent();
     this.ensureWebview();
   },
 
-  // Fila de puntos de color: elegir el acento visual de la sesión activa,
-  // así con varias abiertas se distinguen entre sí de un vistazo (y del
-  // panel de IA/chat, que no tiene este borde de color).
   renderColorRow() {
     const row = document.getElementById('session-color-row');
     if (!row) return;
-    const current = this.list.find(s => s.id === this.activeId);
-    row.innerHTML = this.PALETTE.map(c => `<button class="session-color-dot${current?.color === c ? ' active' : ''}" style="background:${c}" onclick="Sessions.setColor('${c}')" title="Color de esta sesión"></button>`).join('');
+    const current = this.list.find(entry => entry.id === this.activeId);
+    row.innerHTML = this.PALETTE.map(color => `<button class="session-color-dot${current?.color === color ? ' active' : ''}" style="background:${color}" onclick="Sessions.setColor('${color}')" title="Color de esta sesión"></button>`).join('');
   },
 
   applyAccent() {
-    const sb = document.getElementById('session-sidebar');
-    const current = this.list.find(s => s.id === this.activeId);
-    if (sb) sb.style.setProperty('--session-accent', current?.color || 'transparent');
+    const sidebar = document.getElementById('session-sidebar');
+    const current = this.list.find(entry => entry.id === this.activeId);
+    if (sidebar) sidebar.style.setProperty('--session-accent', current?.color || '#f6b860');
   },
 
   async setColor(color) {
-    if (!this.activeId) return;
-    const res = await mc.sessionsSetColor(this.activeId, color);
-    if (res?.ok) await this.refreshList();
+    if (!this.activeId || !this.PALETTE.includes(color)) return;
+    const result = await mc.sessionsSetColor(this.activeId, color);
+    if (result?.ok) await this.refreshList();
   },
 
   ensureWebview() {
@@ -2579,11 +2743,21 @@ const Sessions = {
     wv.setAttribute('partition', 'persist:mc-session-' + this.activeId);
     wv.setAttribute('allowpopups', '');
     wv.style.cssText = 'width:100%;height:100%;display:inline-flex;';
-    wv.src = 'https://duckduckgo.com/';
+    wv.src = this.settings.home || 'https://duckduckgo.com/';
     wrap.appendChild(wv);
     this._wv = wv;
-    wv.addEventListener('did-navigate', () => this.syncUrlbar());
-    wv.addEventListener('did-navigate-in-page', () => this.syncUrlbar());
+    wv.addEventListener('did-navigate', () => {
+      this.syncUrlbar();
+      this.addHistory(this.currentUrl(), this.currentTitle());
+      if (!$('permissions-panel')?.classList.contains('collapsed')) {
+        syncPermissionsDomainField();
+        renderPermissionsList();
+      }
+    });
+    wv.addEventListener('did-navigate-in-page', () => {
+      this.syncUrlbar();
+      if (!$('permissions-panel')?.classList.contains('collapsed')) syncPermissionsDomainField();
+    });
   },
 
   syncUrlbar() {
@@ -2591,17 +2765,90 @@ const Sessions = {
     if (input && this._wv) { try { input.value = this._wv.getURL(); } catch {} }
   },
 
+  addHistory(url, title) {
+    if (!url || /^(about|mc|chrome):/i.test(url)) return;
+    this.history = this.history.filter(item => item.url !== url);
+    this.history.unshift({ url, title: title || url, time: Date.now() });
+    this.history = this.history.slice(0, 200);
+    this.saveData('history', this.history);
+    if (document.getElementById('session-tools')?.classList.contains('open') && this.toolsTab === 'history') this.renderTools();
+  },
+
+  toggleBookmark() {
+    const url = this.currentUrl();
+    if (!url || /^(about|mc|chrome):/i.test(url)) return;
+    const index = this.bookmarks.findIndex(item => item.url === url);
+    if (index >= 0) this.bookmarks.splice(index, 1);
+    else this.bookmarks.unshift({ url, title: this.currentTitle() || url, time: Date.now() });
+    this.saveData('bookmarks', this.bookmarks);
+    this.renderTools();
+  },
+
+  openSaved(url) { if (url && this._wv) this._wv.loadURL(url); this.closeTools(); },
+  removeSaved(kind, index) {
+    const list = kind === 'bookmarks' ? this.bookmarks : this.history;
+    list.splice(index, 1);
+    this.saveData(kind, list);
+    this.renderTools();
+  },
+
+  toggleTools(tab = 'bookmarks') {
+    const tools = document.getElementById('session-tools');
+    if (!tools) return;
+    if (tools.classList.contains('open') && this.toolsTab === tab) { this.closeTools(); return; }
+    tools.classList.add('open');
+    this.switchTools(tab);
+  },
+  closeTools() { document.getElementById('session-tools')?.classList.remove('open'); },
+  switchTools(tab) {
+    this.toolsTab = tab;
+    document.querySelectorAll('[data-session-tool]').forEach(button => button.classList.toggle('active', button.dataset.sessionTool === tab));
+    this.renderTools();
+  },
+  renderTools() {
+    const content = document.getElementById('session-tools-content');
+    if (!content) return;
+    if (this.toolsTab === 'settings') {
+      content.innerHTML = `<div class="session-settings">
+        <label>Inicio</label><input id="session-home" value="${escapeHtml(this.settings.home || '')}" placeholder="https://duckduckgo.com/"/>
+        <button onclick="Sessions.saveSettings()">Guardar</button><span id="session-settings-status"></span>
+        <button onclick="Sessions.clearOwnData()">Limpiar datos de MC</button>
+      </div>`;
+      return;
+    }
+    const list = this.toolsTab === 'bookmarks' ? this.bookmarks : this.history;
+    if (!list.length) { content.innerHTML = `<div class="session-empty">Sin ${this.toolsTab === 'bookmarks' ? 'marcadores' : 'historial'}</div>`; return; }
+    content.innerHTML = list.slice(0, 50).map((item, index) => `<div class="session-tool-item">
+      <div class="session-tool-item-main" onclick="Sessions.openSaved('${escapeHtml(item.url)}')"><span class="session-tool-item-title">${escapeHtml(item.title || item.url)}</span><span class="session-tool-item-url">${escapeHtml(item.url)}</span></div>
+      <button class="session-tool-delete" onclick="Sessions.removeSaved('${this.toolsTab}',${index})" title="Quitar">&#10005;</button>
+    </div>`).join('');
+  },
+  saveSettings() {
+    const value = document.getElementById('session-home')?.value.trim();
+    if (value) {
+      this.settings.home = /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : 'https://' + value;
+    }
+    this.saveData('settings', this.settings);
+    const status = document.getElementById('session-settings-status');
+    if (status) { status.textContent = 'Guardado'; status.style.color = 'var(--session-accent)'; }
+    this.home();
+  },
+  clearOwnData() {
+    this.bookmarks = [];
+    this.history = [];
+    this.saveData('bookmarks', this.bookmarks);
+    this.saveData('history', this.history);
+    this.renderTools();
+  },
+
   switchTo(id) {
     this.activeId = id;
-    this.renderColorRow();
-    this.applyAccent();
+    this.loadData();
     this.ensureWebview();
   },
 
   async createNew() {
-    const name = prompt('Nombre de la nueva sesión (ej: "Trabajo", "Personal"):', '');
-    if (name === null) return;
-    const entry = await mc.sessionsCreate(name);
+    const entry = await mc.sessionsCreate();
     await this.refreshList();
     this.activeId = entry.id;
     const sel = document.getElementById('session-select');
@@ -2644,39 +2891,41 @@ const Sessions = {
     try { this._wv.loadURL(url); } catch {}
   },
 
+  home() { if (this._wv) this._wv.loadURL(this.settings.home || 'https://duckduckgo.com/'); },
+
   goBack() { try { this._wv?.canGoBack() && this._wv.goBack(); } catch {} },
   goForward() { try { this._wv?.canGoForward() && this._wv.goForward(); } catch {} },
   reload() { try { this._wv?.reload(); } catch {} },
 
-  toggle() {
+  open(mode = 'panel') {
     this.injectSidebar().then(() => {
       const sb = document.getElementById('session-sidebar');
-      const btn = document.getElementById('session-toggle');
       if (!sb) return;
-      const opening = !sb.classList.contains('open');
-      sb.classList.toggle('open');
-      if (btn) {
-        btn.className = 'chat-toggle ' + (opening ? 'open' : 'closed');
-        btn.innerHTML = opening ? '&#9664;' : '&#9654;';
-        btn.title = opening ? 'Cerrar sesiones aisladas' : 'Abrir sesiones aisladas (Ctrl+Shift+N)';
-      }
+      sb.classList.toggle('full', mode === 'full' || localStorage.getItem('mc-session-fullwidth') === '1');
+      sb.classList.add('open');
     });
   },
 
-  // Modo "completo": mismo panel y misma sesión/estado (cookies, cache,
-  // pestaña activa) — solo cambia de sidebar angosto a overlay a pantalla
-  // completa. No abre ninguna ventana nueva.
   toggleFullwidth() {
     this.injectSidebar().then(() => {
-      const sb = document.getElementById('session-sidebar');
-      if (!sb) return;
-      if (!sb.classList.contains('open')) {
-        sb.classList.add('open');
-        const btn = document.getElementById('session-toggle');
-        if (btn) { btn.className = 'chat-toggle open'; btn.innerHTML = '&#9664;'; btn.title = 'Cerrar sesiones aisladas'; }
-      }
-      const full = sb.classList.toggle('fullwidth');
+      const sidebar = document.getElementById('session-sidebar');
+      if (!sidebar) return;
+      const full = !sidebar.classList.contains('full');
+      sidebar.classList.toggle('full', full);
       try { localStorage.setItem('mc-session-fullwidth', full ? '1' : '0'); } catch {}
+      if (full) sidebar.classList.add('open');
+    });
+  },
+
+  close() {
+    const sb = document.getElementById('session-sidebar');
+    if (sb) sb.classList.remove('open');
+  },
+
+  toggle() {
+    this.injectSidebar().then(() => {
+      const sb = document.getElementById('session-sidebar');
+      if (sb) sb.classList.toggle('open');
     });
   }
 };
@@ -3922,7 +4171,7 @@ function bindWebviewToTab(id, wv) {
     }
     // Solo actualizar si es la pestaña activa
     if (state.activeTab !== id) return;
-    $('urlinput').value = e.url;
+    $('urlinput').value = getTabAddress(e.url);
     addHistory(e.url);
     updateBookmarkStar();
     // actualizar tab con dominio
@@ -3955,7 +4204,7 @@ function bindWebviewToTab(id, wv) {
         if (curHost !== newHost) return; // diferente origen = probable ad redirect
       }
     } catch {}
-    $('urlinput').value = e.url;
+    $('urlinput').value = getTabAddress(e.url);
     addHistory(e.url);
     updateBookmarkStar();
     renderCosmeticRules();
@@ -4031,6 +4280,10 @@ function bindWebviewToTab(id, wv) {
 }
 
 // ── tabs ────────────────────────────────────────
+function getTabAddress(url) {
+  return /^data:text\/html/i.test(url || '') ? 'mc:player' : (url || 'mc://newtab');
+}
+
 function addTab(url, pageUrl, isPopup) {
   state.tabCounter++;
   const id = state.tabCounter;
@@ -4077,7 +4330,7 @@ function switchTab(id) {
 
   const tab = state.tabs.find(t => t.id === id);
   if (!tab) return;
-  $('urlinput').value = tab.url === 'mc://newtab' ? 'mc://newtab' : tab.url;
+  $('urlinput').value = getTabAddress(tab.url);
   if (tab.url === 'mc://newtab') {
     showPanel('newtab');
     // showPanel ya oculta el webview-container
@@ -4884,6 +5137,12 @@ function shouldShowStreamItem(item) {
 }
 
 function getActivePageUrl() {
+  if (window.Sessions?._wv && document.getElementById('session-sidebar')?.classList.contains('open')) {
+    try {
+      const url = window.Sessions._wv.getURL();
+      if (/^https?:\/\//i.test(url)) return url;
+    } catch {}
+  }
   const wv = $('webview-' + state.activeTab);
   try {
     if (wv && wv.getURL && /^https?:\/\//i.test(wv.getURL())) return wv.getURL();
@@ -5032,14 +5291,14 @@ function renderSidebarStreamItemHtml(item) {
   const timeBadge = item.detectedAt ? '<span class="resource-badge" title="Detectado a las ' + formatStreamTime(item.detectedAt) + '">🕐 ' + formatStreamTime(item.detectedAt) + '</span>' : '';
   const safeUrl = item.url.replace(/'/g,"\\'");
   const dlName = friendlyFileName(item.url, item.type, item.pageUrl || item.origin || item.displayName, visibleTitle).replace(/'/g, "\\'");
-  return '<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);">' +
+  return '<div class="stream-row">' +
     '<span style="flex-shrink:0;">' + icon + '</span>' +
     '<span class="resource-summary"><span class="resource-name" title="'+escapeHtml(item.url)+'">' + escapeHtml(label) + '</span>' +
     (host ? '<span class="resource-host" style="display:block;font-size: 0.615rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+escapeHtml(item.pageUrl||'')+'">' + escapeHtml(host) + '</span>' : '') +
     '<span class="resource-details">' + badges + fragBadge + timeBadge + '</span></span>' +
-    '<button class="btn ghost btn-sm" onclick="openStreamResource(\'' + safeUrl + '\',\'' + (item.type||'') + '\',\'' + (item.pageUrl||'').replace(/'/g,"\\'") + '\')" style="padding:1px 4px;font-size: 0.692rem;" title="Abrir recurso">Abrir</button>' +
-    '<button class="btn warn btn-sm" onclick="dlMedia(\'' + safeUrl + '\',\'' + (item.type||'MP4') + '\',\'' + (item.pageUrl||'').replace(/'/g,"\\'") + '\',\'' + dlName + '\')" style="padding:1px 4px;font-size: 0.692rem;" title="Descargar">⬇ DL</button>' +
-    '<button class="btn ghost btn-sm" onclick="askStreamToAI(\'' + safeUrl + '\',\'' + (item.type||'Stream') + '\')" style="padding:1px 4px;font-size: 0.692rem;" title="Analizar con IA">✦</button>' +
+    '<span class="stream-actions"><button class="btn ghost btn-sm" onclick="openStreamResource(\'' + safeUrl + '\',\'' + (item.type||'') + '\',\'' + (item.pageUrl||'').replace(/'/g,"\\'") + '\')" title="Abrir recurso">Abrir</button>' +
+    '<button class="btn warn btn-sm" onclick="dlMedia(\'' + safeUrl + '\',\'' + (item.type||'MP4') + '\',\'' + (item.pageUrl||'').replace(/'/g,"\\'") + '\',\'' + dlName + '\')" title="Descargar">DL</button>' +
+    '<button class="btn ghost btn-sm" onclick="askStreamToAI(\'' + safeUrl + '\',\'' + (item.type||'Stream') + '\')" title="Analizar con IA">✦</button></span>' +
   '</div>';
 }
 
@@ -5047,20 +5306,13 @@ function renderSidebarStreams() {
   const containers = [$('resources-streams-list')].filter(Boolean);
   if (!containers.length) return;
   if (state.streamItems.size === 0) {
-    containers.forEach(container => { container.innerHTML = '<div style="color:var(--muted);text-align:center;padding:8px 0;">Sin streams detectados</div>'; });
+    containers.forEach(container => { container.innerHTML = '<div class="streams-empty"><div style="font-size:1.2rem;margin-bottom:7px;opacity:.7;">◌</div>Sin streams detectados</div>'; });
     return;
   }
   const items = Array.from(state.streamItems.values()).reverse();
   const primary = items.filter(i => /^(HLS|DASH)$/i.test(i.type || '') || /\.(m3u8|mpd)(\?|#|$)/i.test(i.url));
-  const secondary = items.filter(i => !primary.includes(i));
   let markup = primary.map(renderSidebarStreamItemHtml).join('');
-  if (secondary.length) {
-    const fragCount = secondary.filter(i => isStreamFragment(i.url)).length;
-    markup += '<details class="stream-mp4-group" style="margin-top:6px;">' +
-      '<summary style="cursor:pointer;font-size: 0.769rem;color:var(--muted);padding:4px;border:1px solid var(--border);border-radius:var(--radius);">🎥 MP4 / Otros (' + secondary.length + ')' + (fragCount ? ' · ' + fragCount + ' fragmentos' : '') + '</summary>' +
-      '<div style="margin-top:4px;">' + secondary.map(renderSidebarStreamItemHtml).join('') + '</div>' +
-    '</details>';
-  }
+  if (!markup) markup = '<div class="streams-empty"><div style="font-size:1.2rem;margin-bottom:7px;opacity:.7;">◌</div>Sin streams reproducibles detectados</div>';
   containers.forEach(container => { container.innerHTML = markup; });
 }
 
@@ -5074,9 +5326,22 @@ function openStreamResource(url, type, pageUrl) {
   const tag = isAudio ? 'audio' : 'video';
   const hls = /\.(m3u8)(?:\?|#|$)/i.test(url) || /HLS/i.test(type || '');
   const hlsScript = hls ? '<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"><\/script>' : '';
-  const hlsInit = hls ? `<script>const p=document.querySelector('video');if(window.Hls&&Hls.isSupported()){const h=new Hls();h.loadSource(${JSON.stringify(url)});h.attachMedia(p);h.on(Hls.Events.ERROR,(_,d)=>{document.querySelector('#status').textContent='Error HLS: '+(d.details||'fuente no disponible');});}else if(p.canPlayType('application/vnd.apple.mpegurl')){p.src=${JSON.stringify(url)};}else{document.querySelector('#status').textContent='Este Chromium no reproduce HLS nativamente.';}<\/script>` : '';
+  const hlsInit = `<script>const p=document.querySelector('${tag}');const status=document.querySelector('#status');const statusText=status.querySelector('span:last-child');const stage=document.querySelector('#stage');const setStatus=(text,kind)=>{statusText.textContent=text;status.className='status'+(kind?' '+kind:'');};p.addEventListener('canplay',()=>{stage.classList.add('ready');setStatus('Reproduciendo','ok');});p.addEventListener('error',()=>setStatus('No se pudo reproducir la fuente','error'));${hls ? `if(window.Hls&&Hls.isSupported()){const h=new Hls();h.loadSource(${JSON.stringify(url)});h.attachMedia(p);h.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal)setStatus('Error HLS: '+(d.details||'fuente no disponible'),'error');});}else if(p.canPlayType('application/vnd.apple.mpegurl')){p.src=${JSON.stringify(url)};}else{setStatus('Este Chromium no reproduce HLS nativamente.','error');}` : `setStatus('Listo para reproducir');`}<\/script>`;
   const sourceAttr = hls ? '' : ` src="${escapeHtml(url)}"`;
-  const html = `<!doctype html><meta charset="utf-8"><title>MC Stream Preview</title><style>body{background:#101218;color:#d8e4e8;font:14px sans-serif;padding:24px}video,audio{display:block;max-width:90vw;width:900px;margin:20px 0;background:#000}code{color:#72e6d3;overflow-wrap:anywhere;display:block}#status{color:#ffb15c;margin:10px 0}</style><h2>Vista previa de ${type || 'recurso'}</h2><div id="status">Cargando reproductor...</div><${tag} controls autoplay${sourceAttr}></${tag}><code>${escapeHtml(url)}</code>${hlsScript}${hlsInit}`;
+  const mediaLabel = isAudio ? 'Audio' : 'Video';
+  const streamLabel = type || (hls ? 'HLS' : 'Stream');
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MC Player · ${escapeHtml(streamLabel)}</title><style>
+    :root{color-scheme:dark;--bg:#0b0d11;--panel:#12161d;--panel-soft:#171c24;--line:#29313d;--text:#edf2f4;--muted:#8d98a6;--accent:#ffab4a;--accent-soft:rgba(255,171,74,.14);--good:#59d39b;--danger:#ff7373}
+    *{box-sizing:border-box}body{position:relative;margin:0;min-height:100vh;overflow-x:hidden;background-color:var(--bg);background-image:linear-gradient(rgba(104,122,145,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(104,122,145,.045) 1px,transparent 1px),radial-gradient(circle at 50% -15%,#303743 0,#161b23 34%,var(--bg) 72%);background-size:32px 32px,32px 32px,100% 100%;color:var(--text);font:14px/1.45 "Segoe UI",system-ui,sans-serif;padding:clamp(18px,4vw,48px)}body:before{position:fixed;inset:0;pointer-events:none;content:"";background:linear-gradient(115deg,transparent 0 46%,rgba(255,171,74,.035) 46.1%,transparent 46.5% 100%);mask-image:linear-gradient(to bottom,rgba(0,0,0,.8),transparent 75%)}
+    .player-shell{position:relative;width:min(1120px,100%);margin:0 auto;padding:clamp(16px,2.8vw,30px);background:linear-gradient(145deg,rgba(27,33,43,.94),rgba(10,13,18,.96));border:1px solid #333d4b;border-radius:16px;box-shadow:0 30px 80px rgba(0,0,0,.46),inset 0 1px rgba(255,255,255,.055)}.player-shell:before,.player-shell:after{position:absolute;content:"";width:38px;height:38px;border-color:rgba(255,171,74,.5);pointer-events:none}.player-shell:before{top:-1px;left:-1px;border-top:2px solid;border-left:2px solid;border-radius:16px 0 0}.player-shell:after{right:-1px;bottom:-1px;border-right:2px solid;border-bottom:2px solid;border-radius:0 0 16px}
+    .topbar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px;padding:0 4px}.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em}.brand-mark{position:relative;width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 18px rgba(255,171,74,.7)}.brand-mark:after{position:absolute;inset:-5px;content:"";border:1px solid rgba(255,171,74,.35);border-radius:50%}.brand-name{font-size:15px}.brand-sub{color:#667383;font:10px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase}.stream-badge{display:inline-flex;align-items:center;gap:7px;border:1px solid #56402b;background:linear-gradient(135deg,rgba(255,171,74,.18),rgba(255,171,74,.06));border-radius:5px;color:#ffc477;font:700 10px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.1em;padding:7px 10px;text-transform:uppercase}.stream-badge i{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+    .stage{position:relative;overflow:hidden;min-height:clamp(220px,55vw,620px);display:flex;align-items:center;justify-content:center;background:#050607;border:1px solid #3a4655;border-radius:10px;box-shadow:0 18px 45px rgba(0,0,0,.42),0 0 0 5px rgba(5,7,10,.35),inset 0 0 0 1px rgba(255,255,255,.025)}.stage:before{position:absolute;inset:0;content:"";pointer-events:none;background:linear-gradient(90deg,rgba(255,171,74,.08),transparent 18%,transparent 82%,rgba(255,171,74,.05)),repeating-linear-gradient(0deg,transparent 0 3px,rgba(255,255,255,.012) 4px);z-index:2}.stage:after{position:absolute;top:12px;right:12px;width:7px;height:7px;content:"";border-top:1px solid rgba(255,171,74,.75);border-right:1px solid rgba(255,171,74,.75);z-index:3}.stage video,.stage audio{display:block;width:100%;height:auto;max-height:calc(100vh - 260px);background:#050607;object-fit:contain}audio{width:min(680px,90%);margin:80px auto}.stage:has(audio){min-height:220px;background:linear-gradient(145deg,#17130e,#080a0d)}
+    .stage-placeholder{position:absolute;display:grid;place-items:center;gap:12px;color:#7d8997;pointer-events:none;z-index:1;font:11px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase}.pulse{width:38px;height:38px;border:2px solid #3b424d;border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;box-shadow:0 0 18px rgba(255,171,74,.12)}@keyframes spin{to{transform:rotate(360deg)}}
+    .stage:has(video) .stage-placeholder{z-index:0}.stage video,.stage audio{position:relative;z-index:1}.stage.ready .stage-placeholder{display:none}
+    .player-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 5px 0}.status{display:flex;align-items:center;gap:8px;color:var(--muted);font:11px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.04em}.status-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px rgba(255,171,74,.55)}.status.ok{color:var(--good)}.status.ok .status-dot{background:var(--good);box-shadow:0 0 8px rgba(89,211,155,.55)}.status.error{color:var(--danger)}.status.error .status-dot{background:var(--danger)}
+    details.source{margin-top:22px;border-top:1px solid #29323e;padding-top:15px}details.source summary{cursor:pointer;color:#778493;font:10px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.08em;list-style:none;text-transform:uppercase}details.source summary::-webkit-details-marker{display:none}details.source summary:before{content:"";display:inline-block;width:6px;height:6px;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(-45deg);margin:0 9px 1px 2px}details.source[open] summary:before{transform:rotate(45deg);margin-bottom:3px}code{display:block;margin-top:12px;overflow-wrap:anywhere;color:#aab5c2;font:11px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;background:#0c1015;border:1px solid #29323e;border-radius:6px;padding:11px 13px}
+    @media(max-width:600px){body{padding:16px}.topbar{margin-bottom:14px}.brand-sub{display:none}.player-footer{align-items:flex-start;flex-direction:column;gap:8px}.stage{border-radius:7px}}
+  </style></head><body><main class="player-shell"><header class="topbar"><div class="brand"><span class="brand-mark"></span><span class="brand-name">MC Player</span><span class="brand-sub">/ ${mediaLabel}</span></div><span class="stream-badge"><i></i>${escapeHtml(streamLabel)}</span></header><section class="stage" id="stage"><div class="stage-placeholder"><span class="pulse"></span><span>Conectando con la señal</span></div><${tag} controls autoplay${sourceAttr}></${tag}></section><footer class="player-footer"><div class="status" id="status"><span class="status-dot"></span><span>Preparando reproducción</span></div><span style="color:var(--muted);font-size:11px">MC Browser</span></footer><details class="source"><summary>Información de la fuente</summary><code>${escapeHtml(url)}</code></details></main>${hlsScript}${hlsInit}</body></html>`;
   addTab('data:text/html;charset=utf-8,' + encodeURIComponent(html), pageUrl);
 }
 
@@ -5125,16 +5390,8 @@ function renderStreams() {
   
   const items = Array.from(state.streamItems.values()).reverse();
   const primary = items.filter(i => /^(HLS|DASH)$/i.test(i.type || '') || /\.(m3u8|mpd)(\?|#|$)/i.test(i.url));
-  const secondary = items.filter(i => !primary.includes(i));
-  
   let html = primary.map(renderStreamItemHtml).join('');
-  if (secondary.length) {
-    const fragCount = secondary.filter(i => isStreamFragment(i.url)).length;
-    html += `<details class="stream-mp4-group" style="margin-top:8px;">
-      <summary style="cursor:pointer;font-size: 0.923rem;color:var(--muted);padding:6px;border:1px solid var(--border);border-radius:var(--radius);">🎥 MP4 / Otros (${secondary.length})${fragCount ? ` · ${fragCount} fragmentos` : ''}</summary>
-      <div style="margin-top:6px;">${secondary.map(renderStreamItemHtml).join('')}</div>
-    </details>`;
-  }
+  if (!html) html = '<div style="color:var(--muted);font-size: .923rem;text-align:center;padding:24px;border:1px dashed var(--border);border-radius:var(--radius);">No hay streams reproducibles detectados</div>';
   list.innerHTML = html;
 }
 
@@ -5149,14 +5406,16 @@ function copyStreams() {
 }
 
 async function scanStreams() {
-  if (!state.activeTab) return;
+  const sessionWebContentsId = window.Sessions?._wv?.getWebContentsId?.();
+  if (!state.activeTab && !sessionWebContentsId) return;
   state.streamItems.clear();
   renderStreams();
   renderSidebarStreams();
   addSidebarLog('info', '[STREAM] Escaneando streams...');
   try {
     const currentPage = getActivePageUrl();
-    const result = await mc.scanStreams(state.activeTab);
+    const scanTarget = sessionWebContentsId ? { webContentsId: sessionWebContentsId } : state.activeTab;
+    const result = await mc.scanStreams(scanTarget);
     if (result && Array.isArray(result)) {
       result.forEach(item => {
         addStreamItem({
@@ -5172,7 +5431,7 @@ async function scanStreams() {
     if (!result?.length) {
       // Reintento tras un breve retardo (los recursos pueden tardar en registrarse)
       setTimeout(async () => {
-        const retry = await mc.scanStreams(state.activeTab).catch(() => []);
+        const retry = await mc.scanStreams(scanTarget).catch(() => []);
         if (Array.isArray(retry)) {
           const retryPage = getActivePageUrl();
           retry.forEach(item => addStreamItem({
@@ -5297,8 +5556,10 @@ function toggleDlOverlay() {
 function friendlyFileName(url, type, pageUrl, displayName) {
   // Un nombre explícito lo aporta Stream Hunter; conservarlo evita cambiar
   // su nomenclatura por el nombre de la página de origen.
-  if (typeof displayName === 'string' && /^https?:\/\//i.test(displayName)) {
-    return displayName.replace(/^https?:\/\//i, '').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || 'page_url';
+  const sourcePage = /^https?:\/\//i.test(String(pageUrl || '')) ? String(pageUrl) : displayName;
+  if (typeof sourcePage === 'string' && /^https?:\/\//i.test(sourcePage)) {
+    const pageName = sourcePage.replace(/^https?:\/\//i, '').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+    return pageName.slice(0, 180) || 'page_url';
   }
   if (typeof displayName === 'string' && displayName.trim() && !/^https?:\/\//i.test(displayName)) {
     return displayName.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_').slice(0, 80) || 'media';
@@ -5840,16 +6101,22 @@ async function testDoH() {
 // ── clear / data ────────────────────────────────
 async function clearCookies() {
   const keepSessions = !!(document.getElementById('keep-sessions-clear')?.checked || document.getElementById('keep-sessions-clear2')?.checked || document.getElementById('keep-sessions-clear3')?.checked);
-  const result = await mc.clearData({ history: false, cache: false, cookies: true, keepSessions });
+  const result = await mc.clearData({ history: false, cache: false, cookies: true, keepSessions }).catch(error => ({ ok: false, error: error?.message || 'error desconocido' }));
   if (result && result.ok) addSidebarLog('allowed', '[CK] cookies eliminadas' + (keepSessions ? ' (se conservaron sesiones)' : ''));
+  else addSidebarLog('blocked', '[CK] no se pudieron eliminar: ' + (result?.error || 'error desconocido'));
 }
 async function clearCache()   {
-  const result = await mc.clearData({ history: false, cache: true, cookies: false, keepSessions: false });
+  const result = await mc.clearData({ history: false, cache: true, cookies: false, keepSessions: false }).catch(error => ({ ok: false, error: error?.message || 'error desconocido' }));
   if (result && result.ok) addSidebarLog('allowed','[CACHE] limpio');
+  else addSidebarLog('blocked', '[CACHE] no se pudo limpiar: ' + (result?.error || 'error desconocido'));
 }
 async function clearAll() {
   if (!confirm('Borrar TODOS los datos (cookies, caché, storage, stats)?')) return;
-  await mc.clearAll();
+  const result = await mc.clearAll().catch(error => ({ ok: false, error: error?.message || 'error desconocido' }));
+  if (!result?.ok) {
+    addSidebarLog('blocked', '[CLEAR] no se pudieron borrar todos los datos: ' + (result?.error || 'error desconocido'));
+    return;
+  }
   state.history = [];
   renderHistory();
   try { localStorage.removeItem('mc_history'); } catch {}
@@ -5936,6 +6203,8 @@ document.addEventListener('keydown', e => {
   const k = e.key;
   const mod = e.ctrlKey || e.metaKey;
   if (mod && k === 'l') { e.preventDefault(); $('urlinput').focus(); $('urlinput').select(); }
+  if (mod && !e.shiftKey && (k === 'n' || k === 'N')) { e.preventDefault(); Sessions.open('panel'); return; }
+  if (mod && !e.shiftKey && (k === 'm' || k === 'M')) { e.preventDefault(); Sessions.open('full'); return; }
   if (mod && e.shiftKey && (k === 'l' || k === 'L')) { e.preventDefault(); addTab('mc://lab'); }
   if (mod && k === 't') { e.preventDefault(); addTab(); }
   if (mod && k === 'w') { e.preventDefault(); closeTab({stopPropagation:()=>{}}, state.activeTab); }
@@ -5972,6 +6241,10 @@ document.addEventListener('keydown', e => {
         if (window.WebChat && typeof WebChat.toggle === 'function') WebChat.toggle();
         else toggleChatPanel('web');
         break;
+      case 'm': // Sesión aislada en modo completo
+        e.preventDefault();
+        Sessions.toggleFullwidth();
+        break;
       case 'q': // WhatsApp Web
         e.preventDefault();
         if (window.WhatsAppChat && typeof WhatsAppChat.toggle === 'function') WhatsAppChat.toggle();
@@ -5980,10 +6253,6 @@ document.addEventListener('keydown', e => {
       case 'n': // Sesiones aisladas
         e.preventDefault();
         if (window.Sessions && typeof Sessions.toggle === 'function') Sessions.toggle();
-        break;
-      case 'm': // Sesiones aisladas — modo completo (pantalla completa, sin ventana nueva)
-        e.preventDefault();
-        if (window.Sessions && typeof Sessions.toggleFullwidth === 'function') Sessions.toggleFullwidth();
         break;
       case 'e': // Modo Reader
         e.preventDefault(); openReader(); break;
@@ -6455,6 +6724,9 @@ function patternMatchesHost(pattern, host) {
 }
 
 function getCurrentPageDomain() {
+  if (window.Sessions?._wv && document.getElementById('session-sidebar')?.classList.contains('open')) {
+    try { return normalizeDomainInput(window.Sessions._wv.getURL() || ''); } catch {}
+  }
   const value = $('urlinput')?.value || '';
   const tab = state.tabs.find(t => t.id === state.activeTab);
   const source = value || tab?.url || '';
