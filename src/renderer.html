@@ -902,8 +902,13 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
 .ai-selection-btn:hover { opacity: .85; }
 #ai-sidebar, #webchat-sidebar, #wa-sidebar, #session-sidebar { width: 0; min-width: 0; flex-shrink: 0; background: var(--surface); border-left: none; display: flex; flex-direction: column; overflow: hidden; transition: width 0.25s ease; position: relative; z-index: 0; }
 #ai-sidebar.open, #webchat-sidebar.open, #wa-sidebar.open { width: var(--panel-w, 400px); border-left: 1px solid var(--border); box-shadow: -4px 0 12px rgba(0,0,0,0.3); }
-#session-sidebar { order: -1; }
+#session-sidebar { order: -1; border-top: 3px solid var(--session-accent, transparent); box-sizing: border-box; }
 #session-sidebar.open { width: var(--panel-w, 400px); border-right: 1px solid var(--border); box-shadow: 4px 0 12px rgba(0,0,0,0.3); }
+/* Modo "sesión completa": mismo panel/estado, se muestra como overlay a pantalla
+   completa en vez de sidebar angosto — no abre otra ventana ni recarga nada. */
+#session-sidebar.fullwidth { position: fixed; inset: 0; width: 100% !important; height: 100%; z-index: 50; border-right: none; box-shadow: none; }
+.session-color-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; flex-shrink: 0; padding: 0; }
+.session-color-dot.active { border-color: var(--text); }
 #ai-sidebar.resizing, #webchat-sidebar.resizing, #wa-sidebar.resizing, #session-sidebar.resizing { transition: none; }
 #ai-sidebar.resizing, #webchat-sidebar.resizing, #wa-sidebar.resizing { transition: none; }
 #perchance-sidebar { width: 0; min-width: 0; flex-shrink: 0; background: var(--surface); border-left: none; display: flex; flex-direction: column; overflow: hidden; transition: width 0.25s ease; position: relative; z-index: 0; }
@@ -1581,6 +1586,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
               <div class="nt-sc-ref-item" onclick="(window.WebChat?WebChat.toggle():toggleChatPanel('web'))" title="WebChat"><span class="nt-sc-ref-key">Ctrl+Shift+W</span> WebChat</div>
               <div class="nt-sc-ref-item" onclick="(window.WhatsAppChat?WhatsAppChat.toggle():toggleChatPanel('wa'))" title="WhatsApp Web"><span class="nt-sc-ref-key">Ctrl+Shift+Q</span> WhatsApp</div>
               <div class="nt-sc-ref-item" onclick="(window.Sessions?Sessions.toggle():null)" title="Sesiones aisladas"><span class="nt-sc-ref-key">Ctrl+Shift+N</span> Sesiones</div>
+              <div class="nt-sc-ref-item" onclick="(window.Sessions?Sessions.toggleFullwidth():null)" title="Sesión aislada en modo completo"><span class="nt-sc-ref-key">Ctrl+Shift+M</span> Sesión completa</div>
               <div class="nt-sc-ref-item" onclick="openReader()" title="Reader"><span class="nt-sc-ref-key">Ctrl+Shift+E</span> Reader</div>
               <div class="nt-sc-ref-item" onclick="showPanel('lab')" title="Laboratorio"><span class="nt-sc-ref-key">Ctrl+Shift+G</span> Lab</div>
               <div class="nt-sc-ref-item" onclick="showPanel('settings')" title="Configuración"><span class="nt-sc-ref-key">Ctrl+Shift+,</span> Config</div>
@@ -2487,6 +2493,7 @@ const Sessions = {
   activeId: null,
   _wv: null,
   _injected: false,
+  PALETTE: ['#ff6b6b', '#ffa94d', '#ffd43b', '#69db7c', '#4dabf7', '#748ffc', '#da77f2', '#f783ac'],
 
   async injectSidebar() {
     if (this._injected) return;
@@ -2500,7 +2507,9 @@ const Sessions = {
         <button class="wch-action-btn" onclick="Sessions.renameCurrent()" title="Renombrar esta sesión">&#9998;</button>
         <button class="wch-action-btn" onclick="Sessions.clearData()" title="Borrar cookies/caché/datos de esta sesión (no afecta al resto del navegador)">🧹</button>
         <button class="wch-action-btn" onclick="Sessions.deleteCurrent()" title="Eliminar esta sesión y todos sus datos">&#128465;</button>
+        <button class="wch-action-btn" id="session-fullwidth-btn" onclick="Sessions.toggleFullwidth()" title="Modo completo (Ctrl+Shift+M)">&#9974;</button>
       </div>
+      <div id="session-color-row" style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--border);"></div>
       <div style="display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid var(--border);">
         <button class="wch-action-btn" onclick="Sessions.goBack()" title="Atrás">&#8592;</button>
         <button class="wch-action-btn" onclick="Sessions.goForward()" title="Adelante">&#8594;</button>
@@ -2513,6 +2522,7 @@ const Sessions = {
     if (main) main.appendChild(sb);
     PanelResize.attach(sb, 'mc-panel-w-session', 400, 'left');
     document.getElementById('session-select')?.addEventListener('change', (e) => this.switchTo(e.target.value));
+    if (localStorage.getItem('mc-session-fullwidth') === '1') sb.classList.add('fullwidth');
     await this.refreshList();
   },
 
@@ -2523,14 +2533,39 @@ const Sessions = {
     if (!this.list.length) {
       sel.innerHTML = '<option value="">Sin sesiones — creá una con +</option>';
       this.activeId = null;
-      const wrap = document.getElementById('session-webview-wrap');
+      document.getElementById('session-color-row').innerHTML = '';
+      document.getElementById('session-sidebar')?.style.setProperty('--session-accent', 'transparent');
       if (this._wv) { try { this._wv.remove(); } catch {} this._wv = null; }
       return;
     }
     sel.innerHTML = this.list.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join('');
     if (!this.activeId || !this.list.some(s => s.id === this.activeId)) this.activeId = this.list[0].id;
     sel.value = this.activeId;
+    this.renderColorRow();
+    this.applyAccent();
     this.ensureWebview();
+  },
+
+  // Fila de puntos de color: elegir el acento visual de la sesión activa,
+  // así con varias abiertas se distinguen entre sí de un vistazo (y del
+  // panel de IA/chat, que no tiene este borde de color).
+  renderColorRow() {
+    const row = document.getElementById('session-color-row');
+    if (!row) return;
+    const current = this.list.find(s => s.id === this.activeId);
+    row.innerHTML = this.PALETTE.map(c => `<button class="session-color-dot${current?.color === c ? ' active' : ''}" style="background:${c}" onclick="Sessions.setColor('${c}')" title="Color de esta sesión"></button>`).join('');
+  },
+
+  applyAccent() {
+    const sb = document.getElementById('session-sidebar');
+    const current = this.list.find(s => s.id === this.activeId);
+    if (sb) sb.style.setProperty('--session-accent', current?.color || 'transparent');
+  },
+
+  async setColor(color) {
+    if (!this.activeId) return;
+    const res = await mc.sessionsSetColor(this.activeId, color);
+    if (res?.ok) await this.refreshList();
   },
 
   ensureWebview() {
@@ -2558,6 +2593,8 @@ const Sessions = {
 
   switchTo(id) {
     this.activeId = id;
+    this.renderColorRow();
+    this.applyAccent();
     this.ensureWebview();
   },
 
@@ -2623,6 +2660,23 @@ const Sessions = {
         btn.innerHTML = opening ? '&#9664;' : '&#9654;';
         btn.title = opening ? 'Cerrar sesiones aisladas' : 'Abrir sesiones aisladas (Ctrl+Shift+N)';
       }
+    });
+  },
+
+  // Modo "completo": mismo panel y misma sesión/estado (cookies, cache,
+  // pestaña activa) — solo cambia de sidebar angosto a overlay a pantalla
+  // completa. No abre ninguna ventana nueva.
+  toggleFullwidth() {
+    this.injectSidebar().then(() => {
+      const sb = document.getElementById('session-sidebar');
+      if (!sb) return;
+      if (!sb.classList.contains('open')) {
+        sb.classList.add('open');
+        const btn = document.getElementById('session-toggle');
+        if (btn) { btn.className = 'chat-toggle open'; btn.innerHTML = '&#9664;'; btn.title = 'Cerrar sesiones aisladas'; }
+      }
+      const full = sb.classList.toggle('fullwidth');
+      try { localStorage.setItem('mc-session-fullwidth', full ? '1' : '0'); } catch {}
     });
   }
 };
@@ -5926,6 +5980,10 @@ document.addEventListener('keydown', e => {
       case 'n': // Sesiones aisladas
         e.preventDefault();
         if (window.Sessions && typeof Sessions.toggle === 'function') Sessions.toggle();
+        break;
+      case 'm': // Sesiones aisladas — modo completo (pantalla completa, sin ventana nueva)
+        e.preventDefault();
+        if (window.Sessions && typeof Sessions.toggleFullwidth === 'function') Sessions.toggleFullwidth();
         break;
       case 'e': // Modo Reader
         e.preventDefault(); openReader(); break;

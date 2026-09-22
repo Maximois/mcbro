@@ -684,11 +684,19 @@ function setupExtraSession(sess) {
   }
   try {
     const m = require('./modules/adblocker/main');
+    // Paridad completa con la sesión principal: Stream Hunter (checkMedia),
+    // notificación de bloqueos (recordBlockedRequest) y registro de requests
+    // observados (recordObservedRequest) — antes iban en null y esta sesión
+    // no tenía ninguna de las tres funciones.
     m.setup({
       cfg: CFG, saveCfg, emit: () => {}, session: sess, allowedDomains: AUTH_DOMAINS,
-      mediaCallback: null, blockCallback: null, requestCallback: null, requestGuard: createRequestGuard()
+      mediaCallback: checkMedia, blockCallback: recordBlockedRequest, requestCallback: recordObservedRequest,
+      requestGuard: createRequestGuard()
     });
   } catch (e) { console.error('[ADBLOCK][session]', e.message); }
+  // Descargas nativas: antes solo 'persist:mc' las capturaba; una descarga
+  // hecha dentro de una sesión aislada no aparecía en el panel de descargas.
+  registerNativeDownloadHandler(sess);
 }
 
 function isExtraSessionWebContents(wc) {
@@ -1101,6 +1109,127 @@ function recordObservedRequest(details) {
     mainWin.webContents.send('stats-update', { ...STATS, uptime: Date.now() - STATS.uptimeStart });
   }
 }
+
+// ── Media detection (stream hunter) ─────────────────
+// Nivel de módulo (no dentro de app.whenReady) para que tanto la sesión
+// principal como cada sesión aislada (setupExtraSession) puedan pasarla
+// como mediaCallback y así tener el Stream Hunter funcionando igual en las dos.
+function checkMedia(u, pageUrl, resourceType) {
+  if (!CFG.mediaDetect) return;
+  if (SKIP_EXT_RE.test(u) || /^(about|data|javascript):/i.test(u)) return;
+  if (/\/(?:favicon|faviconv2|s2\/favicons)(?:[/?#]|$)/i.test(u) || /favicon/i.test(u)) return;
+  // Omitir segmentos HLS sueltos — solo playlists y archivos directos
+  if (/\.ts(\?|#|$)/i.test(u)) return;
+  if (/\/seg(?:ment)?[\d._-]/i.test(u)) return;
+  // Facebook/Instagram solicitan muchos rangos MP4 parciales para llenar
+  // el reproductor; no son archivos descargables independientes.
+  if (/[?&](?:bytestart|byteend|range|start|end)=/i.test(u)) return;
+  const hasMediaToken = /[?&](token|exp|sign|auth|st|nonce|signature|hls|m3u8|mpd|playlist)=/i.test(u);
+  // Las imágenes genéricas incluyen favicons, avatares y miniaturas. No son
+  // evidencia de un stream; solo media/audio o una URL multimedia explícita.
+  if (!MEDIA_RE.test(u) && !hasMediaToken && !(resourceType === 'media' || resourceType === 'audio')) return;
+  if (MEDIA_URLS.find(m => m.url === u)) return;
+  const type = HLS_RE.test(u) ? 'HLS' : u.includes('.mpd') ? 'DASH' : resourceType === 'audio' ? 'AUDIO' : 'MP4';
+  const entry = { url: u, pageUrl: pageUrl || '', type, ts: new Date().toISOString() };
+  MEDIA_URLS.push(entry);
+  if (MEDIA_URLS.length > 500) MEDIA_URLS.splice(0, MEDIA_URLS.length - 500);
+  STATS.detectedMedia++;
+  ACTIONS.emit('media-detected', { ...entry, count: STATS.detectedMedia });
+  ACTIONS.emit('stats-update', { ...STATS, uptime: Date.now() - STATS.uptimeStart });
+}
+
+// ── Descargas nativas del navegador (will-download) ──
+// Nivel de módulo (igual que checkMedia) para poder engancharla tanto en la
+// sesión principal como en cada sesión aislada (setupExtraSession), y que
+// las descargas hechas ahí también aparezcan en el panel de descargas.
+function registerNativeDownloadHandler(sess) {
+  sess.on('will-download', (event, item, webContents) => {
+    try {
+      const url = item.getURL() || '';
+      const pageUrl = webContents?.getURL?.() || '';
+      let filename = item.getFilename() || 'descarga';
+      // Perchance: los botones de descarga de la galería/t2i crean
+      // <a href="blob:/data:" download> y llaman .click(), lo que dispara
+      // will-download con URL blob:/data:. Aseguramos nombre/extensión legible
+      // (solo para páginas Perchance; el resto conserva el comportamiento).
+      if (isPerchanceHost(pageUrl) && /^(blob|data):/i.test(url)) {
+        if (!filename || filename === 'descarga') {
+          const m = /^data:([^;,]+)/i.exec(url);
+          const mime = m ? m[1] : '';
+          const ext = mime.includes('png') ? '.png'
+            : mime.includes('jpeg') || mime.includes('jpg') ? '.jpg'
+            : mime.includes('gif') ? '.gif'
+            : mime.includes('webp') ? '.webp'
+            : mime.includes('webm') ? '.webm'
+            : mime.includes('mp4') ? '.mp4'
+            : mime.includes('ogg') ? '.ogg'
+            : mime.includes('mp3') ? '.mp3' : '';
+          filename = 'perchance-' + Date.now() + ext;
+        }
+      }
+      const totalBytes = item.getTotalBytes();
+      const dlId = pendingNativeRetryId || ('dl-native-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
+      pendingNativeRetryId = null;
+      const dlDir = CFG.downloadDir || app.getPath('downloads');
+      if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
+      nativeDlRegistry.set(dlId, { id: dlId, item, url, filename, webContentsId: webContents?.id, state: 'active' });
+      // Guardar en la carpeta de descargas configurada
+      item.setSavePath(path.join(dlDir, filename));
+
+      // Avisar al renderer para cerrar la pestaña popup que solo sirvió
+      // para iniciar esta descarga (comportamiento de navegadores normales:
+      // la pestaña de descarga se abre y se cierra sola).
+      try {
+        mainWin?.webContents?.send('dl-native-tab', { wcId: webContents?.id });
+      } catch {}
+
+      ACTIONS.emit('dl-native', {
+        id: dlId,
+        url,
+        filename,
+        totalBytes,
+        pageUrl,
+        state: 'active'
+      });
+
+      item.on('updated', (e, state) => {
+        const entry = nativeDlRegistry.get(dlId);
+        if (entry) entry.state = item.isPaused() ? 'paused' : state === 'progressing' ? 'active' : state;
+        const received = item.getReceivedBytes();
+        const pct = totalBytes > 0 ? Math.round(received / totalBytes * 100) : 0;
+        ACTIONS.emit('dl-native-progress', {
+          id: dlId,
+          url,
+          filename,
+          received,
+          totalBytes,
+          pct,
+          state
+        });
+      });
+
+      item.on('done', (e, state) => {
+        const entry = nativeDlRegistry.get(dlId);
+        if (entry) entry.state = state === 'completed' ? 'done' : state === 'cancelled' ? 'cancelled' : 'error';
+        const received = item.getReceivedBytes();
+        const size = (received / 1048576).toFixed(1);
+        const filePath = item.getSavePath();
+        ACTIONS.emit('dl-native-done', {
+          id: dlId,
+          url,
+          filename,
+          file: filePath,
+          size,
+          state,
+          cancelled: state === 'cancelled' || state === 'interrupted'
+        });
+      });
+    } catch (e) {
+      console.error('[DL-NATIVE]', e.message);
+    }
+  });
+}
+
 ipcMain.handle('get-stats', () => ({ ...STATS, uptime: Date.now() - STATS.uptimeStart }));
 ipcMain.handle('reset-stats', () => {
   STATS = { pagesLoaded: 0, totalRequests: 0, detectedAds: 0, detectedTrackers: 0, detectedThird: 0, blockedAds: 0, blockedTrackers: 0, blockedThird: 0, blockedCrypto: 0, detectedMedia: 0, requestsBlocked: 0, cookiesBlocked: 0, bytesDownloaded: 0, uptimeStart: Date.now() };
@@ -1894,10 +2023,20 @@ ipcMain.handle('clear-cookies', async () => {
 ipcMain.handle('clear-cache', async () => {
   try { await sess().clearCache(); return { ok: true }; } catch (e) { return { error: e.message }; }
 });
+// Paleta fija de acento por sesión — solo para distinguir a simple vista
+// una sesión aislada de otra (y de los paneles de chat, que no usan esto).
+const SESSION_COLOR_PALETTE = ['#ff6b6b', '#ffa94d', '#ffd43b', '#69db7c', '#4dabf7', '#748ffc', '#da77f2', '#f783ac'];
 ipcMain.handle('sessions:list', () => CFG.extraSessions || []);
-ipcMain.handle('sessions:create', (e, { name } = {}) => {
+ipcMain.handle('sessions:create', (e, { name, color } = {}) => {
   const id = 'sess_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  const entry = { id, name: String(name || 'Nueva sesión').trim().slice(0, 40) || 'Nueva sesión', createdAt: Date.now() };
+  const usedColors = new Set((CFG.extraSessions || []).map(s => s.color));
+  const autoColor = SESSION_COLOR_PALETTE.find(c => !usedColors.has(c)) || SESSION_COLOR_PALETTE[(CFG.extraSessions || []).length % SESSION_COLOR_PALETTE.length];
+  const entry = {
+    id,
+    name: String(name || 'Nueva sesión').trim().slice(0, 40) || 'Nueva sesión',
+    color: SESSION_COLOR_PALETTE.includes(color) ? color : autoColor,
+    createdAt: Date.now()
+  };
   CFG.extraSessions = [...(CFG.extraSessions || []), entry];
   saveCfg();
   try { setupExtraSession(session.fromPartition(extraSessionPartition(id))); } catch (e2) { console.error('[sessions:create]', e2.message); }
@@ -1909,6 +2048,14 @@ ipcMain.handle('sessions:rename', (_e, { id, name }) => {
   s.name = String(name || '').trim().slice(0, 40) || s.name;
   saveCfg();
   return { ok: true, name: s.name };
+});
+ipcMain.handle('sessions:set-color', (_e, { id, color }) => {
+  const s = (CFG.extraSessions || []).find(s => s.id === id);
+  if (!s) return { ok: false, error: 'no encontrada' };
+  if (!SESSION_COLOR_PALETTE.includes(color)) return { ok: false, error: 'color inválido' };
+  s.color = color;
+  saveCfg();
+  return { ok: true, color: s.color };
 });
 ipcMain.handle('sessions:delete', async (_e, { id }) => {
   CFG.extraSessions = (CFG.extraSessions || []).filter(s => s.id !== id);
@@ -3401,91 +3548,9 @@ app.whenReady().then(() => {
   // ── Descargas nativas del navegador (will-download) ──
   // Captura descargas normales (botón "Descargar", enlaces directos, etc.)
   // que no pasan por el detector de streams, y las muestra en el panel.
-  sess.on('will-download', (event, item, webContents) => {
-    try {
-      const url = item.getURL() || '';
-      const pageUrl = webContents?.getURL?.() || '';
-      let filename = item.getFilename() || 'descarga';
-      // Perchance: los botones de descarga de la galería/t2i crean
-      // <a href="blob:/data:" download> y llaman .click(), lo que dispara
-      // will-download con URL blob:/data:. Aseguramos nombre/extensión legible
-      // (solo para páginas Perchance; el resto conserva el comportamiento).
-      if (isPerchanceHost(pageUrl) && /^(blob|data):/i.test(url)) {
-        if (!filename || filename === 'descarga') {
-          const m = /^data:([^;,]+)/i.exec(url);
-          const mime = m ? m[1] : '';
-          const ext = mime.includes('png') ? '.png'
-            : mime.includes('jpeg') || mime.includes('jpg') ? '.jpg'
-            : mime.includes('gif') ? '.gif'
-            : mime.includes('webp') ? '.webp'
-            : mime.includes('webm') ? '.webm'
-            : mime.includes('mp4') ? '.mp4'
-            : mime.includes('ogg') ? '.ogg'
-            : mime.includes('mp3') ? '.mp3' : '';
-          filename = 'perchance-' + Date.now() + ext;
-        }
-      }
-      const totalBytes = item.getTotalBytes();
-      const dlId = pendingNativeRetryId || ('dl-native-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
-      pendingNativeRetryId = null;
-      const dlDir = CFG.downloadDir || app.getPath('downloads');
-      if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
-      nativeDlRegistry.set(dlId, { id: dlId, item, url, filename, webContentsId: webContents?.id, state: 'active' });
-      // Guardar en la carpeta de descargas configurada
-      item.setSavePath(path.join(dlDir, filename));
-
-      // Avisar al renderer para cerrar la pestaña popup que solo sirvió
-      // para iniciar esta descarga (comportamiento de navegadores normales:
-      // la pestaña de descarga se abre y se cierra sola).
-      try {
-        mainWin?.webContents?.send('dl-native-tab', { wcId: webContents?.id });
-      } catch {}
-
-      ACTIONS.emit('dl-native', {
-        id: dlId,
-        url,
-        filename,
-        totalBytes,
-        pageUrl,
-        state: 'active'
-      });
-
-      item.on('updated', (e, state) => {
-        const entry = nativeDlRegistry.get(dlId);
-        if (entry) entry.state = item.isPaused() ? 'paused' : state === 'progressing' ? 'active' : state;
-        const received = item.getReceivedBytes();
-        const pct = totalBytes > 0 ? Math.round(received / totalBytes * 100) : 0;
-        ACTIONS.emit('dl-native-progress', {
-          id: dlId,
-          url,
-          filename,
-          received,
-          totalBytes,
-          pct,
-          state
-        });
-      });
-
-      item.on('done', (e, state) => {
-        const entry = nativeDlRegistry.get(dlId);
-        if (entry) entry.state = state === 'completed' ? 'done' : state === 'cancelled' ? 'cancelled' : 'error';
-        const received = item.getReceivedBytes();
-        const size = (received / 1048576).toFixed(1);
-        const filePath = item.getSavePath();
-        ACTIONS.emit('dl-native-done', {
-          id: dlId,
-          url,
-          filename,
-          file: filePath,
-          size,
-          state,
-          cancelled: state === 'cancelled' || state === 'interrupted'
-        });
-      });
-    } catch (e) {
-      console.error('[DL-NATIVE]', e.message);
-    }
-  });
+  // (extraído a registerNativeDownloadHandler() para poder engancharlo
+  // también en cada sesión aislada — ver setupExtraSession)
+  registerNativeDownloadHandler(sess);
 
   // ── Live request log & cookie interception ──
   sess.webRequest.onBeforeSendHeaders({ urls: ['<all_urls>'] }, (d, cb) => {
@@ -3727,31 +3792,9 @@ app.whenReady().then(() => {
     m.setup({ cfg: CFG });
   } catch (e) { console.error('[WA-EXTRACT]', e.message); }
 
-  // ── Media detection (stream hunter) ─────────────────
-
-  function checkMedia(u, pageUrl, resourceType) {
-    if (!CFG.mediaDetect) return;
-    if (SKIP_EXT_RE.test(u) || /^(about|data|javascript):/i.test(u)) return;
-    if (/\/(?:favicon|faviconv2|s2\/favicons)(?:[/?#]|$)/i.test(u) || /favicon/i.test(u)) return;
-    // Omitir segmentos HLS sueltos — solo playlists y archivos directos
-    if (/\.ts(\?|#|$)/i.test(u)) return;
-    if (/\/seg(?:ment)?[\d._-]/i.test(u)) return;
-    // Facebook/Instagram solicitan muchos rangos MP4 parciales para llenar
-    // el reproductor; no son archivos descargables independientes.
-    if (/[?&](?:bytestart|byteend|range|start|end)=/i.test(u)) return;
-    const hasMediaToken = /[?&](token|exp|sign|auth|st|nonce|signature|hls|m3u8|mpd|playlist)=/i.test(u);
-    // Las imágenes genéricas incluyen favicons, avatares y miniaturas. No son
-    // evidencia de un stream; solo media/audio o una URL multimedia explícita.
-    if (!MEDIA_RE.test(u) && !hasMediaToken && !(resourceType === 'media' || resourceType === 'audio')) return;
-    if (MEDIA_URLS.find(m => m.url === u)) return;
-    const type = HLS_RE.test(u) ? 'HLS' : u.includes('.mpd') ? 'DASH' : resourceType === 'audio' ? 'AUDIO' : 'MP4';
-    const entry = { url: u, pageUrl: pageUrl || '', type, ts: new Date().toISOString() };
-    MEDIA_URLS.push(entry);
-    if (MEDIA_URLS.length > 500) MEDIA_URLS.splice(0, MEDIA_URLS.length - 500);
-    STATS.detectedMedia++;
-    ACTIONS.emit('media-detected', { ...entry, count: STATS.detectedMedia });
-    ACTIONS.emit('stats-update', { ...STATS, uptime: Date.now() - STATS.uptimeStart });
-  }
+  // checkMedia ahora es una función de nivel de módulo (ver más arriba, junto
+  // a recordBlockedRequest/recordObservedRequest) para poder reutilizarla en
+  // setupExtraSession(). Se sigue usando igual acá abajo.
 
   // Adblocker module
   try {
