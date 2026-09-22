@@ -201,6 +201,13 @@ describe('parseGlobalBlockRule / isGlobalBlockMatch', () => {
 });
 
 describe('navigation guard redirects', () => {
+  test('identifica el dominio registrable aunque el subdominio no sea común', () => {
+    assert.equal(siteRootIdentity('accounts.google.com'), 'google');
+    assert.equal(siteRootIdentity('shop.amazon.co.jp'), 'amazon');
+    assert.equal(isSameNavigationSite('https://accounts.google.com/login', 'https://mail.google.com/inbox'), true);
+    assert.equal(isSameNavigationSite('https://shop.amazon.co.jp/cart', 'https://checkout.amazon.co.jp/pay'), true);
+  });
+
   test('trata como mismo sitio un dominio migrado al canónico correcto', () => {
     assert.equal(siteRootIdentity('vww.monoschinos2.net'), 'monoschinos');
     assert.equal(siteRootIdentity('monoschinos.st'), 'monoschinos');

@@ -5588,6 +5588,18 @@ function bindDownloadEvents() {
     const ov = $('dl-overlay');
     if (ov && !ov.classList.contains('open')) ov.classList.add('open');
     const dlId = d.id;
+    const existing = document.getElementById(dlId);
+    if (existing) {
+      existing.dataset.state = 'active';
+      setDlButtons(existing, 'active');
+      const existingPct = $('pct-' + dlId);
+      if (existingPct) { existingPct.textContent = '0%'; existingPct.style.color = 'var(--accent)'; }
+      const existingFill = $('fill-' + dlId);
+      if (existingFill) { existingFill.style.width = '0%'; existingFill.classList.remove('error'); }
+      const existingMeta = $('meta-' + dlId);
+      if (existingMeta) existingMeta.textContent = '0 B / ' + fmtBytes(d.totalBytes || 0);
+      return;
+    }
     const dom = (d.url || '').replace(/https?:\/\//, '').split('/')[0] || '';
     const fullName = d.filename || 'descarga';
     const friendly = compactDownloadName(fullName);
@@ -5606,7 +5618,10 @@ function bindDownloadEvents() {
      +'<div class="pbar"><div class="pfill" id="fill-'+dlId+'" style="width:0%"></div></div>'
      +'<div class="dl-meta"><span id="meta-'+dlId+'">0 B / '+fmtBytes(d.totalBytes||0)+'</span><span id="speed-'+dlId+'">— KB/s</span></div>'
      +'<div class="dl-actions">'
-     +  '<button class="dl-btn" data-act="cancel" onclick="dlNativeCancel(\''+dlId+'\')" title="Cancelar">✕</button>'
+    +  '<button class="dl-btn" data-act="pause" onclick="dlNativeAction(\'pause\',\''+dlId+'\')" title="Pausar">⏸</button>'
+    +  '<button class="dl-btn" data-act="resume" onclick="dlNativeAction(\'resume\',\''+dlId+'\')" title="Reanudar" style="display:none">▶</button>'
+    +  '<button class="dl-btn" data-act="cancel" onclick="dlNativeAction(\'cancel\',\''+dlId+'\')" title="Cancelar">✕</button>'
+    +  '<button class="dl-btn" data-act="retry" onclick="dlNativeAction(\'retry\',\''+dlId+'\')" title="Reintentar" style="display:none">↻</button>'
      +'</div>';
     queue.insertBefore(el, queue.firstChild);
     // Registrar en historial persistente
@@ -5646,6 +5661,38 @@ function bindDownloadEvents() {
     if (m) m.textContent = fmtBytes(d.received||0)+' / '+fmtBytes(d.totalBytes||0);
   });
 
+  window.dlNativeAction = async (action, id) => {
+    const item = document.getElementById(id);
+    if (!item) return;
+    let result;
+    if (action === 'pause') result = await mc.dlNativePause(id);
+    else if (action === 'resume') result = await mc.dlNativeResume(id);
+    else if (action === 'cancel') result = await mc.dlNativeCancel(id);
+    else result = await mc.dlNativeRetry(id);
+    if (!result?.ok) return;
+    const p = $('pct-' + id);
+    if (action === 'pause') {
+      item.dataset.state = 'paused'; setDlButtons(item, 'paused');
+      if (p) { p.textContent = '⏸ Pausado'; p.style.color = 'var(--warn)'; }
+      trackDownload({ id, state: 'paused', ts: Date.now() });
+    } else if (action === 'resume') {
+      item.dataset.state = 'active'; setDlButtons(item, 'active');
+      if (p) { p.textContent = '0%'; p.style.color = 'var(--accent)'; }
+      trackDownload({ id, state: 'active', ts: Date.now() });
+    } else if (action === 'cancel') {
+      item.dataset.state = 'cancelled'; setDlButtons(item, 'cancelled');
+      if (p) { p.textContent = '✕ Cancelado'; p.style.color = 'var(--danger)'; }
+      trackDownload({ id, state: 'cancelled', ts: Date.now() });
+    } else {
+      item.dataset.state = 'active'; setDlButtons(item, 'active');
+      if (p) { p.textContent = '0%'; p.style.color = 'var(--accent)'; }
+      const f = $('fill-' + id); if (f) { f.style.width = '0%'; f.classList.remove('error'); }
+      trackDownload({ id, state: 'active', ts: Date.now() });
+      dlActive++;
+      setText('dl-count-badge', dlActive + ' activas');
+    }
+  };
+
   mc.on('dl-native-done', d => {
     const item = document.getElementById(d.id);
     if (item) {
@@ -5668,6 +5715,7 @@ function bindDownloadEvents() {
         if (meta) meta.innerHTML = '<a href="#" onclick="openDlFile(\'' + id + '\');return false;" style="color:var(--accent);text-decoration:underline;">Abrir archivo</a> &middot; <a href="#" onclick="mc.openDlFolder();return false;" style="color:var(--accent);text-decoration:underline;">Abrir carpeta</a>';
         const speed = $('speed-'+id); if (speed) speed.textContent = '';
       }
+      setDlButtons(item, d.cancelled ? 'cancelled' : 'done');
     }
     // Persistir en historial
     trackDownload({
@@ -5681,14 +5729,6 @@ function bindDownloadEvents() {
     if (!d.cancelled) addSidebarLog('allowed', '[DL] Descarga nativa completada: ' + (d.filename || ''));
   });
 
-  // Resultado de "Guardar contenido generado" (menú contextual)
-  mc.on('save-generated-result', d => {
-    if (d && d.ok) {
-      addSidebarLog('allowed', '[SAVE] Contenido generado guardado: ' + (d.path || ''));
-    } else {
-      addSidebarLog('blocked', '[SAVE] No se pudo guardar: ' + ((d && d.error) || 'error desconocido'));
-    }
-  });
 }
 
 // Abre el archivo descargado con la app predeterminada del sistema
