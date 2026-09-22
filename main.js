@@ -1560,6 +1560,8 @@ async function finalizeMediaFile(rawPath, finalPath, inputFormat) {
 // ── Download control registry ────────────────────
 // Permite pausar / reanudar / cancelar descargas activas por ID único.
 const dlRegistry = new Map(); // id -> { id, url, type, state, controller }
+const nativeDlRegistry = new Map(); // id -> { item, url, webContentsId, state }
+let pendingNativeRetryId = null;
 class PauseSignal extends Error {}
 
 function dlRegister(id, url, type) {
@@ -1820,6 +1822,32 @@ ipcMain.handle('dl-cancel', (_e, id) => {
     if (e.controller) e.controller.abort();
   }
   return { ok: true };
+});
+ipcMain.handle('dl-native-pause', (_e, id) => {
+  const entry = nativeDlRegistry.get(id);
+  if (!entry || entry.state !== 'active') return { ok: false };
+  try { entry.item.pause(); entry.state = 'paused'; return { ok: true }; } catch { return { ok: false }; }
+});
+ipcMain.handle('dl-native-resume', (_e, id) => {
+  const entry = nativeDlRegistry.get(id);
+  if (!entry || entry.state !== 'paused') return { ok: false };
+  try { entry.item.resume(); entry.state = 'active'; return { ok: true }; } catch { return { ok: false }; }
+});
+ipcMain.handle('dl-native-cancel', (_e, id) => {
+  const entry = nativeDlRegistry.get(id);
+  if (!entry || !['active', 'paused'].includes(entry.state)) return { ok: false };
+  try { entry.item.cancel(); entry.state = 'cancelled'; return { ok: true }; } catch { return { ok: false }; }
+});
+ipcMain.handle('dl-native-retry', (_e, id) => {
+  const entry = nativeDlRegistry.get(id);
+  if (!entry || !entry.url) return { ok: false };
+  try {
+    pendingNativeRetryId = id;
+    const source = require('electron').webContents.fromId(entry.webContentsId);
+    if (source && !source.isDestroyed()) source.downloadURL(entry.url);
+    else sess.downloadURL(entry.url);
+    return { ok: true };
+  } catch { return { ok: false }; }
 });
 ipcMain.handle('open-dl-folder', () => { shell.openPath(CFG.downloadDir || app.getPath('downloads')); });
 ipcMain.handle('dl:open-file', async (_e, filePath) => {
@@ -2571,11 +2599,7 @@ async function resolveCtxCssPoint(wc, params) {
   };
 }
 
-// Guarda contenido generado por la página (perchance y otros generadores):
-// imágenes en <canvas>, <img>/<video> con blob: o data:, etc. El JS inyectado
-// extrae el contenido como data URL; si es una URL http normal se delega en
-// el gestor de descargas nativo.
-async function saveGeneratedContent(wc, params) {
+/* REMOVED_GENERATED_CONTENT_HANDLER
   try {
     if (!wc || wc.isDestroyed()) return;
     const pt = await resolveCtxCssPoint(wc, params);
@@ -2704,6 +2728,7 @@ async function saveGeneratedContent(wc, params) {
     mainWin?.webContents?.send('save-generated-result', { ok: false, error: err.message || String(err) });
   }
 }
+*/
 
 // === WINDOW EVENTS (popups -> nueva pestaña) ────────────
 app.on('web-contents-created', (event, wc) => {
@@ -2712,15 +2737,6 @@ app.on('web-contents-created', (event, wc) => {
   // permite que el servidor complete su cadena HTTP de redirecciones sin que
   // la política anti-redirección la corte en el primer dominio externo.
   wc.on('will-navigate', () => markExplicitNavigation(wc.id));
-  wc.on('did-start-navigation', (_event, url, isInPlace, isMainFrame) => {
-    if (isMainFrame) {
-      // El navegador debe distinguir la navegación iniciada por el usuario de la
-      // auto-redirect de la página. `will-redirect` puede dispararse antes de que
-      // la cadena principal quede estabilizada; marcar el webContents aquí evita
-      // partir la navegación real por un redirect que pertenece al mismo flujo.
-      markExplicitNavigation(wc.id);
-    }
-  });
   wc.on('will-redirect', (navigationEvent, url, isInPlace, isMainFrame) => {
     // Navegación explícita del usuario (barra de URL, marcador, historial,
     // atajo, clic en enlace): NO bloquear sus redirecciones. Las reglas
@@ -2755,11 +2771,7 @@ app.on('web-contents-created', (event, wc) => {
   // confirma (tras la cadena de redirecciones), así que limpiar ahí permite
   // la cadena inicial pero vuelve a bloquear auto-redirecciones posteriores
   // de la página (anuncios) durante el resto de la carga.
-  // No borrar inmediatamente en `did-navigate`: algunas versiones de
-  // Chromium lo emiten para un salto intermedio de la cadena. El temporizador
-  // permite el siguiente salto y vuelve a bloquear auto-redirecciones después
-  // de que la navegación se estabiliza.
-  wc.on('did-navigate', () => keepExplicitNavigationAlive(wc.id));
+  wc.on('did-navigate', () => clearExplicitNavigation(wc.id));
   wc.on('did-fail-load', () => clearExplicitNavigation(wc.id));
   wc.on('did-start-navigation', (_event, url, isInPlace, isMainFrame) => {
     if (isMainFrame && /^https?:\/\/(?:[^/]+\.)?whatsapp\.(?:com|net)(?:\/|$)/i.test(url)) {
@@ -2946,15 +2958,6 @@ app.on('web-contents-created', (event, wc) => {
         }
       );
     }
-    // Guardar contenido generado por la página (perchance y otros generadores):
-    // imágenes en <canvas>, <img>/<video> con blob: o data:, etc.
-    template.push(
-      { type: 'separator' },
-      {
-        label: '💾 Guardar contenido generado',
-        click: () => saveGeneratedContent(wc, params)
-      }
-    );
     if (blockedRule) {
       template.push(
         { type: 'separator' },
@@ -3387,9 +3390,11 @@ app.whenReady().then(() => {
         }
       }
       const totalBytes = item.getTotalBytes();
-      const dlId = 'dl-native-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+      const dlId = pendingNativeRetryId || ('dl-native-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
+      pendingNativeRetryId = null;
       const dlDir = CFG.downloadDir || app.getPath('downloads');
       if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
+      nativeDlRegistry.set(dlId, { id: dlId, item, url, filename, webContentsId: webContents?.id, state: 'active' });
       // Guardar en la carpeta de descargas configurada
       item.setSavePath(path.join(dlDir, filename));
 
@@ -3410,6 +3415,8 @@ app.whenReady().then(() => {
       });
 
       item.on('updated', (e, state) => {
+        const entry = nativeDlRegistry.get(dlId);
+        if (entry) entry.state = item.isPaused() ? 'paused' : state === 'progressing' ? 'active' : state;
         const received = item.getReceivedBytes();
         const pct = totalBytes > 0 ? Math.round(received / totalBytes * 100) : 0;
         ACTIONS.emit('dl-native-progress', {
@@ -3424,6 +3431,8 @@ app.whenReady().then(() => {
       });
 
       item.on('done', (e, state) => {
+        const entry = nativeDlRegistry.get(dlId);
+        if (entry) entry.state = state === 'completed' ? 'done' : state === 'cancelled' ? 'cancelled' : 'error';
         const received = item.getReceivedBytes();
         const size = (received / 1048576).toFixed(1);
         const filePath = item.getSavePath();
