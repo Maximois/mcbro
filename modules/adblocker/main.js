@@ -3,6 +3,7 @@
 const { ipcMain, session } = require('electron');
 const { ListManager, FILTER_LISTS } = require('./lists');
 const { Engine } = require('./engine');
+const { isSameNavigationSite } = require('../../lib/navigation-guard');
 
 // Estado compartido del módulo (se inicializa en setup)
 let cfg = null;

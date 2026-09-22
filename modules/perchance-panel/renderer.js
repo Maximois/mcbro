@@ -77,6 +77,7 @@
     const wv = document.createElement('webview');
     wv.setAttribute('partition', PARTITION);
     wv.setAttribute('useragent', NATIVE_UA);
+    wv.setAttribute('allow', 'autoplay; clipboard-read; clipboard-write; fullscreen; geolocation; media');
     wv.setAttribute('allowpopups', '');
     wv.style.display = 'none';
     const container = document.getElementById('pch-wv-container');

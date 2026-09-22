@@ -213,7 +213,15 @@ describe('navigation guard redirects', () => {
     assert.equal(siteRootIdentity('monoschinos.st'), 'monoschinos');
     assert.equal(isSameNavigationSite('https://monoschinos2.net/anime', 'https://vww.monoschinos2.net/anime'), true);
     assert.equal(isSameNavigationSite('https://monoschinos2.net/anime', 'https://monoschinos.st/anime'), true);
+    assert.equal(isSameNavigationSite('https://monoschinos.st/anime', 'https://vww.monoschinos2.net/anime'), true);
     assert.equal(isSameNavigationSite('https://example.com/anime', 'https://example.net/anime'), true);
+  });
+
+  test('mantiene permitida la transición interna aunque la ruta parezca publicitaria', () => {
+    assert.equal(isSameNavigationSite(
+      'https://vww.monoschinos2.net/anime',
+      'https://monoschinos.st/ads/continue'
+    ), true);
   });
 
   test('mantiene bloqueadas redirecciones entre sitios distintos', () => {

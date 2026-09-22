@@ -40,6 +40,8 @@ const SUFFIX_HOSTS = [
   "esm.sh",
   "cdn.jsdelivr.net",
   "cdnjs.cloudflare.com",
+  "cloudflare.com",
+  "cloudflareinsights.com",
   "unpkg.com",
   "huggingface.co",
   "hf.co",
