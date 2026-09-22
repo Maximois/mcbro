@@ -2771,7 +2771,16 @@ app.on('web-contents-created', (event, wc) => {
   // confirma (tras la cadena de redirecciones), así que limpiar ahí permite
   // la cadena inicial pero vuelve a bloquear auto-redirecciones posteriores
   // de la página (anuncios) durante el resto de la carga.
-  wc.on('did-navigate', () => clearExplicitNavigation(wc.id));
+  // did-navigate puede dispararse en un salto INTERMEDIO de la cadena de
+  // redirecciones en algunas versiones de Chromium, no solo al final —
+  // borrar la marca de navegación explícita ahí mismo corta la protección
+  // a mitad de una cadena legítima (muy común en sitios con varios
+  // subdominios: login.x.com -> api.x.com -> app.x.com), y el siguiente
+  // salto de esa MISMA navegación queda bloqueado como si fuera ajeno.
+  // keepExplicitNavigationAlive() renueva el margen de 2.5s en vez de
+  // cortarlo en seco; did-fail-load sigue limpiando de inmediato porque
+  // ahí no hay cadena que proteger.
+  wc.on('did-navigate', () => keepExplicitNavigationAlive(wc.id));
   wc.on('did-fail-load', () => clearExplicitNavigation(wc.id));
   wc.on('did-start-navigation', (_event, url, isInPlace, isMainFrame) => {
     if (isMainFrame && /^https?:\/\/(?:[^/]+\.)?whatsapp\.(?:com|net)(?:\/|$)/i.test(url)) {
