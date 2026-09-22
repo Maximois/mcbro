@@ -632,6 +632,7 @@ module.exports = {
   setup,
   FALLBACK_DOMAINS,
   isAggressiveAdNavigation,
+  isExplicitlyBlocked,
   isUntrustedThirdPartyResource,
   isTrustedResource,
   isVideoHost,

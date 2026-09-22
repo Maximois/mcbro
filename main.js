@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawn, execFile } = require('child_process');
 const crypto = require('crypto');
-const { isAggressiveAdNavigation, isTrustedResource, isVideoHost } = require('./modules/adblocker/main');
+const { isAggressiveAdNavigation, isExplicitlyBlocked, isTrustedResource, isVideoHost } = require('./modules/adblocker/main');
 const Permissions = require('./lib/permissions');
 const { isSameNavigationSite: isSameNavigationSiteShared } = require('./lib/navigation-guard');
 const { isWebContentsFrameAlive, sanitizeAiConfigForPublic } = Permissions;
@@ -204,14 +204,26 @@ function cookieRemovalUrl(cookie, fallbackHost) {
   return `${scheme}://${domain}${cookiePath.startsWith('/') ? cookiePath : '/' + cookiePath}`;
 }
 
+function stripUrlQuery(url) {
+  return String(url || '').split(/[?#]/)[0];
+}
+
 function createRequestGuard() {
   return (details) => {
     try {
       const requestHost = normalizeSiteHost(details?.url || '');
       // Fallback a referrer cuando documentUrl viene vacío (primera navegación)
       const documentHost = normalizeSiteHost(details?.documentUrl || details?.referrer || '');
+      // Coincidencia sin query string: muchos sitios (sobre todo los que
+      // sirven recursos desde varios subdominios/CDN) regeneran sus scripts
+      // con un parámetro de cache-busting o token distinto en cada carga.
+      // Comparar por URL exacta hacía que una regla "Permitir" guardada una
+      // vez dejara de aplicar en la siguiente carga de la MISMA página —
+      // se veía como si el permiso "no se diera" o "volviera a bloquearse".
+      const requestUrlNoQuery = stripUrlQuery(details?.url);
       const resourceRule = (Array.isArray(CFG.resourceRules) ? CFG.resourceRules : [])
-        .find(rule => rule && rule.url === details?.url && (!rule.resourceType || rule.resourceType === details?.resourceType));
+        .find(rule => rule && (rule.url === details?.url || stripUrlQuery(rule.url) === requestUrlNoQuery)
+          && (!rule.resourceType || rule.resourceType === details?.resourceType));
       if (resourceRule?.action === 'allow') return { allow: true };
       if (resourceRule?.action === 'block') return { cancel: true };
       // Reglas personalizadas:
@@ -2738,6 +2750,21 @@ app.on('web-contents-created', (event, wc) => {
   // la política anti-redirección la corte en el primer dominio externo.
   wc.on('will-navigate', () => markExplicitNavigation(wc.id));
   wc.on('will-redirect', (navigationEvent, url, isInPlace, isMainFrame) => {
+    // Incluso con navegación explícita, un salto que matchea patrones
+    // CONOCIDOS de red de anuncios/malvertising se bloquea igual — esto no
+    // afecta cadenas legítimas (afiliados, OAuth, pasarelas de pago), que por
+    // definición no matchean esos patrones. Cierra el hueco por el que un
+    // script de anuncios embebido en la página (que dispara su propio
+    // 'will-navigate', marcado como intención explícita para no romper
+    // redirecciones reales) podía saltar a un dominio de ads sin que esta
+    // guardia lo viera, aunque la lista de red ya lo conociera.
+    let targetHostForAdCheck = '';
+    try { targetHostForAdCheck = new URL(url).hostname.toLowerCase(); } catch {}
+    if (targetHostForAdCheck && (isAggressiveAdNavigation(url) || isExplicitlyBlocked(targetHostForAdCheck, wc.getURL()))) {
+      try { navigationEvent.preventDefault(); } catch {}
+      try { mainWin?.webContents?.send('req-blocked', { type: 'navigation', url, msg: 'Redirección a dominio de anuncios bloqueada' }); } catch {}
+      return;
+    }
     // Navegación explícita del usuario (barra de URL, marcador, historial,
     // atajo, clic en enlace): NO bloquear sus redirecciones. Las reglas
     // anti-redirección solo aplican a auto-redirecciones de la página.
