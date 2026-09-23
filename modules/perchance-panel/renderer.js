@@ -1,6 +1,6 @@
 // modules/perchance-panel/renderer.js
 // Panel de Perchance: mini-navegador en sidebar con marcadores propios.
-// Usa la partición persist:perchance (allowlist, permisos, CSP/XFO y
+// Usa una partición temporal propia (permisos, CSP/XFO y
 // descargas blob/data) configurada por perchance/perchance-panel.js en el
 // proceso principal. El <webview> navega libremente (mainFrame permitido) y
 // los recursos del ecosistema Perchance cargan sin bloqueos.
@@ -10,8 +10,7 @@
 
   const HOME_DEFAULT = 'https://perchance.org/4cffvbcm0c';
   const NEW_TAB_DEFAULT = 'https://www.google.com/';
-  const PARTITION = 'persist:perchance';
-  const NATIVE_UA = navigator.userAgent;
+  const PARTITION = 'persist:perchance-clean';
   const BM_KEY = 'mc_perchance_bookmarks';
   const HIST_KEY = 'mc_perchance_history';
   const SET_KEY = 'mc_perchance_settings';
@@ -76,15 +75,13 @@
   function createWebview() {
     const wv = document.createElement('webview');
     wv.setAttribute('partition', PARTITION);
-    wv.setAttribute('useragent', NATIVE_UA);
-    wv.setAttribute('allow', 'autoplay; clipboard-read; clipboard-write; fullscreen; geolocation; media');
     wv.setAttribute('allowpopups', '');
+    // Sin preload / sin nodeIntegration: el motor de Perchance habla por
+    // postMessage entre orígenes y hace eval/window.open. No reescribir nada.
+    wv.setAttribute('webpreferences', 'contextIsolation=yes,nodeIntegration=no,sandbox=yes,webSecurity=yes,backgroundThrottling=no');
     wv.style.display = 'none';
     const container = document.getElementById('pch-wv-container');
     if (container) container.appendChild(wv);
-    wv.addEventListener('did-start-navigation', (e) => {
-      if (e.isMainFrame !== false) setUserAgentForUrl(wv, e.url);
-    });
     wv.addEventListener('did-navigate', () => {
       syncActive();
       const u = safeGetURL(wv);
@@ -108,20 +105,6 @@
     wv.addEventListener('did-fail-load', (e) => {
       if (e.errorCode !== -3) console.warn('[PCH] carga fallida:', e.errorDescription, e.errorCode, e.validatedURL);
     });
-    wv.addEventListener('dom-ready', () => {
-      try {
-        if (!wv.getURL()) wv.loadURL(homeUrl());
-        installNavInterceptor(wv);
-      } catch {}
-    });
-    // Fallback: si un enlace/popup escapa al interceptor inyectado, navega
-    // dentro del panel en vez de abrir popups sueltos o pestañas del navegador.
-    wv.addEventListener('new-window', (e) => {
-      e.preventDefault();
-      const url = e.url || '';
-      if (!url) return;
-      addTab(url);
-    });
     return wv;
   }
 
@@ -136,48 +119,45 @@
     } catch {}
   }
 
-  function setUserAgentForUrl(wv, url) {
-    try {
-      wv.setAttribute('useragent', NATIVE_UA);
-    } catch { wv.setAttribute('useragent', NATIVE_UA); }
-  }
-
-  // Intercepta window.open y clics en <a target="_blank"> para navegar dentro
-  // del panel (mismo webview) en vez de abrir popups.
-  function installNavInterceptor(wv) {
-    try {
-      wv.executeJavaScript(`(() => {
-        if (window.__mcPchNavInstalled) return;
-        window.__mcPchNavInstalled = true;
-        const go = (url) => { if (url) location.href = url; };
-        const origOpen = window.open;
-        window.open = function(url, name, features) { go(url); return null; };
-        document.addEventListener('click', (e) => {
-          const a = e.target && e.target.closest ? e.target.closest('a[target="_blank"]') : null;
-          if (a && a.href) { e.preventDefault(); go(a.href); }
-        }, true);
-      })()`).catch(() => {});
-    } catch {}
-  }
-
   function addTab(url) {
     const id = ++tabSeq;
     const wv = createWebview();
     const initialUrl = url || newTabUrl();
     const tab = { id, title: 'Nueva pestaña', url: initialUrl, wv };
     tabs.push(tab);
-    setUserAgentForUrl(wv, initialUrl);
     wv.setAttribute('src', initialUrl);
     switchTab(id);
     renderTabs();
     return tab;
   }
 
+  function suspendTabs() {
+    tabs.forEach((tab) => {
+      if (!tab.wv) return;
+      const url = safeGetURL(tab.wv);
+      if (url) tab.url = url;
+      const title = safeGetTitle(tab.wv);
+      if (title) tab.title = title;
+      try { tab.wv.remove(); } catch {}
+      tab.wv = null;
+    });
+  }
+
+  function resumeTabs() {
+    tabs.forEach((tab) => {
+      if (tab.wv) return;
+      tab.wv = createWebview();
+      tab.wv.setAttribute('src', tab.url || newTabUrl());
+    });
+    if (activeId && tabs.some(t => t.id === activeId)) switchTab(activeId);
+    else if (tabs[0]) switchTab(tabs[0].id);
+  }
+
   function closeTab(id) {
     const idx = tabs.findIndex(t => t.id === id);
     if (idx < 0) return;
     const [tab] = tabs.splice(idx, 1);
-    try { tab.wv.remove(); } catch {}
+    try { tab.wv?.remove(); } catch {}
     if (activeId === id) {
       const next = tabs[idx] || tabs[idx - 1];
       activeId = next ? next.id : null;
@@ -189,7 +169,7 @@
 
   function switchTab(id) {
     activeId = id;
-    tabs.forEach(t => { t.wv.style.display = t.id === id ? 'flex' : 'none'; });
+    tabs.forEach(t => { if (t.wv) t.wv.style.display = t.id === id ? 'flex' : 'none'; });
     renderTabs();
     syncActive();
   }
@@ -214,23 +194,29 @@
     const el = document.getElementById('perchance-sidebar');
     if (!el) return;
     const opening = !el.classList.contains('open');
+    if (opening) resumeTabs();
+    else suspendTabs();
     el.classList.toggle('open');
     syncToggleBtn(opening);
     if (!opening) closeExtractor();
-    if (opening) {
-      const wv = getWv();
-      if (wv) { try { if (!wv.getURL()) wv.loadURL(homeUrl()); } catch {} }
-    }
   }
   function openPanel() {
     const sb = document.getElementById('perchance-sidebar');
     if (!sb) injectPanel();
     const el = document.getElementById('perchance-sidebar');
-    if (el && !el.classList.contains('open')) { el.classList.add('open'); syncToggleBtn(true); }
+    if (el && !el.classList.contains('open')) {
+      resumeTabs();
+      el.classList.add('open');
+      syncToggleBtn(true);
+    }
   }
   function closePanel() {
     const el = document.getElementById('perchance-sidebar');
-    if (el && el.classList.contains('open')) { el.classList.remove('open'); syncToggleBtn(false); }
+    if (el && el.classList.contains('open')) {
+      suspendTabs();
+      el.classList.remove('open');
+      syncToggleBtn(false);
+    }
     closeExtractor();
   }
 
@@ -256,8 +242,7 @@
     } else {
       url = 'https://duckduckgo.com/?q=' + encodeURIComponent(url);
     }
-    setUserAgentForUrl(wv, url);
-    try { wv.loadURL(url); } catch { wv.setAttribute('src', url); }
+    wv.setAttribute('src', url);
     const i = document.getElementById('pch-urlbar'); if (i) i.value = url;
   }
 
@@ -504,7 +489,9 @@
       if (ev && ev.type === 'done') console.log('[PERCHANCE] descarga:', ev.success ? 'OK' : 'falló', ev.filename);
     });
     mc.on('perchance-open-tab', (url) => {
-      if (/^https?:\/\//i.test(url || '')) addTab(url);
+      if (!/^https?:\/\//i.test(url || '')) return;
+      openPanel();
+      addTab(url);
     });
   }
 

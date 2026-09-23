@@ -10,7 +10,7 @@ const fs = require('fs');
 
 const WA_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 
-function downloadUrl(url, cookieHeader, redirectsLeft) {
+function downloadUrl(url, cookieHeader, redirectsLeft, outputPath) {
   return new Promise((resolve, reject) => {
     let u;
     try { u = new URL(url); } catch { return reject(new Error('URL inválida')); }
@@ -31,15 +31,27 @@ function downloadUrl(url, cookieHeader, redirectsLeft) {
         res.resume();
         if (redirectsLeft <= 0) return reject(new Error('Demasiados redireccionamientos'));
         const next = new URL(res.headers.location, url).toString();
-        return downloadUrl(next, cookieHeader, redirectsLeft - 1).then(resolve, reject);
+        return downloadUrl(next, cookieHeader, redirectsLeft - 1, outputPath).then(resolve, reject);
       }
       if (res.statusCode >= 400) {
         res.resume();
         return reject(new Error('HTTP ' + res.statusCode));
       }
-      const chunks = [];
-      res.on('data', (c) => chunks.push(c));
-      res.on('end', () => resolve(Buffer.concat(chunks)));
+      const output = fs.createWriteStream(outputPath);
+      let size = 0;
+      res.on('data', (chunk) => { size += chunk.length; });
+      res.on('error', (error) => {
+        output.destroy();
+        try { fs.unlinkSync(outputPath); } catch {}
+        reject(error);
+      });
+      output.on('error', (error) => {
+        res.destroy();
+        try { fs.unlinkSync(outputPath); } catch {}
+        reject(error);
+      });
+      output.on('finish', () => resolve(size));
+      res.pipe(output);
     });
     req.on('error', reject);
     req.end();
@@ -88,13 +100,12 @@ function setup({ cfg }) {
       const sess = session.fromPartition('persist:mc');
       const cookies = await sess.cookies.get({ url });
       const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-      const buf = await downloadUrl(url, cookieHeader, 5);
-      if (!buf || !buf.length) return { error: 'Respuesta vacía' };
       const fname = filename || `wa-media-${Date.now()}`;
       const fpath = path.join(dlDir, fname);
-      fs.writeFileSync(fpath, buf);
-      console.log('[WA-EXTRACT] Downloaded:', fpath, buf.length, 'bytes');
-      return { ok: true, path: fpath, filename: fname, size: buf.length };
+      const size = await downloadUrl(url, cookieHeader, 5, fpath);
+      if (!size) return { error: 'Respuesta vacía' };
+      console.log('[WA-EXTRACT] Downloaded:', fpath, size, 'bytes');
+      return { ok: true, path: fpath, filename: fname, size };
     } catch (err) {
       console.error('[WA-EXTRACT] Download error:', err.message);
       return { error: err.message };

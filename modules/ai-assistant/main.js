@@ -497,7 +497,37 @@ function setup(ctx) {
     return Buffer.from(await res.arrayBuffer());
   }
 
-  async function downloadHLS(manifestUrl) {
+  async function downloadToFile(url, outputPath) {
+    const res = await fetch(url, { headers: { 'User-Agent': ctx.cfg?.ua?.chrome || 'Mozilla/5.0' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    if (!res.body || typeof res.body.getReader !== 'function') {
+      const buffer = Buffer.from(await res.arrayBuffer());
+      fs.writeFileSync(outputPath, buffer);
+      return buffer.length;
+    }
+    let fileHandle;
+    let totalBytes = 0;
+    try {
+      fileHandle = fs.openSync(outputPath, 'w');
+      const reader = res.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = Buffer.from(value);
+        fs.writeSync(fileHandle, chunk);
+        totalBytes += chunk.length;
+      }
+      return totalBytes;
+    } catch (error) {
+      try { fs.unlinkSync(outputPath); } catch {}
+      throw error;
+    } finally {
+      try { fs.closeSync(fileHandle); } catch {}
+    }
+  }
+
+  async function downloadHLS(manifestUrl, outputPath) {
     emit('ai:dl:log', 'Obteniendo manifiesto…');
     const manifestText = await (await fetch(manifestUrl, {
       headers: { 'User-Agent': ctx.cfg?.ua?.chrome || 'Mozilla/5.0' }
@@ -543,42 +573,54 @@ function setup(ctx) {
     const resolved = segs.map(s => resolveUrl(playlistUrl, s));
     emit('ai:dl:log', `${resolved.length} segmentos encontrados, descargando…`);
 
-    // Descargar segmentos (4 en paralelo)
-    const bufs = [];
-    const concurrency = 4;
-    for (let i = 0; i < resolved.length; i += concurrency) {
-      const batch = resolved.slice(i, i + concurrency);
-      const results = await Promise.all(batch.map((url, idx) =>
-        downloadSegment(url).catch(e => {
-          emit('ai:dl:log', `Segmento ${i + idx + 1} falló: ${e.message}`);
-          return null;
-        })
-      ));
-      results.forEach((b, idx) => {
-        if (b) bufs.push(b);
-      });
-      emit('ai:dl:log', `Progreso: ${Math.min(i + concurrency, resolved.length)}/${resolved.length}`);
+    // Descargar segmentos (4 en paralelo) y escribir cada lote inmediatamente.
+    let fileHandle;
+    let totalBytes = 0;
+    try {
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fileHandle = fs.openSync(outputPath, 'w');
+    } catch (error) {
+      throw new Error(`No se pudo crear el archivo de descarga: ${error.message}`);
     }
-
-    return Buffer.concat(bufs);
+    const concurrency = 4;
+    try {
+      for (let i = 0; i < resolved.length; i += concurrency) {
+        const batch = resolved.slice(i, i + concurrency);
+        const results = await Promise.all(batch.map((url, idx) =>
+          downloadSegment(url).catch(e => {
+            emit('ai:dl:log', `Segmento ${i + idx + 1} falló: ${e.message}`);
+            return null;
+          })
+        ));
+        for (const buffer of results) {
+          if (!buffer) continue;
+          fs.writeSync(fileHandle, buffer);
+          totalBytes += buffer.length;
+        }
+        emit('ai:dl:log', `Progreso: ${Math.min(i + concurrency, resolved.length)}/${resolved.length}`);
+      }
+      return { path: outputPath, size: totalBytes };
+    } catch (error) {
+      try { fs.unlinkSync(outputPath); } catch {}
+      throw error;
+    } finally {
+      try { fs.closeSync(fileHandle); } catch {}
+    }
   }
 
   ipcMain.handle('ai:dl:url', async (_e, { url, name }) => {
     try {
       emit('ai:dl:log', `Iniciando descarga: ${name || url}`);
 
-      let buffer;
+      let buffer = null;
+      let downloadedPath = null;
+      let downloadedSize = 0;
       const isHLS = /\.m3u8/i.test(url);
       const isDirect = /\.(mp4|mp3|wav|ogg|webm|flac|aac|m4a)(\?.*)?$/i.test(url);
 
       if (isHLS) {
-        buffer = await downloadHLS(url);
         name = (name || url.split('/').pop()?.split('?')[0] || 'stream').replace(/\.[^.]+$/, '') + '.ts';
       } else if (isDirect) {
-        emit('ai:dl:log', 'URL directa, descargando…');
-        buffer = Buffer.from(await (await fetch(url, {
-          headers: { 'User-Agent': ctx.cfg?.ua?.chrome || 'Mozilla/5.0' }
-        })).arrayBuffer());
         name = (name || url.split('/').pop()?.split('?')[0] || 'download');
       } else {
         return { error: 'URL no soportada. Solo HLS (.m3u8) y archivos directos (.mp4, .mp3, etc.)' };
@@ -586,12 +628,20 @@ function setup(ctx) {
 
       const safeName = name.replace(/[\r\n\t\0-\x1F]/g, '_').replace(/[\\/:*?"<>|]/g, '_').slice(0, 100);
       const outPath = path.join(dlDir, safeName);
-      fs.writeFileSync(outPath, buffer);
-      const sizeMB = (buffer.length / 1048576).toFixed(1);
+      if (isHLS) {
+        const result = await downloadHLS(url, outPath);
+        downloadedPath = result.path;
+        downloadedSize = result.size;
+      } else {
+        emit('ai:dl:log', 'URL directa, descargando…');
+        downloadedSize = await downloadToFile(url, outPath);
+        downloadedPath = outPath;
+      }
+      const sizeMB = (downloadedSize / 1048576).toFixed(1);
 
       emit('ai:dl:log', `✓ Completado: ${safeName} (${sizeMB} MB)`);
-      emit('ai:dl:done', { file: outPath, name: safeName, size: sizeMB });
-      return { ok: true, file: outPath, name: safeName, size: sizeMB };
+      emit('ai:dl:done', { file: downloadedPath, name: safeName, size: sizeMB });
+      return { ok: true, file: downloadedPath, name: safeName, size: sizeMB };
     } catch (err) {
       emit('ai:dl:log', `✕ Error: ${err.message}`);
       return { error: err.message };

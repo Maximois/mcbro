@@ -4,7 +4,7 @@ const { app, BrowserWindow, session, ipcMain, shell, dialog, Notification, Menu,
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { spawn, execFile } = require('child_process');
+const { spawn, execFile, execFileSync } = require('child_process');
 const crypto = require('crypto');
 const { isAggressiveAdNavigation, isExplicitlyBlocked, isTrustedResource, isVideoHost } = require('./modules/adblocker/main');
 const Permissions = require('./lib/permissions');
@@ -32,11 +32,26 @@ app.setPath('userData', path.join(app.getPath('appData'), DATA_DIR));
 
 function registerBrowserSystemProtocols() {
   try {
-    // En Windows: registrar http/https como protocolos de navegación y dejar
-    // la app visible en el selector de navegador predeterminado.
     if (process.platform === 'win32' && app.isPackaged) {
-      app.setAsDefaultProtocolClient('http');
-      app.setAsDefaultProtocolClient('https');
+      app.setAppUserModelId('com.mcbrowser.v2');
+      const executable = process.execPath;
+      const command = `"${executable}" "%1"`;
+      const registry = [
+        ['HKCU\\Software\\Classes\\MCBrowserURL', '/ve', '/t', 'REG_SZ', '/d', 'URL:MC Browser', '/f'],
+        ['HKCU\\Software\\Classes\\MCBrowserURL', '/v', 'URL Protocol', '/t', 'REG_SZ', '/d', '', '/f'],
+        ['HKCU\\Software\\Classes\\MCBrowserURL\\shell\\open\\command', '/ve', '/t', 'REG_SZ', '/d', command, '/f'],
+        ['HKCU\\Software\\RegisteredApplications', '/v', 'MC Browser', '/t', 'REG_SZ', '/d', 'Software\\MC Browser\\Capabilities', '/f'],
+        ['HKCU\\Software\\MC Browser\\Capabilities', '/v', 'ApplicationName', '/t', 'REG_SZ', '/d', 'MC Browser', '/f'],
+        ['HKCU\\Software\\MC Browser\\Capabilities', '/v', 'ApplicationDescription', '/t', 'REG_SZ', '/d', 'MC Browser Web Browser', '/f'],
+        ['HKCU\\Software\\MC Browser\\Capabilities', '/v', 'ApplicationIcon', '/t', 'REG_SZ', '/d', `${executable},0`, '/f'],
+        ['HKCU\\Software\\MC Browser\\Capabilities\\URLAssociations', '/v', 'http', '/t', 'REG_SZ', '/d', 'MCBrowserURL', '/f'],
+        ['HKCU\\Software\\MC Browser\\Capabilities\\URLAssociations', '/v', 'https', '/t', 'REG_SZ', '/d', 'MCBrowserURL', '/f']
+      ];
+      for (const args of registry) {
+        try { execFileSync('reg.exe', ['ADD', ...args], { windowsHide: true, stdio: 'ignore' }); } catch {}
+      }
+      app.setAsDefaultProtocolClient('http', executable, [app.getAppPath()]);
+      app.setAsDefaultProtocolClient('https', executable, [app.getAppPath()]);
     }
   } catch (e) {
     console.warn('[BrowserRegistration]', e && e.message ? e.message : String(e));
@@ -71,6 +86,8 @@ const HLS_RE   = /\.m3u8(\?|#|$)/i;
 const SKIP_EXT_RE = /\.(html?|php|aspx?|jsp|json|xml|css|js|svg|woff2?|ttf|eot)(\?|#|$)/i;
 
 let mainWin;
+let devWatchers = [];
+let devReloadTimer = null;
 
 // WebContents con una navegación EXPLÍCITA del usuario en curso (barra de
 // URL, marcador, historial, atajo, clic en enlace). Mientras una webContents
@@ -303,6 +320,14 @@ function createRequestGuard() {
 }
 
 function createWindow() {
+  for (const watcher of devWatchers) {
+    try { watcher.close(); } catch {}
+  }
+  devWatchers = [];
+  if (devReloadTimer) {
+    clearTimeout(devReloadTimer);
+    devReloadTimer = null;
+  }
   const sess = session.fromPartition('persist:mc');
   setupSessionPermissionHandlers(sess);
 
@@ -326,11 +351,9 @@ function createWindow() {
   });
 
   mainWin.loadFile(path.join(__dirname, 'src', 'renderer.html'));
-  mainWin.webContents.on('will-attach-webview', (_event, webPreferences, params) => {
-    if (params && params.partition === 'persist:perchance') {
-      webPreferences.disableDialogs = true;
-    }
-  });
+  // Perchance necesita alert/confirm/prompt (allow-modals del iframe + revelar
+  // NSFW "show image"). NUNCA pongas disableDialogs aquí: confirm() devolvería
+  // false en silencio y los botones parecerían muertos.
   mainWin.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.control && input.shift && input.key.toLowerCase() === 'i') {
       event.preventDefault();
@@ -339,15 +362,15 @@ function createWindow() {
   });
   // ── Hot-reload en modo dev ──
   if (process.env.MC_DEV === '1' && process.env.MC_HOT_RELOAD === '1') {
-    let _reloadTimer = null;
     const watchPaths = [
       path.join(__dirname, 'src'),
       path.join(__dirname, 'modules'),
       path.join(__dirname, 'preload.js')
     ];
     const scheduleReload = () => {
-      if (_reloadTimer) clearTimeout(_reloadTimer);
-      _reloadTimer = setTimeout(() => {
+      if (devReloadTimer) clearTimeout(devReloadTimer);
+      devReloadTimer = setTimeout(() => {
+        devReloadTimer = null;
         if (mainWin && !mainWin.isDestroyed()) {
           console.log('[DEV] Hot-reload: recargando renderer...');
           mainWin.webContents.reloadIgnoringCache();
@@ -356,20 +379,36 @@ function createWindow() {
     };
     for (const p of watchPaths) {
       try {
-        fs.watch(p, { recursive: true }, (evt, filename) => {
+        const watcher = fs.watch(p, { recursive: true }, (evt, filename) => {
           if (filename && !filename.endsWith('.backup')) scheduleReload();
         });
+        devWatchers.push(watcher);
       } catch {}
     }
     console.log('[DEV] Hot-reload activo para:', watchPaths.join(', '));
   }
+  mainWin.once('closed', () => {
+    for (const watcher of devWatchers) {
+      try { watcher.close(); } catch {}
+    }
+    devWatchers = [];
+    if (devReloadTimer) {
+      clearTimeout(devReloadTimer);
+      devReloadTimer = null;
+    }
+  });
 }
 
 // === UA ===
 // Global: identidad nativa de Electron/Chromium (sin override).
 // WhatsApp: regla especial — UA Chrome reciente que WhatsApp acepta.
 const UA_WHATSAPP = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
-const PERCHANCE_UA = UA_WHATSAPP;
+// Perchance: NO usar UA_WHATSAPP como referencia — cada panel tiene su regla
+// especial y no se mezclan. La UA de Perchance se deriva del motor real:
+// declarar un Chrome mayor que el motor hace que la web sirva features que el
+// motor no soporta (fallos silenciosos, ej. speaker-selection/local-network).
+const PCH_CHROME_MAJOR = (process.versions && process.versions.chrome ? process.versions.chrome.split('.')[0] : '124');
+const PERCHANCE_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${PCH_CHROME_MAJOR}.0.0.0 Safari/537.36`;
 
 function isPerchanceHost(host) {
   const value = String(host || '').toLowerCase().replace(/^\.+/, '');
@@ -399,25 +438,396 @@ function isPerchanceRuntimeHost(host) {
 // modules/perchance-panel/renderer.js y usa un <webview partition="persist:perchance">.
 function setupPerchancePanel() {
   try {
-    PerchancePanel.installPerchanceNetwork(PerchancePanel.PERCHANCE_PARTITION, {
-      // Reutiliza CFG.resourceRules (el mismo "Permitir"/"Bloquear" del panel
-      // de Permisos general) como override sobre la allowlist fija de Perchance.
-      resolveOverride: (url) => {
-        const rule = (Array.isArray(CFG.resourceRules) ? CFG.resourceRules : []).find(r => r && r.url === url);
-        return rule?.action || null;
-      },
-      // Reporta los bloqueos al mismo canal que usa el resto del navegador,
-      // para que el panel de Permisos vea (y pueda "Permitir") lo que se
-      // bloqueó dentro de Perchance — antes era invisible para esa UI.
-      onBlocked: (d) => {
-        if (d.resourceType === 'script' && mainWin && !mainWin.isDestroyed()) {
-          mainWin.webContents.send('req-blocked', { type: 'script', resourceType: d.resourceType, blocked: true, url: d.url, msg: d.url });
-        }
-      }
-    });
+    PerchancePanel.installPerchanceNetwork(PerchancePanel.PERCHANCE_PARTITION);
     PerchancePanel.installPerchanceDownloads(PerchancePanel.PERCHANCE_PARTITION, {
       onEvent: (ev) => { try { mainWin?.webContents?.send('perchance:download', ev); } catch {} }
     });
+    PerchancePanel.installPerchanceAlertBubbles(PerchancePanel.PERCHANCE_PARTITION);
+    if (process.env.MC_PCH_DIAG === '1') {
+      const rtcProbe = (wc) => {
+        try {
+          wc.executeJavaScript(`(async () => {
+            try {
+              const pc = new RTCPeerConnection({ iceServers: [] });
+              const cands = [];
+              await new Promise((res) => {
+                const t = setTimeout(() => { cleanup(); res(); }, 4000);
+                const onC = (e) => { if (e.candidate) cands.push(e.candidate.candidate); else { cleanup(); res(); } };
+                const cleanup = () => { pc.removeEventListener('icecandidate', onC); clearTimeout(t); };
+                pc.addEventListener('icecandidate', onC);
+                pc.createOffer().then((o) => pc.setLocalDescription(o)).catch((e) => { clearTimeout(t); res(); throw e; });
+              });
+              let summary = '';
+              try {
+                const sdp = pc.localDescription && pc.localDescription.sdp || '';
+                summary = (sdp.match(/a=candidate:/g) || []).length + ' sdp-cands';
+              } catch {}
+              const types = cands.map(c => c.split(' ')[1]).join(',');
+              pc.close();
+              return 'PCH_RTC cands=' + cands.length + ' [' + types + '] sdp=' + summary;
+            } catch (err) { return 'PCH_RTC error=' + String(err && err.message || err); }
+          })()`).then((r) => console.log('[PCH-RTC]', wc.getURL().slice(0, 90), '=>', r)).catch((e) => console.log('[PCH-RTC] fail', wc.getURL().slice(0, 60), e.message));
+        } catch (err) {}
+      };
+      app.on('web-contents-created', (_e, wc) => {
+        if (wc.session === session.fromPartition(PerchancePanel.PERCHANCE_PARTITION)) rtcProbe(wc);
+        if (wc.session === session.fromPartition('persist:mc')) rtcProbe(wc);
+        if (wc.session !== session.fromPartition(PerchancePanel.PERCHANCE_PARTITION)) return;
+        wc.on('console-message', (ev, level, message, line, sourceId) => {
+          const lvl = ev?.level ?? level;
+          const msg = ev?.message ?? message;
+          console.log('[PCH-WV]', lvl, typeof msg === 'string' ? msg.slice(0, 200) : msg, '|', (ev?.sourceId || sourceId || ''));
+        });
+        wc.on('dom-ready', () => console.log('[PCH-WV] dom-ready', wc.getURL().slice(0, 120)));
+        wc.on('did-fail-load', (ev) => {
+          console.log('[PCH-WV] fail-load', ev.errorCode, ev.errorDescription, ev.validatedURL);
+        });
+        wc.on('did-fail-provisional-load', (ev) => {
+          console.log('[PCH-WV] fail-prov', ev.errorCode, ev.errorDescription, ev.validatedURL);
+        });
+        wc.on('will-frame-navigate', (ev, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) => {
+          console.log('[PCH-WV] frame-nav', isMainFrame ? 'MAIN' : 'SUB', url.slice(0, 160));
+        });
+        const runIframeWatcher = () => {
+          try {
+            wc.mainFrame && wc.mainFrame.executeJavaScript(`(() => {
+                try {
+                  if (window.__mcIframeWatchInstalled) return 'iframe-watch-already';
+                  window.__mcIframeWatchInstalled = true;
+                  const snap = (f) => {
+                    try {
+                      return JSON.stringify({
+                        src: (f.getAttribute && f.getAttribute('src')) || '',
+                        srcdoc: (f.srcdoc || '').slice(0, 80),
+                        sandbox: f.getAttribute && f.getAttribute('sandbox'),
+                        cls: String(f.className||'').slice(0, 50),
+                        style: (f.getAttribute && f.getAttribute('style')) || '',
+                        w: f.offsetWidth, h: f.offsetHeight,
+                        vis: !!(f.offsetWidth||f.offsetHeight),
+                        parent: (f.parentElement ? (f.parentElement.tagName + '.' + String(f.parentElement.className||'').slice(0,40)) : 'root'),
+                      });
+                    } catch (e) { return 'snap-err'; }
+                  };
+                  const report = () => {
+                    const ifs = [...document.querySelectorAll('iframe')].map(snap);
+                    console.log('[PCH-IFR]', JSON.stringify(ifs).slice(0, 1400));
+                  };
+                  const reportNew = (mutations) => {
+                    for (const m of mutations) {
+                      for (const n of (m.addedNodes || [])) {
+                        if (n.nodeType === 1) {
+                          const found = n.tagName === 'IFRAME' ? [n] : [...(n.querySelectorAll ? n.querySelectorAll('iframe') : [])];
+                          for (const f of found) {
+                            console.log('[PCH-IFR-NEW]', snap(f));
+                            setTimeout(report, 400);
+                          }
+                        }
+                      }
+                    }
+                  };
+                  const startWatch = () => {
+                    report();
+                    const mutObserver = new MutationObserver(reportNew);
+                    mutObserver.observe(document.documentElement, { childList: true, subtree: true });
+                    return 'iframe-watch-installed';
+                  };
+                  if (!document.documentElement) {
+                    setTimeout(() => {
+                      try { console.log('[PCH-IFR]', startWatch()); } catch (err) { console.log('[PCH-IFR]', 'retry-fail ' + String(err && err.message || err)); }
+                    }, 1500);
+                    return 'iframe-watch-wait';
+                  }
+                  return startWatch();
+                } catch (err) { return 'iframe-watch-fail ' + String(err && err.message || err); }
+              })()`).then((r) => console.log('[PCH-IFR]', r)).catch(() => {});
+          } catch (e) { console.log('[PCH-IFR]', 'exc', e.message); }
+        };
+        wc.on('did-frame-navigate', (ev, url, httpCode, httpStatusText, isMainFrame) => {
+          console.log('[PCH-WV] frame-done', isMainFrame ? 'MAIN' : 'SUB', httpCode, url.slice(0, 140));
+          const installClickProbeIn = (frame) => {
+            try {
+              frame.executeJavaScript(`(() => {
+                try {
+                  if (window.__mcClickProbeInstalled) return 'click-probe-already';
+                  window.__mcClickProbeInstalled = true;
+                  window.__mcClickLog = [];
+                  document.addEventListener('click', (e) => {
+                    try {
+                      const t = e.target;
+                      const x = e.clientX, y = e.clientY;
+                      const at = document.elementFromPoint(x, y);
+                      const desc = (el) => {
+                        if (!el) return 'null';
+                        const r = el.getBoundingClientRect();
+                        return JSON.stringify({
+                          tag: el.tagName,
+                          cls: String(el.className||'').slice(0,80),
+                          id: el.id,
+                          txt: (el.innerText||el.textContent||'').replace(/\\n+/g,' ').trim().slice(0,80),
+                          pointer: getComputedStyle(el).pointerEvents,
+                          z: getComputedStyle(el).zIndex,
+                          vis: !!(el.offsetWidth||el.offsetHeight),
+                          rect: [Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height)],
+                        });
+                      };
+                      const clickable = t.closest ? (t.closest('button,a,[role=button],label,[onclick],.clickable') || null) : null;
+                      const txt = ((t.innerText||t.textContent||'') + ' ' + (clickable && (clickable.innerText||clickable.textContent)||'')).replace(/\\n+/g,' ').trim();
+                      window.__mcClickLog.push({ at: Date.now(), target: desc(t), clickable: desc(clickable), elementFromPoint: desc(at), same: at === t, overlayAbove: (at && clickable && at !== clickable) ? desc(at) : null });
+                      console.log('[PCH-CLK-INNER]', '[' + location.hostname.slice(0, 30) + ']', JSON.stringify(window.__mcClickLog[window.__mcClickLog.length-1]).slice(0, 700));
+                      if (/gal|lery|show|descrip|ver/i.test(txt)) {
+                        setTimeout(() => {
+                          try {
+                            const ifs = [...document.querySelectorAll('iframe')].map(f => JSON.stringify({ src: (f.src||'').slice(0,100), sandbox: f.getAttribute('sandbox'), srcdoc: (f.srcdoc||'').slice(0,60), cls: String(f.className||'').slice(0,40), w: f.offsetWidth, h: f.offsetHeight, vis: !!(f.offsetWidth||f.offsetHeight) }));
+                            const ovs = [...document.querySelectorAll('body *')].filter(el => { const s = getComputedStyle(el); const r = el.getBoundingClientRect(); return (el.offsetWidth > 300) && (el.offsetHeight > 100) && (s.position === 'fixed' || s.position === 'absolute' || /shadow|filter/.test((s.boxShadow||'') + ' ' + s.filter)) && r.top <= 0 && r.left <= 0; }).slice(0, 8).map(el => { const s = getComputedStyle(el); const r = el.getBoundingClientRect(); return JSON.stringify({ tag: el.tagName, cls: String(el.className||'').slice(0,50), bg: s.backgroundColor, z: s.zIndex, filter: s.filter || '', pos: s.position, rect: [Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height)], overlay: s.backgroundImage !== 'none' }); });
+                            const bfg = getComputedStyle(document.body).filter + ' ' + (getComputedStyle(document.body).backgroundColor || '');
+                            console.log('[PCH-GAL]', '[' + location.hostname.slice(0,30) + ']', JSON.stringify({ iframes: ifs, overlays: ovs, bodyFilter: bfg, bodyScroll: document.body.scrollHeight + 'x' + (document.body.offsetHeight||0) }).slice(0, 1500));
+                          } catch (err3) { console.log('[PCH-GAL]', 'err', String(err3 && err3.message || err3)); }
+                        }, 900);
+                      }
+                    } catch (err2) {
+                      console.log('[PCH-CLK-INNER]', 'err', String(err2 && err2.message || err2));
+                    }
+                  }, true);
+                  return 'click-probe-installed';
+                } catch (err) { return 'click-probe-fail ' + String(err && err.message || err); }
+              })()`).then((r) => {
+                console.log('[PCH-CLK] setup', (frame.url || '').slice(0, 60), r);
+              }).catch(() => {});
+            } catch {}
+          };
+          const installClickProbe = () => {
+            installClickProbeIn(wc.mainFrame || null);
+            const allFrames = wc.mainFrame ? [wc.mainFrame, ...(wc.mainFrame.framesInSubtree || [])] : [];
+            for (const f of allFrames) {
+              if (f && f !== wc.mainFrame) installClickProbeIn(f);
+            }
+          };
+          installClickProbe();
+          if (isMainFrame) {
+            try {
+              runIframeWatcher();
+              const subFrames = wc.mainFrame ? (wc.mainFrame.framesInSubtree || []) : [];
+              for (const f of subFrames) {
+                try {
+                  f.executeJavaScript(`(() => {
+                    try {
+                      const snap = (fr) => JSON.stringify({ src: (fr.src||'').slice(0,120), srcdoc: (fr.srcdoc||'').slice(0,60), sandbox: fr.getAttribute('sandbox'), cls: String(fr.className||'').slice(0,40), w: fr.offsetWidth, h: fr.offsetHeight, vis: !!(fr.offsetWidth||fr.offsetHeight), parent: (fr.parentElement ? (fr.parentElement.tagName + '.' + String(fr.parentElement.className||'').slice(0,30)) : 'root') });
+                      const report = () => { console.log('[PCH-IFR-SUB]', document.documentElement ? JSON.stringify([...document.querySelectorAll('iframe')].map(snap)).slice(0, 1200) : 'nodoc'); };
+                      const reportNew = (mutations) => {
+                        for (const m of mutations) {
+                          for (const n of (m.addedNodes || [])) {
+                            if (!n || n.nodeType !== 1) continue;
+                            const found = n.tagName === 'IFRAME' ? [n] : [...(n.querySelectorAll ? n.querySelectorAll('iframe') : [])];
+                            for (const fr of found) console.log('[PCH-IFR-SUB-NEW]', snap(fr));
+                          }
+                        }
+                      };
+                      if (window.__mcSubIframeWatch) return 'sub-iframe-already';
+                      window.__mcSubIframeWatch = true;
+                      const start = () => { report(); new MutationObserver(reportNew).observe(document.documentElement, { childList: true, subtree: true }); return 'sub-iframe-installed'; };
+                      if (!document.documentElement) { setTimeout(() => { try { console.log('[PCH-IFR-SUB]', start()); } catch (e) {} }, 1500); return 'sub-iframe-wait'; }
+                      return start();
+                    } catch (e) { return 'sub-iframe-fail ' + String(e && e.message || e); }
+                  })()`).then((r) => console.log('[PCH-IFR-SUB] setup', (f.url || '').slice(0, 60), r)).catch(() => {});
+                } catch {}
+              }
+              wc.executeJavaScript(`(() => {
+                try {
+                  const btns = [...document.querySelectorAll('button, a, [class*=btn], [role=button], .clickable, [onclick]')].filter(el => (el.offsetWidth||el.offsetHeight) > 0);
+                  const desc = btns.filter(b => /descrip|prompt|ver |m\xE1s|show|info|expand|\u2139|\\uD83D\\uDCC4|the prompt|image prompt|details/i.test(((b.innerText||b.textContent||'') + ' ' + (b.title||'') + ' ' + (b.className||'') + ' ' + (b.getAttribute && b.getAttribute('aria-label')||'')).slice(0,120))).slice(0, 10)
+                    .map(b => ({ tag: b.tagName, txt: (b.innerText||b.textContent||'').replace(/\\n+/g,' ').trim().slice(0,50), cls: String(b.className||'').slice(0,40), title: b.title||'', onclick: b.getAttribute && b.getAttribute('onclick') ? String(b.getAttribute('onclick')).slice(0,70) : null }));
+                  return JSON.stringify({ url: location.hostname, total: btns.length, desc: desc });
+                } catch (err) { return JSON.stringify({ err: String(err && err.message || err) }); }
+              })()`).then((r) => console.log('[PCH-DOM]', r.slice(0, 1200))).catch((e) => console.log('[PCH-DOM] fail', e.message));
+            } catch {}
+          }
+          if (!isMainFrame && /image-generation\.perchance\.org\/gallery/i.test(url)) {
+            try {
+              wc.executeJavaScript(`(() => {
+                try {
+                  const cards = [...document.querySelectorAll('.imageCtn, [class*=image-card], [class*=gallery-image], .card, [class*=grid-item]')].slice(0, 5);
+                  const cardInfo = cards.map(c => ({ cls: String(c.className||'').slice(0,60), btns: [...c.querySelectorAll('button,a,[onclick],[role=button],.clickable')].slice(0,8).map(b => ({
+                    tag: b.tagName, txt: (b.innerText||b.textContent||'').replace(/\\n+/g,' ').trim().slice(0,50), cls: String(b.className||'').slice(0,40), onclick: b.getAttribute && b.getAttribute('onclick'), title: b.getAttribute && b.getAttribute('title'), aria: b.getAttribute && b.getAttribute('aria-label') })) }));
+                  const all = [...document.querySelectorAll('[onclick]')].slice(0, 12).map(b => ({ cls: String(b.className||'').slice(0,50), onclick: (b.getAttribute('onclick')||'').slice(0,90) }));
+                  return JSON.stringify({ cards: cardInfo, allOnclicks: all, hash: location.hash.slice(0, 120) });
+                } catch (err) { return JSON.stringify({ err: String(err && err.message || err) }); }
+              })()`).then((r) => console.log('[PCH-DOM]', r.slice(0, 1500))).catch((e) => console.log('[PCH-DOM] fail', e.message));
+            } catch {}
+            const probeGalleryFrame = (label) => {
+              try {
+                const frames = wc.mainFrame ? [wc.mainFrame, ...(wc.mainFrame.framesInSubtree || [])] : [];
+                const gal = frames.find((fr) => fr && /image-generation\.perchance\.org\/gallery/i.test(fr.url || ''));
+                if (!gal) return console.log('[PCH-LS]', label, 'no-frame');
+                gal.executeJavaScript(`(() => {
+                    try {
+                      return JSON.stringify({
+                        href: location.href.slice(0, 120),
+                        none: localStorage.getItem('galleryUserChoseNoneFilter'),
+                        probe: localStorage.getItem('probe'),
+                        keys: Object.keys(localStorage).slice(0, 18),
+                        canEval: (() => { try { new Function('1'); return true; } catch(e){ return false; } })(),
+                      });
+                    } catch (e) { return JSON.stringify({ err: String(e && e.message || e) }); }
+                  })()`).then((r) => console.log('[PCH-LS]', label, r)).catch((e) => console.log('[PCH-LS]', label, 'fail', e.message));
+              } catch (e) { console.log('[PCH-LS]', label, 'exc', e.message); }
+            };
+setTimeout(() => probeGalleryFrame('before'), 2500);
+          }
+        });
+        wc.on('did-start-navigation', (_ev, url, isInPlace, isMainFrame) => {
+          if (!isMainFrame) console.log('[PCH-WV] subframe-nav-start', url.slice(0, 140));
+        });
+        wc.on('did-stop-loading', () => console.log('[PCH-WV] stop-load', wc.getURL().slice(0, 120)));
+        wc.once('did-finish-load', () => {
+          setTimeout(() => {
+            try {
+              wc.executeJavaScript(`(() => {
+                const q = s => !!document.querySelector(s);
+                const count = s => document.querySelectorAll(s).length;
+                return {
+                  href: location.href,
+                  title: (document.title || '').slice(0,60),
+                  canEval: (() => { try { new Function('1'); return true; } catch(e){ return false; } })(),
+                  webdriver: !!navigator.webdriver,
+                  inputs: count('.ui-library-input, input[type=text], textarea, select'),
+                  buttons: count('button'),
+                  textarea: count('textarea'),
+                  iframes: [...document.querySelectorAll('iframe')].map(f => (f.src || '').slice(0,90)),
+                  bodySnippet: (document.body.innerText || '').slice(0,200).replace(/\\n/g,' '),
+                };
+              })()`)
+                .then(r => console.log('[PCH-WV] state', JSON.stringify(r)))
+                .catch(err => console.log('[PCH-WV] eval-fail', err.message));
+            } catch (err) { console.log('[PCH-WV] eval-exc', err.message); }
+          }, 8000);
+        });
+        wc.once('did-finish-load', () => {
+          setTimeout(() => {
+            const mf = wc.mainFrame;
+            if (!mf) return console.log('[PCH-WV] no-mainframe');
+            const frames = [mf, ...(mf.framesInSubtree || [])];
+            const insp = (fr) => fr.executeJavaScript(`(() => {
+              try {
+                const isGallery = location.hostname === 'image-generation.perchance.org';
+                const txt = (document.body && document.body.innerText || '').slice(0, isGallery ? 1500 : 120).replace(/\\n/g,' | ');
+                const imgs = [...document.querySelectorAll('img')];
+                const raw = imgs.slice(0, isGallery ? 20 : 6).map(i => {
+                  const r = (i.currentSrc || i.src || '');
+                  return { s: r.slice(-60), ok: i.complete && i.naturalWidth > 0, nw: i.naturalWidth };
+                });
+                const canEval = (() => { try { new Function('1'); return true; } catch(e){ return false; } })();
+                const galleryIframes = !isGallery ? [...document.querySelectorAll('iframe')]
+                  .filter(f => /image-generation\\.perchance\\.org\\/gallery/i.test(f.getAttribute('src') || ''))
+                  .map(f => ({ src: (f.getAttribute('src')||'').slice(0,120), sandbox: f.getAttribute('sandbox') || '', allow: f.getAttribute('allow') || '' })) : [];
+                const ls = (() => {
+                  try {
+                    return {
+                      works: true,
+                      none: localStorage.getItem('galleryUserChoseNoneFilter') ?? localStorage.galleryUserChoseNoneFilter ?? null,
+                      publicUserId: localStorage.getItem('publicUserId') ? 'set' : null,
+                      keys: Object.keys(localStorage).slice(0, 12),
+                    };
+                  } catch(e) { return { works: false, err: String(e && e.message || e) }; }
+                })();
+                const overlayEls = [...document.querySelectorAll('body > *')]
+                  .filter(el => {
+                    const r = el.getBoundingClientRect();
+                    return r.width >= window.innerWidth - 5 && r.height >= window.innerHeight - 5 &&
+                      el !== document.body && el !== document.documentElement && getComputedStyle(el).position === 'fixed';
+                  })
+                  .map(el => ({ t: el.tagName, z: getComputedStyle(el).zIndex, pe: getComputedStyle(el).pointerEvents, bg: getComputedStyle(el).backgroundColor, txt: (el.innerText||'').slice(0,60).replace(/\\n/g,' ') }));
+                const gates = [...document.querySelectorAll('button, a, [role=button], label, input[type=checkbox], input[type=radio], .clickable, [onclick]')]
+                  .filter(el => /mostr|ver im|mostrar|acept|reveal|show|view|over 18|18 \\+|nsfw|content/i.test(((el.innerText || el.textContent || el.value || '') + ' ' + (el.className || '') + ' ' + (el.id || '')).slice(0,120)))
+                  .slice(0, isGallery ? 15 : 8)
+                  .map(el => ({ t: el.tagName, rgx: (el.tagName === 'INPUT') ? (el.type + ':' + el.checked) : '', txt: (el.innerText || el.textContent || el.getAttribute('aria-label') || '').replace(/\\n/g,' ').slice(0,80), vis: !!(el.offsetWidth||el.offsetHeight) }));
+                return {
+                  href: (location.href||'').slice(0,130),
+                  txt,
+                  canEval,
+                  galleryIframes,
+                  ls,
+                  overlays: overlayEls,
+                  imgTotal: imgs.length,
+                  imgBroken: imgs.filter(i => i.complete && i.naturalWidth === 0).length,
+                  imgOk: imgs.filter(i => i.complete && i.naturalWidth > 0).length,
+                  imgPending: imgs.filter(i => !i.complete).length,
+                  imgSample: raw,
+                  gates,
+                };
+              } catch(e) { return { err: String(e && e.message || e) }; }
+            })()`).then(r => console.log('[PCH-FRAME]', JSON.stringify(r))).catch(err => console.log('[PCH-FRAME] fail', err.message));
+            Promise.allSettled([...frames].filter(fr => fr && typeof fr.executeJavaScript === 'function').map(insp));
+          }, 10000);
+        });
+        try {
+          const ses = wc.session;
+          console.log('[PCH-WV] persistent?', ses && ses.isPersistent === true ? 'YES' : 'NO (' + String(ses && ses.isPersistent) + ')');
+        } catch (err) { console.log('[PCH-WV] persistent-check-fail', err.message); }
+        try {
+          wc.debugger.attach('1.3');
+          wc.debugger.sendCommand('Runtime.enable').catch(() => {});
+          wc.debugger.sendCommand('Log.enable').catch(() => {});
+          wc.debugger.sendCommand('Debugger.enable').catch(() => {});
+          wc.debugger.on('message', (_e, method, params) => {
+            if (method === 'Runtime.exceptionThrown') {
+              try {
+                const d = params && params.exceptionDetails;
+                const txt = (d && d.exception && d.exception.description) || (d && d.text) || '?';
+                const url = d && d.url || '';
+                console.log('[PCH-JS][exc]', txt.replace(/\n/g, ' ').slice(0, 300), '|', url.slice(0, 100));
+              } catch {}
+            } else if (method === 'Runtime.consoleAPICalled') {
+              try {
+                const type = params && params.type;
+                if (type !== 'error' && type !== 'warning') return;
+                const args = (params && params.args || []).map(a => a.value ?? a.description ?? a.type ?? '').join(' ');
+                const stack = (params && params.stackTrace && params.stackTrace.callFrames && params.stackTrace.callFrames.length ? ' @' + params.stackTrace.callFrames[0].url.split('/').slice(-2).join('/') + ':' + params.stackTrace.callFrames[0].lineNumber : '');
+                console.log('[PCH-JS][' + type + ']', args.replace(/\n/g, ' ').slice(0, 250) + stack);
+              } catch {}
+            } else if (method === 'Log.entryAdded') {
+              try {
+                const e = params && params.entry;
+                if (!e || e.level === 'verbose') return;
+                let src = e.source === 'other' ? '' : '[' + e.source + '] ';
+                console.log('[PCH-LOG]', src + e.level + ': ' + String(e.text || '').slice(0, 250) + (e.url ? ' @' + e.url.slice(0, 100) : ''));
+              } catch {}
+            }
+          });
+          wc.once('destroyed', () => { try { wc.debugger.detach(); } catch {} });
+          const sesProbe = wc.session;
+          try {
+            console.log('[PCH-WV] session check', JSON.stringify({
+              isPersistent: typeof sesProbe.isPersistent === 'function' ? sesProbe.isPersistent() : sesProbe.isPersistent,
+              isMainSession: sesProbe === session.defaultSession,
+              equalsPersistPart: sesProbe === session.fromPartition(PerchancePanel.PERCHANCE_PARTITION),
+              storagePath: sesProbe.getStoragePath ? sesProbe.getStoragePath() : null,
+            }));
+          } catch (err) { console.log('[PCH-WV] session-check-fail', err.message); }
+          console.log('[PCH-WV] cdp attached');
+          wc.executeJavaScript(`(async () => {
+            try {
+              const pc = new RTCPeerConnection({ iceServers: [] });
+              const cands = [];
+              await new Promise((res) => {
+                const t = setTimeout(() => { cleanup(); res(); }, 4000);
+                const onC = (e) => { if (e.candidate) cands.push(e.candidate.candidate); else { cleanup(); res(); } };
+                const cleanup = () => { pc.removeEventListener('icecandidate', onC); clearTimeout(t); };
+                pc.addEventListener('icecandidate', onC);
+                pc.createOffer().then((o) => pc.setLocalDescription(o)).catch((e) => { clearTimeout(t); res(); throw e; });
+              });
+              let summary = '';
+              try {
+                const sdp = pc.localDescription && pc.localDescription.sdp || '';
+                summary = (sdp.match(/a=candidate:/g) || []).length + ' sdp-cands';
+              } catch {}
+              const types = cands.map(c => c.split(' ')[1]).join(',');
+              pc.close();
+              return 'PCH_RTC cands=' + cands.length + ' [' + types + '] sdp=' + summary;
+            } catch (err) { return 'PCH_RTC error=' + String(err && err.message || err); }
+          })()`).then((r) => console.log('[PCH-WV]', r)).catch((e) => console.log('[PCH-WV] rtc-fail', e.message));
+        } catch (err) { console.log('[PCH-WV] cdp-attach-fail', err.message); }
+      });
+    }
   } catch (e) { console.error('[PERCHANCE][init]', e.message); }
 }
 
@@ -1210,7 +1620,12 @@ function registerNativeDownloadHandler(sess) {
 
       item.on('done', (e, state) => {
         const entry = nativeDlRegistry.get(dlId);
-        if (entry) entry.state = state === 'completed' ? 'done' : state === 'cancelled' ? 'cancelled' : 'error';
+        const finalState = state === 'completed' ? 'done' : state === 'cancelled' ? 'cancelled' : 'error';
+        if (entry) {
+          entry.state = finalState;
+          entry.item = null;
+          entry.completedAt = Date.now();
+        }
         const received = item.getReceivedBytes();
         const size = (received / 1048576).toFixed(1);
         const filePath = item.getSavePath();
@@ -1223,6 +1638,12 @@ function registerNativeDownloadHandler(sess) {
           state,
           cancelled: state === 'cancelled' || state === 'interrupted'
         });
+        const completed = [...nativeDlRegistry.entries()]
+          .filter(([, value]) => value.completedAt)
+          .sort((a, b) => a[1].completedAt - b[1].completedAt);
+        while (completed.length > 200) {
+          nativeDlRegistry.delete(completed.shift()[0]);
+        }
       });
     } catch (e) {
       console.error('[DL-NATIVE]', e.message);
@@ -1335,6 +1756,12 @@ function startProcessMetricsSampler() {
   if (processMetricsTimer) return;
   sampleProcessMetrics();
   processMetricsTimer = setInterval(sampleProcessMetrics, 2000);
+}
+
+function stopProcessMetricsSampler() {
+  if (!processMetricsTimer) return;
+  clearInterval(processMetricsTimer);
+  processMetricsTimer = null;
 }
 
 ipcMain.handle('get-processes', async () => PROCESS_METRICS_CACHE);
@@ -2905,11 +3332,25 @@ app.on('web-contents-created', (event, wc) => {
     // 'will-navigate', marcado como intención explícita para no romper
     // redirecciones reales) podía saltar a un dominio de ads sin que esta
     // guardia lo viera, aunque la lista de red ya lo conociera.
+    //
+    // Excepción: la partición de Perchance (y cualquier salto *.perchance.org)
+    // NO pasa por esta guardia. perchance.org redirige a ads.perchance.org /
+    // partners con frecuencia; cortarlo degrada el motor aunque la allowlist
+    // de red esté bien.
+    const isPerchanceSession = (() => {
+      try { return wc.session === session.fromPartition(PerchancePanel.PERCHANCE_PARTITION); } catch { return false; }
+    })();
     let targetHostForAdCheck = '';
     try { targetHostForAdCheck = new URL(url).hostname.toLowerCase(); } catch {}
-    if (targetHostForAdCheck && (isAggressiveAdNavigation(url) || isExplicitlyBlocked(targetHostForAdCheck, wc.getURL()))) {
+    if (!isPerchanceSession && !isPerchanceHost(targetHostForAdCheck) &&
+        targetHostForAdCheck && (isAggressiveAdNavigation(url) || isExplicitlyBlocked(targetHostForAdCheck, wc.getURL()))) {
       try { navigationEvent.preventDefault(); } catch {}
       try { mainWin?.webContents?.send('req-blocked', { type: 'navigation', url, msg: 'Redirección a dominio de anuncios bloqueada' }); } catch {}
+      return;
+    }
+    if (isPerchanceSession) {
+      // Mini-navegador aislado: dejar pasar TODA la cadena de redirects.
+      keepExplicitNavigationAlive(wc.id);
       return;
     }
     // Navegación explícita del usuario (barra de URL, marcador, historial,
@@ -3102,7 +3543,7 @@ app.on('web-contents-created', (event, wc) => {
         {
           label: 'Descargar imagen',
           click: () => {
-            if (/^https?:\/\//i.test(params.srcURL)) mainWin?.webContents?.downloadURL(params.srcURL);
+            if (/^https?:\/\//i.test(params.srcURL)) wc.downloadURL(params.srcURL);
             else if (/^(blob|data):/i.test(params.srcURL)) {
               saveBlobOrDataUrlToDownloads(wc, params.srcURL, 'imagen')
                 .then(r => { if (!r.ok) console.error('[blob-download]', r.error); });
@@ -3459,38 +3900,31 @@ app.on('web-contents-created', (event, wc) => {
     Menu.buildFromTemplate(template).popup({ window: mainWin });
   });
   wc.setWindowOpenHandler(({ url }) => {
+    const isPerchanceSession = (() => {
+      try { return wc.session === session.fromPartition(PerchancePanel.PERCHANCE_PARTITION); } catch { return false; }
+    })();
+    // Perchance: about:blank/srcdoc = burbujas internas (permitir ventana guest).
+    // Enlaces http(s) de botones = pestaña nueva del panel, nunca BrowserWindow.
+    if (isPerchanceSession) {
+      const raw = String(url || '');
+      if (!/^https?:\/\//i.test(raw)) {
+        if (process.env.MC_PCH_DIAG === '1') console.log('[PCH-WV] popup-allow-blank', raw.slice(0, 120));
+        return { action: 'allow' };
+      }
+      try { mainWin?.webContents?.send('perchance-open-tab', raw); } catch {}
+      if (process.env.MC_PCH_DIAG === '1') console.log('[PCH-WV] popup-to-tab', raw.slice(0, 160));
+      return { action: 'deny' };
+    }
     // Bloquear siempre popups claramente publicitarios/de seguimiento.
     if (isAggressiveAdNavigation(url)) {
       return { action: 'deny' };
     }
-    // El panel de Perchance es un mini-navegador: sus ventanas nuevas deben
-    // convertirse en pestañas del propio panel, incluso si el destino es Google.
-    try {
-      const currentHost = new URL(wc.getURL()).hostname;
-      if (wc.getType() === 'webview' &&
-          wc.session === session.fromPartition(PerchancePanel.PERCHANCE_PARTITION) &&
-          isPerchanceHost(currentHost)) {
-        if (/^https?:\/\//i.test(url || '')) {
-          mainWin?.webContents?.send('perchance-open-tab', url);
-        }
-        return { action: 'deny' };
-      }
-    } catch {}
     // OAuth de Google/X debe abrirse normalmente dentro de la sesión actual.
     // Forzar deny/redirect aquí rompe el flujo y evita que aparezca la pantalla
     // de login del segundo usuario.
     if (isAuthPopupUrl(url)) {
       return { action: 'allow' };
     }
-    try {
-      const popupHost = new URL(url).hostname;
-      const currentHost = new URL(wc.getURL()).hostname;
-      if (isPerchanceHost(popupHost) && isPerchanceHost(currentHost)) {
-        // Perchance: los enlaces navegan DENTRO del panel (webview) vía el
-        // evento 'new-window' del renderer; nunca como ventana nativa.
-        return { action: 'deny' };
-      }
-    } catch {}
     // Para TODO lo demás, impedimos que Chromium abra una ventana nativa.
     // La conversión a pestaña (una sola vez) queda exclusivamente a cargo
     // del evento 'new-window' del webview en renderer.html, que filtra por
@@ -3519,12 +3953,95 @@ if (!gotTheLock) {
 }
 
 app.on('web-contents-created', (_event, contents) => {
+  if (process.env.MC_PCH_DIAG === '1') {
+    try {
+      const isPch = contents.session === session.fromPartition(PerchancePanel.PERCHANCE_PARTITION);
+      console.log('[PCH-WC] created', contents.getType(), isPch ? 'PCH-PART' : 'other', contents.getURL().slice(0, 90));
+      if (isPch) {
+        contents.on('did-finish-load', () => console.log('[PCH-WC] loaded', contents.getType(), contents.getURL().slice(0, 120)));
+        contents.on('did-navigate', (_e, url) => console.log('[PCH-WC] nav', contents.getType(), url.slice(0, 120)));
+        contents.on('render-process-gone', (_e, details) => {
+          try {
+            const mem = process.getProcessMemoryInfo ? process.getProcessMemoryInfo() : null;
+            console.log('[PCH-WC] render-gone', JSON.stringify({ details, url: contents.getURL().slice(0, 160), type: contents.getType(), wcId: contents.id, mem: mem ? JSON.stringify(mem) : null }));
+          } catch (err) { console.log('[PCH-WC] render-gone', JSON.stringify(details), '| mem-fail', err.message); }
+        });
+        contents.on('unresponsive', () => console.log('[PCH-WC] UNRESPONSIVE', contents.getURL().slice(0, 120)));
+        contents.on('responsive', () => console.log('[PCH-WC] responsive-again'));
+        contents.on('destroyed', () => console.log('[PCH-WC] DESTROYED', contents.getURL().slice(0, 120)));
+      }
+    } catch {}
+  }
   if (contents.getType() === 'webview' && (isMainBrowsingSession(contents) || isExtraSessionWebContents(contents))) attachCookieGuard(contents);
 });
 
 app.whenReady().then(() => {
   if (!gotTheLock) return;
+  if (process.env.MC_PCH_DIAG === '1') {
+    try {
+      const { crashReporter } = require('electron');
+      const dumpsDir = path.join(app.getPath('userData'), 'pch-crashdumps');
+      fs.mkdirSync(dumpsDir, { recursive: true });
+      app.setPath('crashDumps', dumpsDir);
+      crashReporter.start({ uploadToServer: false, compress: false });
+      console.log('[PCH-CRASH] crashReporter local ->', dumpsDir);
+    } catch (e) { console.log('[PCH-CRASH] setup-fail', e.message); }
+  }
   createWindow();
+  if (process.env.MC_PCH_DIAG === '1') {
+    try {
+      const installMainWatcher = () => {
+        mainWin?.webContents?.executeJavaScript(`(() => {
+          if (window.__mcMainWatch) return 'already';
+          window.__mcMainWatch = true;
+          const snap = (el) => {
+            try {
+              const r = el.getBoundingClientRect();
+              return JSON.stringify({
+                tag: el.tagName,
+                cls: String(el.className||'').slice(0,60),
+                id: el.id,
+                src: (el.getAttribute('src')||'').slice(0,200),
+                srcdoc: (el.getAttribute('srcdoc')||'').slice(0,60),
+                sandbox: el.getAttribute('sandbox'),
+                partition: el.getAttribute('partition'),
+                styleAttr: (el.getAttribute('style')||'').slice(0,120),
+                display: window.getComputedStyle(el).display,
+                vis: !!(el.offsetWidth||el.offsetHeight),
+                rect: [Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height)],
+                parent: (el.parentElement ? (el.parentElement.tagName + '.' + String(el.parentElement.className||'').slice(0,30)) : 'root'),
+              });
+            } catch (e) { return 'snap-err'; }
+          };
+          const seen = new WeakSet();
+          const report = (el) => {
+            if (seen.has(el)) return;
+            seen.add(el);
+            console.log('[PCH-MAIN-WV] ADD ' + el.tagName + ' ' + snap(el));
+          };
+          const scan = (root) => {
+            if (!root) return;
+            if (/WEBVIEW|IFRAME/i.test(root.tagName || '')) report(root);
+            root.querySelectorAll && root.querySelectorAll('webview, iframe').forEach(report);
+          };
+          scan(document);
+          new MutationObserver((muts) => {
+            for (const m of muts) {
+              for (const n of (m.addedNodes || [])) {
+                if (n && n.nodeType === 1) scan(n);
+              }
+            }
+          }).observe(document.documentElement, { childList: true, subtree: true });
+          return 'installed';
+        })()`).then((r) => console.log('[PCH-MAIN] watcher', r)).catch((e) => console.log('[PCH-MAIN] watcher-fail', e.message));
+      };
+      const wc = mainWin?.webContents;
+      if (wc) {
+        if (wc.isLoading()) wc.once('dom-ready', installMainWatcher);
+        else installMainWatcher();
+      }
+    } catch (e) { console.log('[PCH-MAIN] setup-exc', e.message); }
+  }
   const sess = session.fromPartition('persist:mc');
   setupWebchatSession();
   for (const s of (CFG.extraSessions || [])) {
@@ -3807,11 +4324,15 @@ app.whenReady().then(() => {
   applyDoH();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+      startProcessMetricsSampler();
+    }
   });
 });
 
 app.on('window-all-closed', () => {
+  stopProcessMetricsSampler();
   saveCfg();
   if (process.platform !== 'darwin') app.quit();
 });

@@ -469,8 +469,9 @@ function setup(ctx) {
     }
   );
 
-  // Sync initial state
-  // IPC handlers
+  const isPrimarySession = sess === session.fromPartition('persist:mc');
+
+  if (isPrimarySession) {
   ipcMain.handle('ai:adblock:info', () => {
     const info = manager.getInfo();
     return {
@@ -543,6 +544,7 @@ function setup(ctx) {
     if (saveCfg) saveCfg();
     return { enabled: !!on };
   });
+  }
 
   function normalizeCosmeticRule(raw) {
     const text = String(raw || '').trim();
@@ -594,7 +596,7 @@ function setup(ctx) {
     return { ok: true, count: selectors.length, selectors, css, userCount: userSelectors.length };
   }
 
-  ipcMain.handle('adblock:cosmetics', (_e, { url } = {}) => {
+  if (isPrimarySession) ipcMain.handle('adblock:cosmetics', (_e, { url } = {}) => {
     try {
       return buildPageCosmeticCss(url || '');
     } catch (e) {
@@ -602,7 +604,7 @@ function setup(ctx) {
     }
   });
 
-  ipcMain.handle('adblock:add-cosmetic', (_e, { domain, selector, raw } = {}) => {
+  if (isPrimarySession) ipcMain.handle('adblock:add-cosmetic', (_e, { domain, selector, raw } = {}) => {
     const rule = normalizeCosmeticRule(raw || `${String(domain || '').trim()}##${String(selector || '').trim()}`);
     if (!rule || rule.exception) return { ok: false, error: 'regla cosméticas inválida' };
     if (!cfg.userCosmeticRules) cfg.userCosmeticRules = [];
@@ -612,7 +614,7 @@ function setup(ctx) {
     return { ok: true, rule: rule.raw };
   });
 
-  ipcMain.handle('adblock:remove-cosmetic', (_e, { raw, domain, selector } = {}) => {
+  if (isPrimarySession) ipcMain.handle('adblock:remove-cosmetic', (_e, { raw, domain, selector } = {}) => {
     const target = normalizeCosmeticRule(raw || `${String(domain || '').trim()}##${String(selector || '').trim()}`);
     if (!target) return { ok: false, error: 'regla inválida' };
     const before = Array.isArray(cfg.userCosmeticRules) ? cfg.userCosmeticRules.length : 0;
@@ -621,7 +623,7 @@ function setup(ctx) {
     return { ok: true, removed: before !== cfg.userCosmeticRules.length };
   });
 
-  ipcMain.handle('adblock:list-cosmetics', () => ({
+  if (isPrimarySession) ipcMain.handle('adblock:list-cosmetics', () => ({
     ok: true,
     rules: Array.isArray(cfg?.userCosmeticRules) ? [...cfg.userCosmeticRules] : []
   }));

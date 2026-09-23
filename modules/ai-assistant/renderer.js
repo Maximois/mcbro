@@ -111,6 +111,7 @@ const PanelResize = {
 
 function destroyEmbeddedWebview(wv) {
   if (!wv) return;
+  try { wv.stop(); } catch {}
   let webContentsId = 0;
   try { webContentsId = Number(wv.getWebContentsId?.()) || 0; } catch {}
   if (webContentsId && typeof mc !== 'undefined' && typeof mc.destroyWebview === 'function') {
@@ -3100,8 +3101,8 @@ const WhatsAppChat = {
       wv.setAttribute('src', WHATSAPP_URL);
       wv.setAttribute('partition', 'persist:mc-whatsapp');
       wv.setAttribute('allowpopups', '');
-      wv.setAttribute('allow', 'autoplay; media; encrypted-media');
-      wv.setAttribute('webpreferences', 'contextIsolation=no,nodeIntegration=no');
+      wv.setAttribute('allow', 'media; encrypted-media');
+      wv.setAttribute('webpreferences', 'contextIsolation=yes,nodeIntegration=no,sandbox=yes,backgroundThrottling=yes,spellcheck=no');
       document.getElementById('wa-sidebar')?.appendChild(wv);
       this._wv = wv;
       this.bindEvents();
@@ -3172,6 +3173,7 @@ const WhatsAppChat = {
       if (wcBtn) { wcBtn.className = 'chat-toggle closed'; wcBtn.innerHTML = '&#9664;'; wcBtn.title = 'Abrir WebChat (Ctrl+Shift+W)'; }
       document.querySelectorAll('.tnbtn').forEach(b => b.classList.remove('active'));
       this.load();
+      window.WhatsAppExtractor?.activate?.();
     } else {
       this.close();
       return;
@@ -3191,6 +3193,7 @@ const WhatsAppChat = {
       PanelResize.reset(sb, 'mc-panel-w-wa', 480);
     }
     destroyEmbeddedWebview(this._wv);
+    window.WhatsAppExtractor?.deactivate?.();
     this._wv = null;
     this._ready = false;
     const btn = document.getElementById('chat-toggle-wa');

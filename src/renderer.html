@@ -3872,7 +3872,7 @@ async function loadHistoryLS() {
   try {
     const nativeHistory = await mc.historyList();
     if (nativeHistory.length) {
-      state.history = nativeHistory;
+      state.history = nativeHistory.filter(entry => !isInternalHistoryUrl(entry?.url));
       return;
     }
     const raw = localStorage.getItem('mc_history');
@@ -3890,8 +3890,12 @@ async function loadHistoryLS() {
   }
 }
 
+function isInternalHistoryUrl(url) {
+  return /^(?:data:text\/html|blob:)/i.test(String(url || '')) || String(url || '') === 'mc:player';
+}
+
 function addHistory(url) {
-  if (!url || url === 'mc://newtab') return;
+  if (!url || url === 'mc://newtab' || isInternalHistoryUrl(url)) return;
   const last = state.history[0];
   if (last && last.url === url) return;
   state.history.unshift({ url, title: url.replace(/https?:\/\//,'').split('/')[0], ts: Date.now() });
@@ -3958,7 +3962,17 @@ async function updateMaxBtn() {
   const btn = $('maxbtn');
   if (btn) { btn.className = 'wbtn g' + (max ? ' maximized' : ''); btn.title = max ? 'Restaurar' : 'Maximizar'; }
 }
-function goHome()    { showPanel('newtab'); $('urlinput').value='mc://newtab'; }
+function goHome()    {
+  const tab = state.tabs.find(t => t.id === state.activeTab);
+  if (tab) {
+    tab.url = 'mc://newtab';
+    tab.title = 'Nueva pestaña';
+    const title = document.querySelector('#tab-' + state.activeTab + ' .tab-title');
+    if (title) title.textContent = tab.title;
+  }
+  showPanel('newtab');
+  $('urlinput').value = 'mc://newtab';
+}
 
 // ── lista rápida de dominios de ads para filtrar barra URL ──
 const AD_HOSTS_QUICK = [
@@ -4049,7 +4063,7 @@ function bindWebviewToTab(id, wv) {
         if (!/youtube\\.com/i.test(location.hostname)) return false;
         window.__mcYtAdSkipInstalled = true;
 
-        const SKIP_MS = 250;
+        const SKIP_MS = 500;
 
         // Elimina anuncios compañeros / overlays junto al reproductor
         const removeCompanionAds = () => {
@@ -4120,8 +4134,6 @@ function bindWebviewToTab(id, wv) {
         };
 
         setInterval(trySkip, SKIP_MS);
-        const obs = new MutationObserver(() => trySkip());
-        obs.observe(document.documentElement, { childList: true, subtree: true });
         return true;
       } catch { return false; }
     })()`).catch(() => {});
@@ -5547,7 +5559,7 @@ function toggleUtilityPanel() {
   const open = ov.classList.toggle('open');
   const btn = $('utility-toggle');
   if (btn) btn.classList.toggle('open', open);
-  if (open) setUtilityPanelTab('history');
+  if (open) setUtilityPanelTab('downloads');
 }
 function toggleDlOverlay() {
   openUtilityPanel('downloads');
@@ -5902,6 +5914,7 @@ function bindDownloadEvents() {
     const ph = queue.querySelector('.dl-empty-msg') || queue.querySelector('div[style*="center"]'); if (ph) ph.remove();
     const ov = $('dl-overlay');
     if (ov && !ov.classList.contains('open')) ov.classList.add('open');
+    setUtilityPanelTab('downloads');
     const dlId = d.id;
     const existing = document.getElementById(dlId);
     if (existing) {

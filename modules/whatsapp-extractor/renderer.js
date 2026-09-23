@@ -19,31 +19,27 @@
     _lastHeight: null,
 
     init() {
+      this._active = false;
+    },
+
+    activate() {
+      if (this._active) return;
+      this._active = true;
       this.injectButton();
-      this.ensureOverlay();
       this.loadDownloads();
     },
 
     // ── Botón en el panel de WhatsApp ──
     injectButton() {
-      const tryInject = () => {
-        const actions = document.querySelector('#wa-sidebar .wch-actions');
-        if (!actions) return false;
-        if (document.getElementById('wa-extract-btn')) return true;
-        const btn = document.createElement('button');
-        btn.id = 'wa-extract-btn';
-        btn.className = 'wch-action-btn';
-        btn.textContent = '📥 Extraer media';
-        btn.title = 'Extraer multimedia de WhatsApp (estados, chat, voz, perfiles)';
-        btn.onclick = () => this.extract();
-        actions.appendChild(btn);
-        return true;
-      };
-      if (tryInject()) return;
-      const obs = new MutationObserver(() => {
-        if (tryInject()) obs.disconnect();
-      });
-      obs.observe(document.body, { childList: true, subtree: true });
+      const actions = document.querySelector('#wa-sidebar .wch-actions');
+      if (!actions || document.getElementById('wa-extract-btn')) return;
+      const btn = document.createElement('button');
+      btn.id = 'wa-extract-btn';
+      btn.className = 'wch-action-btn';
+      btn.textContent = '📥 Extraer media';
+      btn.title = 'Extraer multimedia de WhatsApp (estados, chat, voz, perfiles)';
+      btn.onclick = () => this.extract();
+      actions.appendChild(btn);
     },
 
     // ── Overlay dedicado, anclado al borde del panel de WhatsApp ──
@@ -115,6 +111,7 @@
 
     // ── Extracción (se ejecuta dentro del webview de WhatsApp) ──
     async extract() {
+      this.activate();
       const wv = document.getElementById('wa-wv');
       if (!wv || !wv.executeJavaScript) {
         this.showMessage('El panel de WhatsApp no está disponible. Abrí el panel con Ctrl+Shift+Q.');
@@ -133,17 +130,6 @@
             seen.add(key);
             found.push(item);
           };
-          const toDataUrl = async (blobUrl) => {
-            try {
-              const blob = await fetch(blobUrl).then(r => r.blob());
-              if (blob.size > 60 * 1024 * 1024) return null;
-              return await new Promise(res => {
-                const reader = new FileReader();
-                reader.onload = () => res(reader.result);
-                reader.readAsDataURL(blob);
-              });
-            } catch { return null; }
-          };
           const isFullscreenOverlay = (el) => {
             const rect = el.getBoundingClientRect();
             if (rect.width < 250 || rect.height < 250) return false;
@@ -156,7 +142,6 @@
             }
             return false;
           };
-          const isStatusEl = (el) => el.closest('[data-testid="status-viewer"]') || isFullscreenOverlay(el);
           const categorize = (el) => {
             const tag = el.tagName.toLowerCase();
             const isVideo = tag === 'video' || (tag === 'source' && el.parentElement?.tagName?.toLowerCase() === 'video');
@@ -170,7 +155,6 @@
             if (isStatus) return 'Imagen';
             return 'Imagen';
           };
-          let blobCount = 0;
           const els = [...document.querySelectorAll('img, video, audio, source')];
           for (const el of els) {
             const src = el.currentSrc || el.src;
@@ -183,27 +167,11 @@
             let url = src;
             let preview = null;
             if (src.startsWith('blob:')) {
-              if (blobCount >= 100) continue;
-              blobCount++;
-              const dataUrl = await toDataUrl(src);
-              if (!dataUrl) continue;
-              url = dataUrl;
-              preview = dataUrl;
+              // El blob se convierte solo al abrirlo o descargarlo. Convertir
+              // todos los medios aquí multiplica el uso de RAM del renderer.
+              preview = null;
             } else if (/^https?:/i.test(src)) {
-              // Media de estado: convertir a data URL para descarga directa
-              // (los estados son blobs de IndexedDB; la URL http puede expirar)
-              if (isStatusEl(el) && blobCount < 100) {
-                blobCount++;
-                const dataUrl = await toDataUrl(src);
-                if (dataUrl) {
-                  url = dataUrl;
-                  preview = dataUrl;
-                } else {
-                  preview = src;
-                }
-              } else {
-                preview = src;
-              }
+              preview = src;
             } else {
               continue;
             }
@@ -242,6 +210,14 @@
       const ov = document.getElementById(OVERLAY_ID);
       if (ov) ov.classList.remove('open');
       this._stopFollow();
+    },
+    deactivate() {
+      this.close();
+      this._resources = [];
+      this._downloads = [];
+      const ov = document.getElementById(OVERLAY_ID);
+      if (ov) ov.remove();
+      this._active = false;
     },
     // Mantiene el overlay pegado al borde izquierdo del panel de WhatsApp
     // mientras esté abierto: si el panel se mueve o se redimensiona (handle
@@ -346,9 +322,37 @@
     },
 
     // ── Acciones ──
+    async _blobToDataUrl(item) {
+      const wv = document.getElementById('wa-wv');
+      if (!wv?.executeJavaScript || !item?.url?.startsWith('blob:')) return null;
+      const blobUrl = JSON.stringify(item.url);
+      try {
+        return await wv.executeJavaScript(`(async () => {
+          try {
+            const blob = await fetch(${blobUrl}).then(r => r.blob());
+            if (blob.size > 60 * 1024 * 1024) return null;
+            return await new Promise(resolve => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = () => resolve(null);
+              reader.readAsDataURL(blob);
+            });
+          } catch { return null; }
+        })()`);
+      } catch { return null; }
+    },
     async openItem(index) {
       const item = this._resources[index];
       if (!item?.url) return;
+      if (item.url.startsWith('blob:')) {
+        const dataUrl = await this._blobToDataUrl(item);
+        if (!dataUrl) return;
+        if (typeof mc?.waMediaOpen === 'function') {
+          const res = await mc.waMediaOpen({ data: dataUrl });
+          if (res?.ok && typeof window.addTab === 'function') window.addTab('file:///' + res.path.replace(/\\/g, '/'));
+        }
+        return;
+      }
       if (item.url.startsWith('data:')) {
         // Las data URLs grandes no se renderizan en un webview (Chromium las descarga).
         // Guardar a archivo temporal y abrir file:// en una pestaña.
@@ -376,8 +380,10 @@
     async download(index) {
       const item = this._resources[index];
       if (!item?.url) return;
-      if (item.url.startsWith('data:')) {
-        const m = /^data:([^;,]*);base64,(.*)$/s.exec(item.url);
+      let dataUrl = item.url;
+      if (item.url.startsWith('blob:')) dataUrl = await this._blobToDataUrl(item);
+      if (dataUrl?.startsWith('data:')) {
+        const m = /^data:([^;,]*);base64,(.*)$/s.exec(dataUrl);
         if (!m) return;
         let mimeType = m[1];
         // WhatsApp a veces da blobs sin tipo MIME (o application/octet-stream) →

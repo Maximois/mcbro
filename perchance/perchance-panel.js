@@ -1,6 +1,6 @@
 // perchance-panel.js
 // Módulo AISLADO para el panel dedicado de Perchance.
-// Vive fuera de tus restricciones: su propia partition, su propia session,
+// Vive fuera de tus restricciones: su propia partition persistente aislada, su propia session,
 // su propia allowlist, su propio pipeline de descargas.
 //
 //   const { createPerchancePanel } = require("./perchance-panel");
@@ -9,13 +9,31 @@
 //
 // Sustituye al módulo anterior (perchance-network-module.js). Todo aquí es
 // autocontenido: no necesita que toques la session por defecto de la app.
+//
+// ── NO TOCAR SANDBOX ────────────────────────────────────────────────────────
+// Perchance (y el script de Cloudflare) crean frames auxiliares about:blank /
+// srcdoc para burbujas, modales (ⓘ) y widgets. Chromium los ejecuta según el
+// atributo sandbox del iframe padre. Si una capa "navegador estricto" reescribe
+// o limpia esos atributos, el frame muere EN SILENCIO ("Blocked script
+// execution in 'about:blank' ... sandboxed and the 'allow-scripts' permission
+// is not set") y con él toda la parte interactiva que los usa. Aquí NO hay que
+// modificar ningún atributo sandbox/allow de los frames del sitio.
+//   - sin allow-scripts   → se cae la burbuja/widget
+//   - sin allow-modals    → los ⓘ no abren
+//   - sin allow-downloads → no descarga blob/data
+//   - sin allow-same-origin → se rompe el almacenamiento/scratchpad
+// Si ves "Blocked script execution" en consola, busca QUIÉN reescribe el
+// sandbox del guion de la web (CSS/pageScripts/security wizard), no lo "arregles"
+// cambiando webPreferences.sandbox del webview.
+// ─────────────────────────────────────────────────────────────────────────────
 
-const { app, session, WebContentsView, shell } = require("electron");
+const { app, session, WebContentsView, shell, webFrameMain } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { shouldAutoClearPerchanceStorage } = require("../lib/perchance");
+const { startLocalProxy } = require("./perchance-proxy");
 
-const PERCHANCE_PARTITION = "persist:perchance";
+const PERCHANCE_PARTITION = "persist:perchance-clean";
 
 // ===========================================================================
 // 1. Allowlist del ecosistema Perchance
@@ -54,7 +72,11 @@ const SUFFIX_HOSTS = [
 
 function isPerchanceHost(host) {
   if (!host) return false;
-  const h = String(host).toLowerCase().replace(/\.$/, "");
+  let h = String(host).toLowerCase().replace(/\.$/, "");
+  // frameOrigin / Origin a veces llegan como URL completa.
+  if (h.includes("://")) {
+    try { h = new URL(h).hostname; } catch { /* keep h */ }
+  }
   if (EXACT_HOSTS.has(h)) return true;
   return SUFFIX_HOSTS.some((s) => h === s || h.endsWith("." + s));
 }
@@ -164,8 +186,48 @@ const PERMISSIONS_TO_ALLOW = new Set([
   "speaker-selection",
 ]);
 
+// Proxy local singleton: arranca una vez, apunta cada session de Perchance a
+// él. Resolver por DNS del sistema es la única manera de escapar del DoH
+// global estricto sin tocar la configuración de red del resto de la app.
+let proxyPromises = new Map(); // partition -> Promise<port> (proxy local singleton)
+function createPerchanceProxy(partition = PERCHANCE_PARTITION) {
+  const ses = session.fromPartition(partition);
+  if (!proxyPromises.has(partition)) {
+    const p = startLocalProxy().then(({ port }) => {
+      ses.setProxy({ proxyRules: `http://127.0.0.1:${port}` }).catch((e) => {
+        console.warn("[perchance] error al configurar proxy local:", e.message);
+      });
+      return port;
+    });
+    proxyPromises.set(partition, p);
+  }
+  return proxyPromises.get(partition);
+}
+
 function installPerchanceNetwork(partition = PERCHANCE_PARTITION, opts = {}) {
   const ses = session.fromPartition(partition);
+  // Red directa NO es suficiente: el resolver de Chromium es global (DoH
+  // estricto de app.configureHostResolver). Si el DoH no resuelve un host del
+  // ecosistema Perchance, Chromium cae con ERR_NAME_NOT_RESOLVED sin fallback.
+  // Un proxy local exclusivo resuelve por el DNS del sistema (fuera del DoH)
+  // y tunela CONNECT/HTTP/WS — la doc PERCHANCE-ARCHITECTURE.md lo exige.
+  createPerchanceProxy().catch((e) => {
+    console.warn("[perchance] no pude levantar el proxy local:", e.message);
+  });
+
+  // UA Chrome real del motor (sin mentir la major). Perchance mira UA y
+  // navigator.webdriver; un Chrome inventado hace que sirva features que el
+  // motor no soporta. La app ya pone --disable-blink-features=AutomationControlled.
+  const chromeMajor = (process.versions && process.versions.chrome
+    ? process.versions.chrome.split(".")[0] : "124");
+  try {
+    ses.setUserAgent(
+      `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeMajor}.0.0.0 Safari/537.36`
+    );
+  } catch (e) {
+    console.warn("[perchance] no pude fijar UA:", e.message);
+  }
+
   const autoClear = shouldAutoClearPerchanceStorage({
     force: process.env.MC_PERCHANCE_CLEAR_STORAGE === '1' || process.argv.includes('--perchance-clear-storage')
   });
@@ -179,26 +241,31 @@ function installPerchanceNetwork(partition = PERCHANCE_PARTITION, opts = {}) {
     ses.clearStorageData({ storages: ["localstorage", "indexdb", "serviceworkers", "cachestorage", "shadercache", "websql"] }).catch(() => {});
   }
 
-  const nativeUA = session.defaultSession.getUserAgent();
+  ses.setPermissionRequestHandler((_wc, permission, cb) => cb(PERMISSIONS_TO_ALLOW.has(permission)));
+  ses.setPermissionCheckHandler((_wc, permission) => PERMISSIONS_TO_ALLOW.has(permission));
 
-  // Allowlist: cancela lo ajeno, deja pasar el frame raíz para no romper la barra.
-  ses.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (d, cb) => {
-    // Override explícito desde el panel de Permisos general (mismo mecanismo
-    // que el resto del navegador: CFG.resourceRules, botón "Permitir"/"Bloquear").
-    // Sin esto, un script legítimo bloqueado por la allowlist fija de Perchance
-    // (p.ej. un CDN/plugin no listado en SUFFIX_HOSTS) queda bloqueado para
-    // siempre — el botón "Permitir" del panel general nunca llegaba hasta acá.
-    const override = opts.resolveOverride ? opts.resolveOverride(d.url, d.resourceType) : null;
-    if (override === 'allow') return cb({ cancel: false });
-    if (override === 'block') { if (opts.onBlocked) opts.onBlocked(d); return cb({ cancel: true }); }
-    if (isAllowedUrl(d.url)) return cb({ cancel: false });
-    if (opts.onBlocked) opts.onBlocked(d);
-    cb({ cancel: d.resourceType !== "mainFrame" });
+  // Diagnóstico únicamente: nunca cancela recursos. Sirve para identificar
+  // la URL concreta detrás de ERR_ADDRESS_INVALID u otro fallo de red.
+  ses.webRequest.onErrorOccurred({ urls: ["*://*/*"] }, (d) => {
+    console.warn("[perchance][resource-error]", d.error, d.resourceType, d.url);
   });
 
-  // Quita CSP / XFO / COEP en respuestas de Perchance.
-  // El motor de Perchance define funciones con <script> inyectado en <head> y
-  // evalúa bloques con eval(`with(root){...}`) -> cualquier CSP lo mata.
+  if (process.env.MC_PCH_DIAG === '1') {
+    ses.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (d, cb) => {
+      if (d.resourceType === 'image' || d.resourceType === 'fetch' || d.resourceType === 'xhr' || d.resourceType === 'mainFrame' || d.resourceType === 'subFrame') {
+        console.log("[PCH-IMG][req]", d.resourceType, d.url.length > 180 ? d.url.slice(0, 180) + '...' : d.url);
+      }
+      cb({});
+    });
+    ses.webRequest.onCompleted({ urls: ["*://*/*"] }, (d) => {
+      if (d.resourceType === 'image' || d.resourceType === 'fetch' || d.resourceType === 'xhr') {
+        console.log("[PCH-IMG][done]", d.statusCode, d.resourceType, (d.url || '').slice(0, 180));
+      }
+    });
+  }
+
+  // El documento principal puede declarar CSP/XFO/COEP para bloquear los
+  // plugins e iframes externos que usan los generadores.
   ses.webRequest.onHeadersReceived({ urls: ["*://*/*"] }, (d, cb) => {
     const fromPerchance = isPerchanceHost(safeHost(d.url)) || isPerchanceHost(d.frameOrigin);
     if (!fromPerchance) return cb({});
@@ -211,17 +278,6 @@ function installPerchanceNetwork(partition = PERCHANCE_PARTITION, opts = {}) {
     ];
     for (const k of Object.keys(headers)) if (drop.includes(k.toLowerCase())) delete headers[k];
     cb({ responseHeaders: headers });
-  });
-
-  ses.setPermissionRequestHandler((_wc, permission, cb) => cb(PERMISSIONS_TO_ALLOW.has(permission)));
-  ses.setPermissionCheckHandler((_wc, permission) => PERMISSIONS_TO_ALLOW.has(permission));
-
-  // Perchance, Google y Turnstile usan la identidad nativa de Electron/Chromium.
-  ses.webRequest.onBeforeSendHeaders({ urls: ['<all_urls>'] }, (d, cb) => {
-    const headers = { ...(d.requestHeaders || {}) };
-    const host = safeHost(d.url);
-    headers['User-Agent'] = nativeUA;
-    cb({ requestHeaders: headers });
   });
 
   return ses;
@@ -265,6 +321,270 @@ async function clearPerchanceData(partition = PERCHANCE_PARTITION, opts = {}) {
 }
 
 function safeHost(u) { try { return new URL(u).hostname; } catch { return ""; } }
+
+// ===========================================================================
+// 3c. alert/confirm → toast in-page (no diálogo nativo del SO)
+// ===========================================================================
+// Los ⓘ usan alert(); la galería NSFW usa confirm(+18) desde iframes chicos
+// (image-generation.perchance.org). En Electron eso sale como diálogo modal
+// "Una página insertada…". Lo reemplazamos por toast HTML suave.
+// Avisos +18: toast + return true (return false abortaba el iframe gallery).
+// Otros confirm: toast en el frame top + re-click. prompt() sigue nativo.
+
+const ALERT_BUBBLE_SCRIPT = `(() => {
+  try {
+    if (window.__mcPchDialogBubbles === 4) return 'already';
+    window.__mcPchDialogBubbles = 4;
+    const CSS = \`
+#mc-pch-toast-root{position:fixed;inset:auto 12px 12px auto;z-index:2147483646;display:flex;flex-direction:column;gap:8px;align-items:flex-end;pointer-events:none;max-width:min(400px,calc(100vw - 24px));font:13px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+.mc-pch-toast{pointer-events:auto;background:#1b1f24;color:#e8eaed;border:1px solid rgba(255,255,255,.12);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.45);padding:10px 12px 10px 14px;display:flex;flex-direction:column;gap:10px;opacity:0;transform:translateY(8px);transition:opacity .18s ease,transform .18s ease;max-width:100%}
+.mc-pch-toast.show{opacity:1;transform:translateY(0)}
+.mc-pch-toast-row{display:flex;gap:10px;align-items:flex-start}
+.mc-pch-toast-msg{flex:1;white-space:pre-wrap;word-break:break-word;max-height:40vh;overflow:auto}
+.mc-pch-toast-x{flex:none;border:0;background:transparent;color:#9aa0a6;cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
+.mc-pch-toast-x:hover{color:#fff}
+.mc-pch-toast-actions{display:flex;gap:8px;justify-content:flex-end}
+.mc-pch-toast-btn{border:0;border-radius:8px;padding:6px 12px;font:12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;cursor:pointer}
+.mc-pch-toast-btn.cancel{background:rgba(255,255,255,.08);color:#c5c8ce}
+.mc-pch-toast-btn.cancel:hover{background:rgba(255,255,255,.14)}
+.mc-pch-toast-btn.ok{background:#3b82f6;color:#fff}
+.mc-pch-toast-btn.ok:hover{background:#2563eb}
+.mc-pch-toast.warn{border-color:rgba(251,191,36,.35)}
+\`;
+    const ensureRoot = () => {
+      let root = document.getElementById('mc-pch-toast-root');
+      const style = document.getElementById('mc-pch-toast-style');
+      if (style) style.textContent = CSS;
+      else {
+        const s = document.createElement('style');
+        s.id = 'mc-pch-toast-style';
+        s.textContent = CSS;
+        (document.head || document.documentElement).appendChild(s);
+      }
+      if (root) return root;
+      root = document.createElement('div');
+      root.id = 'mc-pch-toast-root';
+      (document.body || document.documentElement).appendChild(root);
+      return root;
+    };
+    const dismiss = (el) => {
+      try {
+        el.classList.remove('show');
+        setTimeout(() => { try { el.remove(); } catch {} }, 200);
+      } catch {}
+    };
+    const showAlert = (raw) => {
+      try {
+        const root = ensureRoot();
+        const el = document.createElement('div');
+        el.className = 'mc-pch-toast';
+        const row = document.createElement('div');
+        row.className = 'mc-pch-toast-row';
+        const msg = document.createElement('div');
+        msg.className = 'mc-pch-toast-msg';
+        msg.textContent = String(raw == null ? '' : raw);
+        const btn = document.createElement('button');
+        btn.className = 'mc-pch-toast-x';
+        btn.type = 'button';
+        btn.setAttribute('aria-label', 'Cerrar');
+        btn.textContent = '×';
+        btn.onclick = () => dismiss(el);
+        row.appendChild(msg);
+        row.appendChild(btn);
+        el.appendChild(row);
+        root.appendChild(el);
+        requestAnimationFrame(() => el.classList.add('show'));
+        const ms = Math.min(14000, Math.max(4200, 2800 + String(raw || '').length * 18));
+        setTimeout(() => dismiss(el), ms);
+      } catch {}
+    };
+    let confirmOpen = null;
+    const showConfirmLocal = (raw, onPick) => {
+      try {
+        if (confirmOpen) {
+          try { confirmOpen(false); } catch {}
+          confirmOpen = null;
+        }
+        const root = ensureRoot();
+        const el = document.createElement('div');
+        el.className = 'mc-pch-toast warn';
+        const row = document.createElement('div');
+        row.className = 'mc-pch-toast-row';
+        const msg = document.createElement('div');
+        msg.className = 'mc-pch-toast-msg';
+        msg.textContent = String(raw == null ? '' : raw);
+        row.appendChild(msg);
+        const actions = document.createElement('div');
+        actions.className = 'mc-pch-toast-actions';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'mc-pch-toast-btn cancel';
+        cancel.textContent = 'Cancelar';
+        const ok = document.createElement('button');
+        ok.type = 'button';
+        ok.className = 'mc-pch-toast-btn ok';
+        ok.textContent = 'Aceptar';
+        const finish = (value) => {
+          if (confirmOpen !== finish) return;
+          confirmOpen = null;
+          dismiss(el);
+          try { onPick(!!value); } catch {}
+        };
+        confirmOpen = finish;
+        cancel.onclick = () => finish(false);
+        ok.onclick = () => finish(true);
+        actions.appendChild(cancel);
+        actions.appendChild(ok);
+        el.appendChild(row);
+        el.appendChild(actions);
+        root.appendChild(el);
+        requestAnimationFrame(() => el.classList.add('show'));
+        try { ok.focus(); } catch {}
+      } catch {
+        try { onPick(false); } catch {}
+      }
+    };
+    const isTop = () => {
+      try { return window.top === window; } catch { return true; }
+    };
+    const pendingById = new Map();
+    window.addEventListener('message', (ev) => {
+      try {
+        const d = ev && ev.data;
+        if (!d || d.source !== 'mc-pch') return;
+        if (d.type === 'mc-pch-confirm' && isTop()) {
+          showConfirmLocal(d.message, (ok) => {
+            try {
+              ev.source && ev.source.postMessage({ source: 'mc-pch', type: 'mc-pch-confirm-result', id: d.id, ok: !!ok }, '*');
+            } catch {}
+          });
+          return;
+        }
+        if (d.type === 'mc-pch-confirm-result' && d.id && pendingById.has(d.id)) {
+          const cb = pendingById.get(d.id);
+          pendingById.delete(d.id);
+          try { cb(!!d.ok); } catch {}
+        }
+      } catch {}
+    });
+    const requestConfirmToast = (message, onPick) => {
+      if (isTop()) {
+        showConfirmLocal(message, onPick);
+        return;
+      }
+      const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      pendingById.set(id, onPick);
+      try {
+        window.top.postMessage({ source: 'mc-pch', type: 'mc-pch-confirm', id, message: String(message == null ? '' : message) }, '*');
+      } catch {
+        pendingById.delete(id);
+        showConfirmLocal(message, onPick);
+        return;
+      }
+      setTimeout(() => {
+        if (!pendingById.has(id)) return;
+        pendingById.delete(id);
+        showConfirmLocal(message, onPick);
+      }, 800);
+    };
+    document.addEventListener('pointerdown', (e) => {
+      try {
+        const t = e.target;
+        if (!t || !t.closest) return;
+        if (t.closest('#mc-pch-toast-root')) return;
+        window.__mcPchLastClickEl = t.closest('button, a, [role="button"], input[type="button"], input[type="submit"], summary, label') || t;
+      } catch {}
+    }, true);
+    window.alert = function (message) { showAlert(message); };
+    window.confirm = function (message) {
+      if (typeof window.__mcPchConfirmNext === 'boolean') {
+        const v = window.__mcPchConfirmNext;
+        window.__mcPchConfirmNext = undefined;
+        return v;
+      }
+      const msg = String(message == null ? '' : message);
+      // Aviso +18: devolver false cancela la carga del iframe gallery
+      // (ERR_ABORTED + pantalla gris). Toast informativo + true = suave y
+      // no rompe la galería.
+      if (/WARNING|over\\s*18|adult themes|young viewers|inappropriate for young/i.test(msg)) {
+        showAlert(msg);
+        return true;
+      }
+      const clickEl = window.__mcPchLastClickEl;
+      if (!clickEl) {
+        showAlert(msg);
+        return true;
+      }
+      requestConfirmToast(msg, (ok) => {
+        if (!ok) return;
+        window.__mcPchConfirmNext = true;
+        try {
+          if (typeof clickEl.click === 'function') clickEl.click();
+        } catch {
+          window.__mcPchConfirmNext = undefined;
+        }
+      });
+      return false;
+    };
+    return 'installed';
+  } catch (e) { return 'fail ' + String(e && e.message || e); }
+})()`;
+
+function installPerchanceAlertBubbles(partition = PERCHANCE_PARTITION) {
+  const targetSes = session.fromPartition(partition);
+  const injectFrame = (frame) => {
+    if (!frame || typeof frame.executeJavaScript !== 'function') return;
+    try {
+      // Evitar executeJavaScript sobre about:blank / mid-nav: aborta subframes.
+      if (typeof frame.url === 'string' && (!frame.url || frame.url === 'about:blank')) return;
+      frame.executeJavaScript(ALERT_BUBBLE_SCRIPT, true).catch(() => {});
+    } catch {}
+  };
+  const injectAll = (wc) => {
+    try {
+      const mf = wc.mainFrame;
+      if (!mf) return;
+      injectFrame(mf);
+      for (const f of (mf.framesInSubtree || [])) injectFrame(f);
+    } catch {}
+  };
+  app.on('web-contents-created', (_e, wc) => {
+    try {
+      if (wc.session !== targetSes) return;
+    } catch { return; }
+    wc.on('dom-ready', () => injectAll(wc));
+    wc.on('did-finish-load', () => injectAll(wc));
+    // Solo al terminar cada frame — sin reinyectar el árbol en cada navigate
+    // (eso abortaba image-generation/gallery y comments-plugin).
+    wc.on('did-frame-finish-load', (_ev, isMainFrame, frameProcessId, frameRoutingId) => {
+      try {
+        const frame = webFrameFromIds(wc, frameProcessId, frameRoutingId);
+        if (frame) injectFrame(frame);
+        else if (isMainFrame) injectAll(wc);
+      } catch {
+        if (isMainFrame) injectAll(wc);
+      }
+    });
+  });
+}
+
+function webFrameFromIds(wc, processId, routingId) {
+  try {
+    if (webFrameMain && typeof webFrameMain.fromId === 'function' && processId != null && routingId != null) {
+      const frame = webFrameMain.fromId(processId, routingId);
+      if (frame) return frame;
+    }
+  } catch {}
+  try {
+    const mf = wc.mainFrame;
+    if (!mf) return null;
+    if (mf.processId === processId && mf.routingId === routingId) return mf;
+    for (const f of (mf.framesInSubtree || [])) {
+      if (f && f.processId === processId && f.routingId === routingId) return f;
+    }
+  } catch {}
+  return null;
+}
 
 // ===========================================================================
 // 4. Panel dedicado
@@ -330,6 +650,7 @@ module.exports = {
   isGoogleHost,
   installPerchanceDownloads,
   installPerchanceNetwork,
+  installPerchanceAlertBubbles,
   clearPerchanceData,
   createPerchancePanel,
   downloadFolder,
