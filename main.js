@@ -201,7 +201,26 @@ function setupSessionPermissionHandlers(sess) {
     return resolvePermissionDecision(host, key);
   };
   sess.setPermissionRequestHandler((webContents, permission, callback, details) => {
-    callback(decide(normalizeSiteHost(webContents?.getURL?.() || ''), permission, details));
+    const host = normalizeSiteHost(webContents?.getURL?.() || '');
+    if (String(permission || '').trim() === 'notifications' && host && !getPermissionRuleForHost(host, 'notifications')) {
+      const parent = BrowserWindow.fromWebContents(webContents) || mainWin;
+      dialog.showMessageBox(parent, {
+        type: 'question',
+        title: 'Permiso de notificaciones',
+        message: `${host} quiere enviarte notificaciones`,
+        detail: 'Puedes cambiar esta decisión después desde Privacidad y control.',
+        buttons: ['Permitir', 'Bloquear'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true
+      }).then(result => {
+        const allow = result.response === 0;
+        setPermissionEntry(host, 'notifications', allow ? 'allow' : 'deny');
+        callback(allow);
+      }).catch(() => callback(false));
+      return;
+    }
+    callback(decide(host, permission, details));
   });
   sess.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
     const host = normalizeSiteHost(requestingOrigin || webContents?.getURL?.() || '');
