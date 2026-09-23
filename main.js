@@ -3953,6 +3953,31 @@ app.on('web-contents-created', (event, wc) => {
   });
 });
 
+function extractExternalUrl(argv = []) {
+  return (Array.isArray(argv) ? argv : [])
+    .map(value => String(value || '').replace(/^['"]|['"]$/g, ''))
+    .find(value => /^https?:\/\//i.test(value)) || '';
+}
+
+let pendingExternalUrl = extractExternalUrl(process.argv);
+
+function openExternalUrl(url) {
+  const target = extractExternalUrl([url]);
+  if (!target) return false;
+  if (!mainWin || mainWin.isDestroyed()) {
+    pendingExternalUrl = target;
+    return false;
+  }
+  if (mainWin.isMinimized()) mainWin.restore();
+  mainWin.focus();
+  if (mainWin.webContents.isLoading()) {
+    pendingExternalUrl = target;
+    return false;
+  }
+  mainWin.webContents.send('external-url', target);
+  return true;
+}
+
 // === APP LIFECYCLE ===
 // Bloqueo de instancia única: si ya hay una instancia de MC Browser corriendo,
 // la nueva se cierra y enfoca la ventana existente. Evita conflictos de caché/
@@ -3961,8 +3986,10 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, commandLine) => {
     try {
+      const target = extractExternalUrl(commandLine);
+      if (target) openExternalUrl(target);
       if (mainWin) {
         if (mainWin.isMinimized()) mainWin.restore();
         mainWin.focus();
@@ -4007,6 +4034,13 @@ app.whenReady().then(() => {
     } catch (e) { console.log('[PCH-CRASH] setup-fail', e.message); }
   }
   createWindow();
+  mainWin.webContents.once('did-finish-load', () => {
+    if (pendingExternalUrl) {
+      const target = pendingExternalUrl;
+      pendingExternalUrl = '';
+      openExternalUrl(target);
+    }
+  });
   if (process.env.MC_PCH_DIAG === '1') {
     try {
       const installMainWatcher = () => {

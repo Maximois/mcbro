@@ -21,7 +21,7 @@ const ALLOWED = new Set([
   'auth-session-updated',
   'streams:found',
   'ytdlp-log',
-  'open-new-tab','perchance-open-tab','page-extract-results','ai-element-selected','cosmetic-block-result','cosmetic-unblock-result',
+  'open-new-tab','external-url','perchance-open-tab','page-extract-results','ai-element-selected','cosmetic-block-result','cosmetic-unblock-result',
   'perchance:clear-data','perchance:open-dl-folder',
   // Bookmarks
   'bookmarks:list','bookmarks:add','bookmarks:remove','bookmarks:update','bookmarks:reorder',

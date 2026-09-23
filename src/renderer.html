@@ -6530,6 +6530,9 @@ function resetShortcuts() {
     // es la única acción segura.
   });
   mc.on('new-tab',      ()=> addTab());
+  mc.on('external-url', url => {
+    if (typeof url === 'string' && /^https?:\/\//i.test(url)) loadUrl(url);
+  });
   mc.on('open-new-tab',  url => addTab(url));
   mc.on('page-extract-results', showExtractor);
   mc.on('ai-element-selected', element => {
