@@ -1151,6 +1151,9 @@ function setupWebchatSession() {
 
 function setupWhatsappSession() {
   const waSess = session.fromPartition(WHATSAPP_PARTITION);
+  if (!getPermissionRuleForHost('web.whatsapp.com', 'notifications')) {
+    setPermissionEntry('web.whatsapp.com', 'notifications', 'allow');
+  }
   setupSessionPermissionHandlers(waSess);
   if (CFG.proxyEnabled && CFG.proxyHost) {
     waSess.setProxy({ proxyRules: `${CFG.proxyType || 'socks5'}://${CFG.proxyHost}:${CFG.proxyPort || 1080}` })
