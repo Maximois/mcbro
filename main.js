@@ -446,18 +446,10 @@ function isPerchanceHost(host) {
 }
 
 function isPerchanceRuntimeHost(host) {
-  const value = String(host || '').toLowerCase().replace(/^\.+/, '');
-  return isPerchanceHost(value) ||
-    value === 'user.uploads.dev' || value.endsWith('.user.uploads.dev') ||
-    value === 'aigc.uploads.dev' || value.endsWith('.aigc.uploads.dev') ||
-    value === 'editable.uploads.dev' || value.endsWith('.editable.uploads.dev') ||
-    value === 'cdn.jsdelivr.net' || value === 'cdnjs.cloudflare.com' ||
-    value === 'unpkg.com' || value === 'esm.sh' || value.endsWith('.esm.sh') ||
-    value === 'huggingface.co' || value.endsWith('.huggingface.co') ||
-    value === 'hf.co' || value.endsWith('.hf.co') ||
-    value === 'xethub.hf.co' || value === 'fonts.googleapis.com' ||
-    value === 'gstatic.com' || value.endsWith('.gstatic.com') ||
-    value === 'static.cloudflareinsights.com';
+  // El panel debe vivir en su propia partición y no recibir una allowlist ni
+  // excepción especial de hosts a nivel global de la app. Si se filtra por
+  // dominio aquí, Cloudflare/Turnstile vuelve a romperse.
+  return false;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -468,6 +460,15 @@ function isPerchanceRuntimeHost(host) {
 // modules/perchance-panel/renderer.js y usa un <webview partition="persist:perchance">.
 function setupPerchancePanel() {
   try {
+    // El panel de Perchance debe comportarse como una sesión normal de Electron:
+    // sin secure DNS/DoH ni filtros a nivel de app. Si se conserva el resolver
+    // seguro global, Cloudflare genera subdominios de challenge que fallan con
+    // ERR_NAME_NOT_RESOLVED aunque el sitio principal seabien.
+    try {
+      app.configureHostResolver({ enableBuiltInResolver: true, secureDnsMode: 'off' });
+    } catch (e) {
+      console.warn('[perchance] no pude forzar resolver nativo:', e.message);
+    }
     PerchancePanel.installPerchanceNetwork(PerchancePanel.PERCHANCE_PARTITION);
     PerchancePanel.installPerchanceDownloads(PerchancePanel.PERCHANCE_PARTITION, {
       onEvent: (ev) => { try { mainWin?.webContents?.send('perchance:download', ev); } catch {} }
@@ -1014,16 +1015,18 @@ const DOH_SERVERS = {
 
 function applyDoH() {
   try {
-    if (CFG.dohEnabled) {
+    const explicitDoH = process.env.MC_ENABLE_DOH === '1';
+    if (CFG.dohEnabled && explicitDoH) {
       const url = DOH_SERVERS[CFG.dohServer] || DOH_SERVERS.cloudflare;
       app.configureHostResolver({
         enableBuiltInResolver: true,
         secureDnsMode: CFG.dohStrict !== false ? 'secure' : 'automatic',
         secureDnsServers: [url]
       });
-    } else {
-      app.configureHostResolver({ secureDnsMode: 'off' });
+      return;
     }
+    app.configureHostResolver({ secureDnsMode: 'off' });
+    CFG.dohEnabled = false;
   } catch (e) { console.error('[DoH]', e.message); }
 }
 
@@ -1276,6 +1279,7 @@ function loadCfg() {
         saveCfg();
       }
       if (CFG.gpuAcceleration !== true) CFG.gpuAcceleration = false;
+      if (process.env.MC_ENABLE_DOH !== '1') CFG.dohEnabled = false;
     }
   } catch {}
 }
@@ -4130,8 +4134,9 @@ app.whenReady().then(() => {
   for (const s of (CFG.extraSessions || [])) {
     try { setupExtraSession(session.fromPartition(extraSessionPartition(s.id))); } catch (e) { console.error('[sessions:init]', e.message); }
   }
-  // Panel aislado de Perchance: vista nativa (WebContentsView) con partición
-  // propia, allowlist, permisos, CSP/XFO y descargas blob/data.
+  // Panel aislado de Perchance: debe usar resolver nativo del sistema y no
+  // quedar bloqueado por secure DNS/DoH de la app.
+  app.configureHostResolver({ secureDnsMode: 'off' });
   setupPerchancePanel();
   startProcessMetricsSampler();
   setupWhatsappSession();
@@ -4205,13 +4210,8 @@ app.whenReady().then(() => {
       const host = new URL(d.url).hostname.toLowerCase();
       const docHost = d.documentUrl ? new URL(d.documentUrl).hostname.toLowerCase() : '';
       const isMediaRequest = d.resourceType === 'media' || /\.(?:m3u8|mpd|ts|m4s|mp4|aac|mp3|webm)(?:[?#]|$)|(?:segment|chunk|playlist|\/stream(?:\/|$))/i.test(d.url);
-      if (isPerchanceRuntimeHost(host) || isPerchanceHost(docHost)) {
-        for (const key of Object.keys(responseHeaders)) {
-          if (/^content-security-policy(?:-report-only)?$/i.test(key) || /^x-frame-options$/i.test(key)) {
-            delete responseHeaders[key];
-          }
-        }
-      }
+      // La partición dedicada de Perchance ya se prepara sin restricciones;
+      // no se debe reintroducir una exception global por dominio aquí.
       if (isAuthDomain(host) || isAuthDomain(docHost) || isAuthRedirectFlow(host, docHost)) {
         return cb({ responseHeaders });
       }

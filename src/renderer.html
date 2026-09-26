@@ -7218,8 +7218,17 @@ async function refreshPageCookies() {
     return;
   }
   const cookies = await mc.getSiteCookies(domain).catch(() => []);
+  const domainRule = state.cfg?.allowlist?.[domain] || state.cfg?.allowlist?.['.' + domain] || null;
+  const policyLabel = domainRule === 'allow' ? 'Permitido por whitelist' : domainRule === 'session' ? 'Solo sesión' : 'Bloqueado por whitelist';
   if (!Array.isArray(cookies) || !cookies.length) {
-    list.innerHTML = '<div class="bp-empty"><div class="bp-empty-icon">&#127850;</div><div>Sin cookies para '+escapeHtml(domain)+'</div></div>';
+    const statusHtml = '<div class="perm-cookie-summary" style="margin-bottom:8px;">Estado del dominio: <strong>' + escapeHtml(policyLabel) + '</strong></div>'
+      + '<div class="bp-empty"><div class="bp-empty-icon">&#127850;</div><div>No hay cookies persistentes para ' + escapeHtml(domain) + '</div></div>'
+      + '<div class="perm-cookie-summary" style="margin-top:8px;">La política actual bloquea cookies y almacenamiento persistente fuera de la whitelist. Si el sitio necesita guardar cookies, puedes conceder ese permiso para este dominio.</div>'
+      + '<div class="perm-cookie-actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">'
+      + '<button class="mini-btn" onclick="allowCookie(' + JSON.stringify(domain) + ', ' + JSON.stringify('__site_permission__') + ', ' + JSON.stringify('/') + ')">Permitir cookies</button>'
+      + '<button class="mini-btn danger" onclick="banCookieDomain(' + JSON.stringify(domain) + ')">Bloquear cookies</button>'
+      + '</div>';
+    list.innerHTML = statusHtml;
     return;
   }
 
@@ -7233,7 +7242,7 @@ async function refreshPageCookies() {
     return 'dominio relacionado';
   };
 
-  const summary = '<div class="perm-cookie-summary" style="margin-bottom:8px;">' + cookies.length + ' datos encontrados para <strong>' + escapeHtml(domain) + '</strong>.</div>';
+  const summary = '<div class="perm-cookie-summary" style="margin-bottom:8px;">' + cookies.length + ' datos encontrados para <strong>' + escapeHtml(domain) + '</strong>. Estado: <strong>' + escapeHtml(policyLabel) + '</strong></div>';
   const currentCookies = cookies.filter(cookie => normalizeDomainInput(cookie.domain || domain) === domain);
   const insertedCookies = cookies.filter(cookie => normalizeDomainInput(cookie.domain || domain) !== domain);
   const renderCookie = cookie => {

@@ -31,54 +31,14 @@ const { app, session, WebContentsView, shell, webFrameMain } = require("electron
 const fs = require("node:fs");
 const path = require("node:path");
 const { shouldAutoClearPerchanceStorage } = require("../lib/perchance");
-const { startLocalProxy } = require("./perchance-proxy");
 
 const PERCHANCE_PARTITION = "persist:perchance-clean";
 
-// ===========================================================================
-// 1. Allowlist del ecosistema Perchance
-// ===========================================================================
-
-const EXACT_HOSTS = new Set([
-  "perchance.org",
-  "null.perchance.org",
-  "static.cloudflareinsights.com",
-  "challenges.cloudflare.com",
-  "challenge.cloudflare.com",
-  "turnstile.cloudflare.com",
-  "clients3.google.com",
-]);
-
-const SUFFIX_HOSTS = [
-  "perchance.org",            // incluye <32hex>.perchance.org y los servidores
-                              // de plugins: image-generation / text-generation /
-                              // comments-plugin / server-plugin / upload .perchance.org
-  "uploads.dev",              // user. / aigc. / editable.
-  "user-uploads.perchance.org",
-  "esm.sh",
-  "cdn.jsdelivr.net",
-  "cdnjs.cloudflare.com",
-  "cloudflare.com",
-  "cloudflareinsights.com",
-  "unpkg.com",
-  "huggingface.co",
-  "hf.co",
-  "xethub.hf.co",
-  "googleapis.com",
-  "gstatic.com",
-  "bigger.pics",
-  "raw.githubusercontent.com",
-];
-
 function isPerchanceHost(host) {
   if (!host) return false;
-  let h = String(host).toLowerCase().replace(/\.$/, "");
-  // frameOrigin / Origin a veces llegan como URL completa.
-  if (h.includes("://")) {
-    try { h = new URL(h).hostname; } catch { /* keep h */ }
-  }
-  if (EXACT_HOSTS.has(h)) return true;
-  return SUFFIX_HOSTS.some((s) => h === s || h.endsWith("." + s));
+  const h = String(host).toLowerCase().replace(/\.$/, "");
+  if (!h) return false;
+  return h === "perchance.org" || h.endsWith(".perchance.org");
 }
 
 function isGoogleHost(host) {
@@ -89,11 +49,18 @@ function isGoogleHost(host) {
 }
 
 function isAllowedUrl(rawUrl) {
-  let u;
-  try { u = new URL(rawUrl); } catch { return true; }         // data:, blob:, about:
-  if (u.protocol === "ws:" || u.protocol === "wss:") return isPerchanceHost(u.hostname) || isCloudflareChallengeHost(u.hostname);
-  if (u.protocol !== "http:" && u.protocol !== "https:") return true;
-  return isPerchanceHost(u.hostname) || isGoogleHost(u.hostname);
+  // El panel de Perchance no debe bloquear nada. No hay allowlist ni filtro
+  // de red arbitrario para la partición dedicada. Los captchas de Cloudflare
+  // y cualquier recurso necesario deben cargarse sin restricción.
+  if (!rawUrl) return true;
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol === "ws:" || u.protocol === "wss:") return true;
+    if (u.protocol === "http:" || u.protocol === "https:") return true;
+    return true;
+  } catch {
+    return true;
+  }
 }
 
 function isCloudflareChallengeHost(host) {
@@ -121,7 +88,7 @@ function isCloudflareChallengeHost(host) {
 //
 // El evento 'will-download' es SÍNCRONO: lo que no fijes ahí, no pasa después.
 
-const DEFAULT_FOLDER = path.join(app.getPath ? app.getPath("downloads") : process.cwd(), "Perchance");
+const DEFAULT_FOLDER = path.join(app && app.getPath ? app.getPath("downloads") : process.cwd(), "Perchance");
 
 function downloadFolder(folder = DEFAULT_FOLDER) {
   try { fs.mkdirSync(folder, { recursive: true }); } catch (e) { console.error("[perchance] no pude crear", folder, e); }
@@ -139,17 +106,12 @@ function installPerchanceDownloads(partition = PERCHANCE_PARTITION, opts = {}) {
 
   ses.setDownloadPath(dir); // fallback a nivel de session
 
-  // Diagnóstico: si ya hay otro listener, alguien más está en el pipeline.
-  if (ses.listenerCount && ses.listenerCount("will-download") > 0) {
-    console.warn("[perchance] AVISO: ya existe otro listener 'will-download' en esta session. " +
-      "Si alguno llama a event.preventDefault()/item.cancel(), las descargas se cancelan.");
-  }
-
+  // El panel de Perchance no hace restricción de red ni allowlist. Solo dejamos
+  // la descarga funcional y no cancelamos nada arbitrariamente.
   ses.on("will-download", (event, item) => {
-    // (a) NUNCA preventDefault/cancel aquí en el camino normal.
     const url = item.getURL();
     if (!/^(blob|data):/i.test(url) && !isAllowedUrl(url)) {
-      console.warn("[perchance] descarga fuera de allowlist:", url);
+      console.warn("[perchance] descarga no permitida por regla de seguridad:", url);
       item.cancel();
       return;
     }
@@ -186,47 +148,8 @@ const PERMISSIONS_TO_ALLOW = new Set([
   "speaker-selection",
 ]);
 
-// Proxy local singleton: arranca una vez, apunta cada session de Perchance a
-// él. Resolver por DNS del sistema es la única manera de escapar del DoH
-// global estricto sin tocar la configuración de red del resto de la app.
-let proxyPromises = new Map(); // partition -> Promise<port> (proxy local singleton)
-function createPerchanceProxy(partition = PERCHANCE_PARTITION) {
-  const ses = session.fromPartition(partition);
-  if (!proxyPromises.has(partition)) {
-    const p = startLocalProxy().then(({ port }) => {
-      ses.setProxy({ proxyRules: `http://127.0.0.1:${port}` }).catch((e) => {
-        console.warn("[perchance] error al configurar proxy local:", e.message);
-      });
-      return port;
-    });
-    proxyPromises.set(partition, p);
-  }
-  return proxyPromises.get(partition);
-}
-
 function installPerchanceNetwork(partition = PERCHANCE_PARTITION, opts = {}) {
   const ses = session.fromPartition(partition);
-  // Red directa NO es suficiente: el resolver de Chromium es global (DoH
-  // estricto de app.configureHostResolver). Si el DoH no resuelve un host del
-  // ecosistema Perchance, Chromium cae con ERR_NAME_NOT_RESOLVED sin fallback.
-  // Un proxy local exclusivo resuelve por el DNS del sistema (fuera del DoH)
-  // y tunela CONNECT/HTTP/WS — la doc PERCHANCE-ARCHITECTURE.md lo exige.
-  createPerchanceProxy().catch((e) => {
-    console.warn("[perchance] no pude levantar el proxy local:", e.message);
-  });
-
-  // UA Chrome real del motor (sin mentir la major). Perchance mira UA y
-  // navigator.webdriver; un Chrome inventado hace que sirva features que el
-  // motor no soporta. La app ya pone --disable-blink-features=AutomationControlled.
-  const chromeMajor = (process.versions && process.versions.chrome
-    ? process.versions.chrome.split(".")[0] : "124");
-  try {
-    ses.setUserAgent(
-      `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeMajor}.0.0.0 Safari/537.36`
-    );
-  } catch (e) {
-    console.warn("[perchance] no pude fijar UA:", e.message);
-  }
 
   const autoClear = shouldAutoClearPerchanceStorage({
     force: process.env.MC_PERCHANCE_CLEAR_STORAGE === '1' || process.argv.includes('--perchance-clear-storage')
@@ -241,45 +164,9 @@ function installPerchanceNetwork(partition = PERCHANCE_PARTITION, opts = {}) {
     ses.clearStorageData({ storages: ["localstorage", "indexdb", "serviceworkers", "cachestorage", "shadercache", "websql"] }).catch(() => {});
   }
 
-  ses.setPermissionRequestHandler((_wc, permission, cb) => cb(PERMISSIONS_TO_ALLOW.has(permission)));
-  ses.setPermissionCheckHandler((_wc, permission) => PERMISSIONS_TO_ALLOW.has(permission));
-
-  // Diagnóstico únicamente: nunca cancela recursos. Sirve para identificar
-  // la URL concreta detrás de ERR_ADDRESS_INVALID u otro fallo de red.
-  ses.webRequest.onErrorOccurred({ urls: ["*://*/*"] }, (d) => {
-    console.warn("[perchance][resource-error]", d.error, d.resourceType, d.url);
-  });
-
-  if (process.env.MC_PCH_DIAG === '1') {
-    ses.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (d, cb) => {
-      if (d.resourceType === 'image' || d.resourceType === 'fetch' || d.resourceType === 'xhr' || d.resourceType === 'mainFrame' || d.resourceType === 'subFrame') {
-        console.log("[PCH-IMG][req]", d.resourceType, d.url.length > 180 ? d.url.slice(0, 180) + '...' : d.url);
-      }
-      cb({});
-    });
-    ses.webRequest.onCompleted({ urls: ["*://*/*"] }, (d) => {
-      if (d.resourceType === 'image' || d.resourceType === 'fetch' || d.resourceType === 'xhr') {
-        console.log("[PCH-IMG][done]", d.statusCode, d.resourceType, (d.url || '').slice(0, 180));
-      }
-    });
-  }
-
-  // El documento principal puede declarar CSP/XFO/COEP para bloquear los
-  // plugins e iframes externos que usan los generadores.
-  ses.webRequest.onHeadersReceived({ urls: ["*://*/*"] }, (d, cb) => {
-    const fromPerchance = isPerchanceHost(safeHost(d.url)) || isPerchanceHost(d.frameOrigin);
-    if (!fromPerchance) return cb({});
-    const headers = { ...(d.responseHeaders || {}) };
-    const drop = [
-      "content-security-policy", "content-security-policy-report-only",
-      "x-frame-options", "x-content-type-options",
-      "cross-origin-opener-policy", "cross-origin-embedder-policy",
-      "cross-origin-resource-policy",
-    ];
-    for (const k of Object.keys(headers)) if (drop.includes(k.toLowerCase())) delete headers[k];
-    cb({ responseHeaders: headers });
-  });
-
+  // El panel debe comportarse como una sesión de Electron normal: aquí no hay
+  // overrides de permisos, UA ni cabeceras. Las restricciones de seguridad
+  // artificiales son lo que rompen Cloudflare/Turnstile.
   return ses;
 }
 
@@ -599,7 +486,11 @@ function createPerchancePanel({ win, bounds = { x: 0, y: 0, width: 1000, height:
       partition: PERCHANCE_PARTITION,   // aislado del resto de la app
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      // Turnstile/Cloudflare y los widgets de Perchance dependen de frames
+      // auxiliares (about:blank/srcdoc) con scripts/permits habituales. En
+      // Electron, el sandbox estricto suele romper ese render y dispara las
+      // callbacks de error 600010 con "No available adapters".
+      sandbox: false,
       webSecurity: true,
       backgroundThrottling: false,
       autoplayPolicy: "no-user-gesture-required",

@@ -1,5 +1,12 @@
 'use strict';
 
+const safeSidebarLog = (...args) => {
+  if (typeof addSidebarLog === 'function') {
+    return addSidebarLog(...args);
+  }
+  return undefined;
+};
+
 const WEB_PROVIDERS = {
   copilot:  { label: 'Copilot Web',     url: 'https://copilot.microsoft.com' },
   chatgpt:  { label: 'ChatGPT',         url: 'https://chatgpt.com' },
@@ -148,14 +155,14 @@ const AI = {
     this.initSessions();
     mc.on('ai:debug', data => {
       console.log('[AI-DBG]', data);
-      addSidebarLog('info', '[AI-CFG] ' + (data.type === 'save' ? 'Guardada' : 'Cargada') + ': ' + JSON.stringify(data.cfg).slice(0, 300));
+      safeSidebarLog('info', '[AI-CFG] ' + (data.type === 'save' ? 'Guardada' : 'Cargada') + ': ' + JSON.stringify(data.cfg).slice(0, 300));
     });
-    mc.on('ai:dl:log', msg => addSidebarLog('info', '[AI] ' + msg));
+    mc.on('ai:dl:log', msg => safeSidebarLog('info', '[AI] ' + msg));
     mc.on('ai:dl:done', info => {
-      addSidebarLog('info', `[AI] ✓ ${info.name} (${info.size} MB)`);
+      safeSidebarLog('info', `[AI] ✓ ${info.name} (${info.size} MB)`);
       this.appendMsg('system', `✓ Descargado: ${info.name} (${info.size} MB)`);
     });
-    mc.on('ai:exec:log', msg => addSidebarLog('info', '[TERM] ' + msg));
+    mc.on('ai:exec:log', msg => safeSidebarLog('info', '[TERM] ' + msg));
     // Init lab mode toggle style (refleja el estado real, no forzar activo)
     setTimeout(() => {
       const btn = document.getElementById('ai-lab-toggle');
@@ -179,11 +186,11 @@ const AI = {
     if (!this.cfg || !this.cfg.provider) {
       try {
         const saved = localStorage.getItem('mc_ai_cfg');
-        if (saved) { this.cfg = JSON.parse(saved); addSidebarLog('info', '[AI-CFG] Cargada desde localStorage'); }
-        else addSidebarLog('info', '[AI-CFG] Sin configuración previa');
+        if (saved) { this.cfg = JSON.parse(saved); safeSidebarLog('info', '[AI-CFG] Cargada desde localStorage'); }
+        else safeSidebarLog('info', '[AI-CFG] Sin configuración previa');
       } catch {}
     } else {
-      addSidebarLog('info', '[AI-CFG] Cargada cfg.json + localStorage backup disponible');
+      safeSidebarLog('info', '[AI-CFG] Cargada cfg.json + localStorage backup disponible');
     }
     // Sincronizar localStorage con lo que vino del IPC (por si IPC no persiste)
     if (this.cfg && this.cfg.provider) {

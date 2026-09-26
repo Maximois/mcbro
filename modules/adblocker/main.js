@@ -131,18 +131,21 @@ function isPerchanceHost(host) {
   return value === 'perchance.org' || value.endsWith('.perchance.org');
 }
 
+function shouldBypassAdblockForSession(sess) {
+  try {
+    if (!sess) return false;
+    const partition = String(sess.partition || '').trim();
+    return partition === 'persist:perchance' || partition === 'persist:perchance-clean';
+  } catch {
+    return false;
+  }
+}
+
 function isPerchanceCompatibilityRequest(resourceHost, documentHost) {
-  if (!isPerchanceHost(documentHost)) return false;
-  const host = String(resourceHost || '').toLowerCase().replace(/^\.+/, '');
-  return isPerchanceHost(host) || host === 'esm.sh' || host.endsWith('.esm.sh') ||
-    host === 'user.uploads.dev' || host.endsWith('.user.uploads.dev') ||
-    host === 'aigc.uploads.dev' || host.endsWith('.aigc.uploads.dev') ||
-    host === 'editable.uploads.dev' || host.endsWith('.editable.uploads.dev') ||
-    host === 'cdn.jsdelivr.net' || host === 'cdnjs.cloudflare.com' || host === 'unpkg.com' ||
-    host === 'huggingface.co' || host.endsWith('.huggingface.co') ||
-    host === 'hf.co' || host.endsWith('.hf.co') || host === 'xethub.hf.co' ||
-    host === 'fonts.googleapis.com' || host === 'gstatic.com' || host.endsWith('.gstatic.com') ||
-    host === 'static.cloudflareinsights.com';
+  // El panel de Perchance no debe tener una allowlist ni excepción especial de
+  // compatibilidad. La partición dedicada ya se prepara sin restricciones; si
+  // aquí se crea una ruta de excepción, el challenge/Turnstile vuelve a romperse.
+  return false;
 }
 
 function isVideoHost(host) {
@@ -421,6 +424,9 @@ function setup(ctx) {
   if (!ctx) return;
   const { cfg: ctxCfg, saveCfg, emit, session: targetSession, allowedDomains, mediaCallback, blockCallback, requestCallback, requestGuard } = ctx;
   const sess = targetSession || session.fromPartition('persist:mc');
+  if (shouldBypassAdblockForSession(sess)) {
+    return { manager: null, toggleBlocking: () => {}, buildPageCosmeticCss: () => ({ ok: true, count: 0, selectors: [], css: '' }) };
+  }
   const allowed = allowedDomains || [];
   cfg = ctxCfg || null;
   authDomainsList = allowedDomains || [];
@@ -634,8 +640,10 @@ function setup(ctx) {
 module.exports = {
   setup,
   FALLBACK_DOMAINS,
+  shouldBypassAdblockForSession,
   isAggressiveAdNavigation,
   isExplicitlyBlocked,
+  isPerchanceCompatibilityRequest,
   isUntrustedThirdPartyResource,
   isTrustedResource,
   isVideoHost,

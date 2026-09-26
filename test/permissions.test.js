@@ -108,10 +108,10 @@ describe('resolveCookieAction (regresión: cookies "block" que no bloqueaban)', 
     const action = resolveCookieAction({ host: 'tracker.example.com', thirdParty: false, cfg });
     assert.equal(action, 'block');
   });
-  test('sin regla y sin ser 3ra parte, la cookie pasa', () => {
+  test('sin regla en la lista blanca, la cookie se bloquea por defecto', () => {
     const cfg = { allowlist: {} };
     const action = resolveCookieAction({ host: 'example.com', thirdParty: false, cfg });
-    assert.equal(action, 'allow');
+    assert.equal(action, 'block');
   });
   test('3ra parte con aislamiento estricto siempre bloquea', () => {
     const cfg = { allowlist: {} };
@@ -123,9 +123,9 @@ describe('resolveCookieAction (regresión: cookies "block" que no bloqueaban)', 
     const action = resolveCookieAction({ host: 'example.com', thirdParty: false, cfg });
     assert.equal(action, 'session');
   });
-  test('cookiePolicy global "session" aplica salvo excepción "allow" explícita', () => {
+  test('la whitelist define la única excepción: sin entrar en ella, la cookie queda bloqueada aunque cookiePolicy sea "session"', () => {
     const cfgSinExcepcion = { allowlist: {}, cookiePolicy: 'session' };
-    assert.equal(resolveCookieAction({ host: 'example.com', thirdParty: false, cfg: cfgSinExcepcion }), 'session');
+    assert.equal(resolveCookieAction({ host: 'example.com', thirdParty: false, cfg: cfgSinExcepcion }), 'block');
 
     const cfgConExcepcion = { allowlist: { 'example.com': 'allow' }, cookiePolicy: 'session' };
     assert.equal(resolveCookieAction({ host: 'example.com', thirdParty: false, cfg: cfgConExcepcion }), 'allow');

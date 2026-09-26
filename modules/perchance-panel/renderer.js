@@ -76,9 +76,13 @@
     const wv = document.createElement('webview');
     wv.setAttribute('partition', PARTITION);
     wv.setAttribute('allowpopups', '');
+    // CRÍTICO: no poner la vista del panel en sandbox. Cloudflare/Turnstile y
+    // los widgets auxiliares de Perchance crean iframes about:blank/srcdoc con
+    // scripts y modales propios; el sandbox activo bloquea esos frames en
+    // silencio y hace que el captcha “se cancele” o no termine de cargar.
     // Sin preload / sin nodeIntegration: el motor de Perchance habla por
     // postMessage entre orígenes y hace eval/window.open. No reescribir nada.
-    wv.setAttribute('webpreferences', 'contextIsolation=yes,nodeIntegration=no,sandbox=yes,webSecurity=yes,backgroundThrottling=no');
+    wv.setAttribute('webpreferences', 'contextIsolation=yes,nodeIntegration=no,sandbox=no,webSecurity=yes,backgroundThrottling=no');
     wv.style.display = 'none';
     const container = document.getElementById('pch-wv-container');
     if (container) container.appendChild(wv);
