@@ -17,10 +17,11 @@ describe('Perchance storage policy', () => {
     assert.equal(shouldAutoClearPerchanceStorage({ force: false }), false);
   });
 
-  test('desactiva adblock en la partición de Perchance', () => {
+  test('desactiva adblock en la partición de Perchance y lo conserva en sesiones aisladas', () => {
     assert.equal(shouldBypassAdblockForSession({ partition: 'persist:perchance-clean' }), true);
     assert.equal(shouldBypassAdblockForSession({ partition: 'persist:perchance' }), true);
     assert.equal(shouldBypassAdblockForSession({ partition: 'persist:mc' }), false);
+    assert.equal(shouldBypassAdblockForSession({ partition: 'persist:mc-session-sess_abc123' }), false);
   });
 
   test('el panel de Perchance no tiene allowlist ni excepción especial de compatibilidad', () => {

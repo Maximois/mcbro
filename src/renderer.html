@@ -2813,6 +2813,12 @@ const Sessions = {
   },
 
   bindSessionWebview(wv, id) {
+    wv.addEventListener('dom-ready', () => {
+      applyAdBannerHider(wv);
+    });
+    wv.addEventListener('did-finish-load', () => {
+      applyAdBannerHider(wv);
+    });
     wv.addEventListener('did-navigate', () => {
       if (this.activeTabId === id) {
         this.syncUrlbar();
@@ -2824,12 +2830,14 @@ const Sessions = {
           renderPermissionsList();
         }
       }
+      applyAdBannerHider(wv);
     });
     wv.addEventListener('did-navigate-in-page', () => {
       if (this.activeTabId === id) {
         this.syncUrlbar();
         if (!$('permissions-panel')?.classList.contains('collapsed')) syncPermissionsDomainField();
       }
+      applyAdBannerHider(wv);
     });
     wv.addEventListener('page-title-updated', (e) => {
       const tab = this.tabs.find(t => t.id === id);
@@ -4077,6 +4085,62 @@ function notifyNavIntent(wv) {
     if (wcId && typeof mc !== 'undefined' && typeof mc.navIntent === 'function') mc.navIntent({ wcId });
   } catch {}
 }
+
+function applyAdBannerHider(wv) {
+  if (!wv || typeof wv.executeJavaScript !== 'function') return;
+  const hideScript = `(() => {
+    try {
+      const selectors = [
+        'iframe[src*="adtng.com"]',
+        'iframe[src*="a.adtng.com"]',
+        'iframe[title*="Ads"]',
+        'iframe[name*="spot_id_"]',
+        'iframe[name*="ad"]',
+        'iframe[src*="doubleclick.net"]',
+        'iframe[src*="googlesyndication.com"]',
+        'iframe[src*="googleadservices.com"]',
+        'iframe[src*="amazon-adsystem.com"]',
+        'iframe[src*="pagead2.googlesyndication.com"]',
+        'iframe[id*="google_ads_iframe"]',
+        'iframe[id*="aswift_"]',
+        'ins.adsbygoogle',
+        '[class*="adsbygoogle"]',
+        '[class*="ad-slot"]',
+        '[class*="adslot"]',
+        '[class*="ad-banner"]',
+        '[class*="banner-ad"]',
+        '[class*="advertisement"]',
+        '[class*="adContainer"]',
+        '[class*="ad-container"]',
+        '[id*="ad-"]',
+        '[id*="ads-"]',
+        '[id*="banner-ad"]'
+      ];
+      const hide = () => {
+        const nodes = [...new Set(selectors.flatMap(sel => Array.from(document.querySelectorAll(sel))))];
+        for (const el of nodes) {
+          if (!(el instanceof HTMLElement)) continue;
+          el.style.setProperty('display', 'none', 'important');
+          el.style.setProperty('visibility', 'hidden', 'important');
+          el.style.setProperty('width', '0px', 'important');
+          el.style.setProperty('height', '0px', 'important');
+          el.style.setProperty('max-height', '0px', 'important');
+          el.style.setProperty('overflow', 'hidden', 'important');
+          el.style.setProperty('position', 'fixed', 'important');
+          el.style.setProperty('left', '-9999px', 'important');
+          el.setAttribute('aria-hidden', 'true');
+        }
+      };
+      hide();
+      if (!window.__mcAdBannerHider) {
+        window.__mcAdBannerHider = true;
+        const observer = new MutationObserver(() => hide());
+        observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+      }
+    } catch {}
+  })()`;
+  wv.executeJavaScript(hideScript).catch(() => {});
+}
 function goBack()    { const wv=$('webview-' + state.activeTab); if (wv && wv.canGoBack && wv.canGoBack()) { notifyNavIntent(wv); wv.goBack(); } }
 function goForward() { const wv=$('webview-' + state.activeTab); if (wv && wv.canGoForward && wv.canGoForward()) { notifyNavIntent(wv); wv.goForward(); } }
 function reloadPage(){ const wv=$('webview-' + state.activeTab); if (wv && state.currentPanel==='webview' && wv.reload) { notifyNavIntent(wv); wv.reload(); } }
@@ -4179,6 +4243,57 @@ function bindWebviewToTab(id, wv) {
       const result = await mc.adblockCosmetics(pageUrl);
       if (!result?.ok || !result.css) return;
       await wv.insertCSS(result.css);
+      await wv.executeJavaScript(`(() => {
+        try {
+          const hideAds = () => {
+            const selectors = [
+              'iframe[src*="adtng.com"]',
+              'iframe[src*="a.adtng.com"]',
+              'iframe[title*="Ads"]',
+              'iframe[name*="spot_id_"]',
+              'iframe[name*="ad"]',
+              'iframe[src*="doubleclick.net"]',
+              'iframe[src*="googlesyndication.com"]',
+              'iframe[src*="googleadservices.com"]',
+              'iframe[src*="amazon-adsystem.com"]',
+              'iframe[src*="pagead2.googlesyndication.com"]',
+              'iframe[id*="google_ads_iframe"]',
+              'iframe[id*="aswift_"]',
+              'ins.adsbygoogle',
+              '[class*="adsbygoogle"]',
+              '[class*="ad-slot"]',
+              '[class*="adslot"]',
+              '[class*="ad-banner"]',
+              '[class*="banner-ad"]',
+              '[class*="advertisement"]',
+              '[class*="adContainer"]',
+              '[class*="ad-container"]',
+              '[id*="ad-"]',
+              '[id*="ads-"]',
+              '[id*="banner-ad"]'
+            ];
+            const nodes = [...new Set(selectors.flatMap(sel => Array.from(document.querySelectorAll(sel))))];
+            for (const el of nodes) {
+              if (!(el instanceof HTMLElement)) continue;
+              el.style.setProperty('display', 'none', 'important');
+              el.style.setProperty('visibility', 'hidden', 'important');
+              el.style.setProperty('width', '0px', 'important');
+              el.style.setProperty('height', '0px', 'important');
+              el.style.setProperty('max-height', '0px', 'important');
+              el.style.setProperty('overflow', 'hidden', 'important');
+              el.style.setProperty('position', 'fixed', 'important');
+              el.style.setProperty('left', '-9999px', 'important');
+              el.setAttribute('aria-hidden', 'true');
+            }
+          };
+          hideAds();
+          if (!window.__mcAdBannerHider) {
+            window.__mcAdBannerHider = true;
+            const observer = new MutationObserver(() => hideAds());
+            observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+          }
+        } catch {}
+      })()`).catch(() => {});
     } catch {}
   };
 

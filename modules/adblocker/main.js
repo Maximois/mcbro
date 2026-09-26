@@ -30,6 +30,7 @@ const FALLBACK_DOMAINS = [
   'exoclick.com', 'popads.net', 'popunder.net',
   'trafficfactory.biz', 'adcash.com',
   'adf.ly', 'shorte.st', 'sh.st', 'bit.ly',
+  'adtng.com',
 ];
 
 // Redes publicitarias / trackers conocidos (dominio o subdominio).
@@ -49,6 +50,7 @@ const AD_NETWORK_HOSTS = [
   'creativecdn.com', 'exdynsrv.com', 'adskeeper.co.uk',
   'exoclick.com', 'popads.net', 'popunder.net',
   'trafficfactory.biz', 'adcash.com', 'adf.ly', 'shorte.st', 'sh.st', 'bit.ly',
+  'adtng.com', 'adnami.com', 'adpushup.com', 'adsco.re',
   'monetag.com', 'propellerads.com', 'adsterra.com', 'hilltopads.com',
   'popcash.net', 'revenuehits.com', 'juicyads.com', 'ad-maven.com',
   'onclickads.net', 'pushnotifications.com'
@@ -58,8 +60,10 @@ const AD_NETWORK_HOSTS = [
 const AD_PATH_TOKENS = [
   '/ads/', '/adserver', '/adframe', '/popunder', '/click-redirect',
   '/popup', '/popads', '/advert', '/banner', '/vast',
+  '/ad?', '/ad/', '/ad-', '/ads?', '/get/',
   'adsbygoogle', 'pagead', 'prebid', 'adservice', 'adsystem',
-  'doubleclick', 'googlesyndication', 'googleadservices'
+  'doubleclick', 'googlesyndication', 'googleadservices', 'adtng',
+  'adnami', 'adpushup', 'banner-ad', 'ad-banner'
 ];
 const TRACKER_TOKENS = /analytics|tracking|tracker|telemetry|pixel|beacon|scorecardresearch|quantserve|demdex|hotjar|clarity\.ms/i;
 
@@ -73,6 +77,10 @@ function isAggressiveAdNavigation(rawUrl) {
     if (AD_NETWORK_HOSTS.some(h => host === h || host.endsWith('.' + h))) return true;
     // Tokens de ruta claramente publicitarios.
     if (AD_PATH_TOKENS.some(t => lower.includes(t))) return true;
+    // Casos exactos de banner/iframe (e.g. a.adtng.com/get/... y spot_id_...)
+    if (host.includes('adtng.com') || /spot_id_[0-9]+/i.test(lower) || /google_ads_iframe|aswift_|adsbygoogle|adslot|banner-ad|ad-banner/.test(lower)) {
+      return true;
+    }
     return false;
   } catch {
     return false;
@@ -139,6 +147,11 @@ function shouldBypassAdblockForSession(sess) {
   } catch {
     return false;
   }
+}
+
+function isIsolatedBrowsingPartition(partition) {
+  const value = String(partition || '').trim();
+  return /^persist:mc-session-[\w-]+$/i.test(value);
 }
 
 function isPerchanceCompatibilityRequest(resourceHost, documentHost) {
@@ -292,6 +305,21 @@ function createBlockHandler(getEngine, allowedDomains, isEnabled, isCategoryEnab
         return callback({ cancel: true });
       }
 
+      // Bloquear los iframes/banner publicitarios directamente y no dejar
+      // placeholders vacíos que sigan ocupando espacio visual.
+      if (details.resourceType === 'subFrame') {
+        const frameUrl = details.url || '';
+        const docUrl = details.documentUrl || details.referrer || '';
+        const isAdFrame = isAggressiveAdNavigation(frameUrl)
+          || /(?:^|\.)?(adtng|doubleclick|googlesyndication|googleadservices|amazon-adsystem|google-analytics|googletagmanager|adsbygoogle|aswift|pagead2\.googlesyndication)\./i.test(frameUrl)
+          || /google_ads_iframe|aswift_|adsbygoogle|adslot|banner-ad|ad-banner|advertisement|spot_id_[0-9]+/i.test(frameUrl)
+          || /google_ads_iframe|aswift_|adsbygoogle|adslot|banner-ad|ad-banner|advertisement|spot_id_[0-9]+/i.test(docUrl);
+        if (isAdFrame) {
+          if (blockCb) blockCb(details, 'ads');
+          return callback({ cancel: true });
+        }
+      }
+
       // YouTube: bloquear el stream del anuncio (googlevideo.com con
       // parámetros ad_). Al bloquearlo, YouTube salta el anuncio en vez de
       // mostrarlo en blanco (mismo enfoque que Brave/uBlock).
@@ -409,14 +437,43 @@ const YT_COSMETIC_SELECTORS = [
   '.ytp-ad-badge'
 ];
 
+const GENERIC_AD_COSMETIC_SELECTORS = [
+  'iframe[src*="adtng.com"]',
+  'iframe[src*="doubleclick.net"]',
+  'iframe[src*="googlesyndication.com"]',
+  'iframe[src*="googleadservices.com"]',
+  'iframe[src*="adnxs.com"]',
+  'iframe[src*="amazon-adsystem.com"]',
+  'iframe[src*="pagead2.googlesyndication.com"]',
+  'iframe[src*="google_ads_iframe"]',
+  'iframe[id*="google_ads_iframe"]',
+  'div[id*="google_ads_iframe"]',
+  'ins.adsbygoogle',
+  'ins[id*="aswift_"]',
+  'iframe[id*="aswift_"]',
+  'iframe[id*="ad-"], iframe[id*="ads-"], iframe[id*="banner-"], iframe[id*="adslot"]',
+  '[class*="adsbygoogle"]',
+  '[class*="ad-slot"]',
+  '[class*="adslot"]',
+  '[class*="ad-banner"]',
+  '[class*="banner-ad"]',
+  '[class*="advertisement"]',
+  '[class*="adContainer"]',
+  '[class*="ad-container"]',
+  '[id*="ad-"], [id*="ads-"], [id*="banner-ad"]',
+  'img[src*="doubleclick.net"], img[src*="googlesyndication.com"], img[src*="adsystem"]',
+  'a[href*="doubleclick.net"], a[href*="googlesyndication.com"], a[href*="adtng.com"]'
+];
+
 function builtInCosmeticSelectors(pageUrl) {
+  const selectors = [...GENERIC_AD_COSMETIC_SELECTORS];
   try {
     const hostname = new URL(pageUrl).hostname.toLowerCase();
-    if (hostname !== 'youtube.com' && !hostname.endsWith('.youtube.com')) return [];
-    return YT_COSMETIC_SELECTORS;
-  } catch {
-    return [];
-  }
+    if (hostname === 'youtube.com' || hostname.endsWith('.youtube.com')) {
+      selectors.push(...YT_COSMETIC_SELECTORS);
+    }
+  } catch {}
+  return [...new Set(selectors)];
 }
 
 // ── Setup ──────────────────────────────────────────────────

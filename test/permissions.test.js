@@ -16,6 +16,7 @@ const {
   sanitizeAiConfigForPublic
 } = require('../lib/permissions');
 const { isSameNavigationSite, siteRootIdentity } = require('../lib/navigation-guard');
+const { isAggressiveAdNavigation } = require('../modules/adblocker/main');
 
 // ── normalizeSiteHost ──────────────────────────────────────────────────
 describe('normalizeSiteHost', () => {
@@ -197,6 +198,14 @@ describe('parseGlobalBlockRule / isGlobalBlockMatch', () => {
   test('valor vacío no genera regla', () => {
     assert.equal(parseGlobalBlockRule(''), null);
     assert.equal(parseGlobalBlockRule('   '), null);
+  });
+});
+
+describe('adblock banners / adtng', () => {
+  test('bloquea hosts de anuncios y banners inline', () => {
+    assert.equal(isAggressiveAdNavigation('https://a.adtng.com/get/10016594?time=1769790006402'), true);
+    assert.equal(isAggressiveAdNavigation('https://example.com/banner-ads.html'), true);
+    assert.equal(isAggressiveAdNavigation('https://example.com/article'), false);
   });
 });
 

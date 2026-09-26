@@ -1015,8 +1015,7 @@ const DOH_SERVERS = {
 
 function applyDoH() {
   try {
-    const explicitDoH = process.env.MC_ENABLE_DOH === '1';
-    if (CFG.dohEnabled && explicitDoH) {
+    if (CFG.dohEnabled) {
       const url = DOH_SERVERS[CFG.dohServer] || DOH_SERVERS.cloudflare;
       app.configureHostResolver({
         enableBuiltInResolver: true,
@@ -1026,7 +1025,6 @@ function applyDoH() {
       return;
     }
     app.configureHostResolver({ secureDnsMode: 'off' });
-    CFG.dohEnabled = false;
   } catch (e) { console.error('[DoH]', e.message); }
 }
 
@@ -1279,7 +1277,6 @@ function loadCfg() {
         saveCfg();
       }
       if (CFG.gpuAcceleration !== true) CFG.gpuAcceleration = false;
-      if (process.env.MC_ENABLE_DOH !== '1') CFG.dohEnabled = false;
     }
   } catch {}
 }
