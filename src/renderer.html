@@ -2270,6 +2270,10 @@ const state = {
   tabCounter: 1,
   stats: { blockedAds:0, blockedTrackers:0, blockedThird:0, blockedCrypto:0, detectedMedia:0, totalRequests:0, modifiedHeaders:0, interceptedCookies:0 },
   customBlocks: [],
+  siteBlockMap: {}, // se reasigna en syncCfgToUI(); default acá para que un
+                    // acceso temprano (ej: webview dom-ready antes de que
+                    // cargue la config) no rompa toda la cascada de render
+                    // del panel de permisos (scripts/cookies/cosmético).
   cookieRules: {},
   reqLogFilter: 'all',
   reqLog: [],
@@ -7124,10 +7128,13 @@ async function loadPermissionsList() {
     if (!domainMap.has(host)) domainMap.set(host, { raw: host, rules: {} });
   }
   const entries = Array.from(domainMap.entries())
-    // Mostrar el dominio activo y los hosts que la página actual realmente
-    // utiliza (por ejemplo Instagram durante un login iniciado en Facebook).
-    // Las reglas de sitios no relacionados siguen ocultas.
-    .filter(([domain, value]) => activeDomain && permissionEntryVisible(domain, value.rules) && Object.keys(value.rules || {}).length > 0)
+    // "Reglas guardadas" es una vista de gestión: muestra TODO lo que hay
+    // guardado, sin importar la página en la que estés (antes del commit
+    // 3891819 era así; después empezó a ocultar cualquier dominio no
+    // relacionado con la pestaña activa, dejando el panel casi siempre
+    // vacío). originsByPermission/permissionEntryVisible ahora se usan más
+    // abajo solo para afinar el badge "Relacionado", no para ocultar filas.
+    .filter(([, value]) => Object.keys(value.rules || {}).length > 0)
     .map(([domain, value]) => ({ domain, raw: value.raw || domain, rules: value.rules || {} }));
 
   const activeDomainCard = $('permissions-active-domain');
@@ -7196,12 +7203,21 @@ async function loadPermissionsList() {
     return;
   }
   const relatedHosts = new Set(allDiscoveredHosts);
-  entries.sort((a, b) => a.domain.localeCompare(b.domain));
+  entries.sort((a, b) => {
+    const aPriority = (a.domain === activeDomain ? 0 : relatedHosts.has(a.domain) ? 1 : 2);
+    const bPriority = (b.domain === activeDomain ? 0 : relatedHosts.has(b.domain) ? 1 : 2);
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return a.domain.localeCompare(b.domain);
+  });
 
   list.innerHTML = entries.map(({ domain, raw, rules }) => {
     const host = normalizeDomainInput(domain) || domain;
     const isActive = !!activeDomain && normalizeDomainInput(domain) === activeDomain;
-    const isRelated = !!host && relatedHosts.has(host);
+    // "Relacionado" combina los hosts detectados en la página (isRelated
+    // simple) con el rastreo de origen más preciso (permissionEntryVisible):
+    // una regla que se otorgó específicamente desde esta página, aunque el
+    // dominio en sí no aparezca entre los hosts detectados ahora mismo.
+    const isRelated = !!host && (relatedHosts.has(host) || permissionEntryVisible(domain, rules));
     const items = Object.entries(rules).map(([permission, mode]) => {
       const label = permission === 'camera' ? 'Cámara' : permission === 'microphone' ? 'Micrófono' :
         permission === 'notifications' ? 'Notificaciones' : permission === 'geolocation' ? 'Ubicación' :
