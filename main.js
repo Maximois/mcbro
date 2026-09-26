@@ -96,6 +96,17 @@ let devReloadTimer = null;
 const userNavWebContents = new Map();
 const EXPLICIT_NAV_SETTLE_MS = 2500;
 
+// Protección del menú contextual (Windows): nunca lanzar más de un `popup()`
+// a la vez, y no dejar que un `executeJavaScript` sobre un webview en plena
+// recarga retrase (o cuelgue) la aparición del menú.
+let _ctxMenuPopupCount = 0;
+function withTimeout(promise, ms, fallback) {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise(resolve => setTimeout(() => resolve(fallback), ms))
+  ]);
+}
+
 function markExplicitNavigation(wcId) {
   const previous = userNavWebContents.get(wcId);
   if (previous?.timer) clearTimeout(previous.timer);
@@ -3485,12 +3496,13 @@ app.on('web-contents-created', (event, wc) => {
     try {
       const selectors = domainRules.map(r => r.split('##')[1]);
       if (selectors.length) {
-        const pt = await resolveCtxCssPoint(wc, params);
-        const selectorsJson = JSON.stringify(selectors)
-          .replace(/\\/g, '\\\\')
-          .replace(/`/g, '\\`')
-          .replace(/\$\{/g, '\\${');
-        const match = await wc.executeJavaScript(`(() => {
+        const detect = (async () => {
+          const pt = await resolveCtxCssPoint(wc, params);
+          const selectorsJson = JSON.stringify(selectors)
+            .replace(/\\/g, '\\\\')
+            .replace(/`/g, '\\`')
+            .replace(/\$\{/g, '\\${');
+          const match = await wc.executeJavaScript(`(() => {
           const px = ${pt.x};
           const py = ${pt.y};
           const el = document.elementFromPoint(px, py);
@@ -3505,9 +3517,12 @@ app.on('web-contents-created', (event, wc) => {
           }
           return null;
         })()`);
-        if (match?.selector) {
-          blockedRule = allRules.find(r => r.split('##')[1].trim() === match.selector) || null;
-        }
+          if (match?.selector) {
+            return allRules.find(r => r.split('##')[1].trim() === match.selector) || null;
+          }
+          return null;
+        })();
+        blockedRule = await withTimeout(detect, 400, null);
       }
     } catch {}
 
@@ -3919,7 +3934,19 @@ app.on('web-contents-created', (event, wc) => {
         }
       }
     });
-    Menu.buildFromTemplate(template).popup({ window: mainWin });
+    // Guard anti-reentrancia (Windows): si un popup anterior aún no terminó de
+    // cerrarse, lanzar otro `popup()` deja el menú congelado. Se libera en el
+    // callback de popup, que Electron invoca al cerrar el menú.
+    if (_ctxMenuPopupCount > 0) return;
+    _ctxMenuPopupCount++;
+    try {
+      Menu.buildFromTemplate(template).popup({
+        window: mainWin,
+        callback: () => { _ctxMenuPopupCount = 0; }
+      });
+    } catch {
+      _ctxMenuPopupCount = 0;
+    }
   });
   wc.setWindowOpenHandler(({ url }) => {
     const isPerchanceSession = (() => {

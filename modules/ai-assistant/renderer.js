@@ -422,7 +422,10 @@ const AI = {
     this.initModePills();
     this.refreshMemory();
     this.refreshReminders();
-    this.initTextSelection();
+    // Burbuja "✦ Preguntar a la IA" sobre texto seleccionado: OCULTA por
+    // ahora (funcionalidad futura). El código de initTextSelection() se
+    // mantiene; para reactivarla, descomentar la línea.
+    // this.initTextSelection();
 
     // Abrir links de API keys en una pestaña interna del navegador
     document.addEventListener('click', (e) => {
