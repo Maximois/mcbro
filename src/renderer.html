@@ -1839,7 +1839,10 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
             <div class="panel-sub">Ajustes generales de MC Browser</div>
           </div>
 
-          <div class="card">
+          <details class="settings-details">
+            <summary class="settings-summary">&#127912; Apariencia</summary>
+            <div class="details-body">
+<div class="card" style="margin-bottom:10px;">
             <div class="card-title"><span class="ct-icon">&#127912;</span> Fondo de página de inicio</div>
             <div style="display:flex;flex-direction:column;gap:10px;">
               <div class="input-row">
@@ -1854,8 +1857,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
               </div>
             </div>
           </div>
-
-          <div class="card">
+<div class="card" style="margin-bottom:10px;">
             <div class="card-title"><span class="ct-icon">&#128279;</span> Accesos directos editables</div>
             <div style="display:flex;flex-direction:column;gap:10px;">
               <div id="shortcuts-editor">
@@ -1867,8 +1869,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
               </div>
             </div>
           </div>
-
-          <div class="card">
+<div class="card" style="margin-bottom:10px;">
             <div class="card-title"><span class="ct-icon">&#128196;</span> Tamaño del texto de la interfaz</div>
             <div class="input-row">
               <span class="input-label">Texto general</span>
@@ -1880,8 +1881,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
               </select>
             </div>
           </div>
-
-          <div class="card">
+<div class="card" style="margin-bottom:10px;">
             <div class="card-title"><span class="ct-icon">&#128269;</span> Tamaños de la página de inicio</div>
             <div style="display:flex;flex-direction:column;gap:10px;">
               <div class="input-row">
@@ -1922,12 +1922,41 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
               </div>
             </div>
           </div>
+            </div>
+          </details>
 
-          <!-- NETWORK (foldable dentro de Config) -->
           <details class="settings-details">
             <summary class="settings-summary">&#127760; Motor de Red</summary>
             <div class="details-body">
-              <div class="card" style="margin-bottom:10px;">
+<div class="card" style="margin-bottom:10px;">
+                <div class="card-title"><span class="ct-icon">&#128274;</span> Proxy / VPN</div>
+                <div class="input-row">
+                  <span class="input-label">Tipo</span>
+                  <select class="sel-input" id="proxy-type" onchange="updateProxy()">
+                    <option value="socks5">SOCKS5</option>
+                    <option value="http">HTTP</option>
+                    <option value="https">HTTPS</option>
+                  </select>
+                </div>
+                <div class="input-row">
+                  <span class="input-label">Servidor</span>
+                  <input class="text-input" id="proxy-host" placeholder="127.0.0.1" style="flex:1;" onchange="updateProxy()"/>
+                  <input class="text-input" id="proxy-port" type="number" min="1" max="65535" placeholder="1080" style="width:90px;" onchange="updateProxy()"/>
+                </div>
+                <div class="input-row">
+                  <span class="input-label">Estado</span>
+                  <label class="toggle"><input type="checkbox" id="proxy-enabled" onchange="updateProxy()"><span class="tslider"></span></label>
+                  <span id="proxy-status" style="font-size: 0.769rem;color:var(--muted);">Desactivado</span>
+                </div>
+              </div>
+<div class="card" style="margin-bottom:10px;">
+                <div class="card-title"><span class="ct-icon">&#127760;</span> DNS + Red</div>
+                <div class="input-row"><span class="input-label">DoH</span><select class="sel-input" id="doh-server" onchange="updateDoH(event)"><option value="cloudflare">Cloudflare</option><option value="google">Google</option><option value="quad9">Quad9</option><option value="nextdns">NextDNS</option><option value="adguard">AdGuard</option><option value="mullvad">Mullvad</option></select></div>
+                <div class="tog-row"><div><div class="tog-label">HTTPS-only</div></div><label class="toggle"><input type="checkbox" checked id="tog-https" onchange="updateProtections()"><span class="tslider"></span></label></div>
+                <div class="input-row" style="margin-top:6px;"><span class="input-label">Test</span><input class="text-input" id="doh-test" placeholder="domain.com" style="flex:1;"/><button class="btn btn-sm" onclick="testDoH()">Go</button></div>
+                <div id="doh-result" style="font-size: 0.769rem;color:var(--muted);margin-top:4px;"></div>
+              </div>
+<div class="card" style="margin-bottom:10px;">
                 <div class="card-title"><span class="ct-icon">&#127897;</span> Modificación de Headers HTTP</div>
                 <div class="input-row">
                   <span class="input-label">User-Agent</span>
@@ -1971,28 +2000,18 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
                   </div>
                 </div>
               </div>
-              <div class="card" style="margin-bottom:10px;">
-                <div class="card-title"><span class="ct-icon">&#128274;</span> Proxy / VPN</div>
+<div class="card" style="margin-bottom:10px;">
+                <div class="card-title"><span class="ct-icon">&#128683;</span> Reglas custom de bloqueo</div>
                 <div class="input-row">
-                  <span class="input-label">Tipo</span>
-                  <select class="sel-input" id="proxy-type" onchange="updateProxy()">
-                    <option value="socks5">SOCKS5</option>
-                    <option value="http">HTTP</option>
-                    <option value="https">HTTPS</option>
-                  </select>
+                  <span class="input-label">Dominio / URL</span>
+                  <input class="text-input" id="custom-block-input" placeholder="ej: analytics.example.com" style="flex:1;"/>
+                  <button class="btn btn-sm" onclick="addCustomBlock()">+ Agregar</button>
                 </div>
-                <div class="input-row">
-                  <span class="input-label">Servidor</span>
-                  <input class="text-input" id="proxy-host" placeholder="127.0.0.1" style="flex:1;" onchange="updateProxy()"/>
-                  <input class="text-input" id="proxy-port" type="number" min="1" max="65535" placeholder="1080" style="width:90px;" onchange="updateProxy()"/>
-                </div>
-                <div class="input-row">
-                  <span class="input-label">Estado</span>
-                  <label class="toggle"><input type="checkbox" id="proxy-enabled" onchange="updateProxy()"><span class="tslider"></span></label>
-                  <span id="proxy-status" style="font-size: 0.769rem;color:var(--muted);">Desactivado</span>
+                <div class="rule-list" id="custom-block-list">
+                  <div style="color:var(--muted);font-size: 0.846rem;text-align:center;padding:12px 0;">Sin reglas custom aún</div>
                 </div>
               </div>
-              <div class="card" style="margin-bottom:10px;">
+<div class="card" style="margin-bottom:10px;">
                 <div class="card-title"><span class="ct-icon">&#128203;</span> Log de interceptación <span id="req-count-badge" class="badge blue">0 requests</span></div>
                 <div style="display:flex;gap:8px;margin-bottom:10px;">
                   <button class="btn ghost btn-sm" onclick="filterReqLog('all')">Todos</button>
@@ -2005,32 +2024,13 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
                 </div>
                 <div class="req-log" id="req-log"></div>
               </div>
-              <div class="card" style="margin-bottom:10px;">
-                <div class="card-title"><span class="ct-icon">&#128683;</span> Reglas custom de bloqueo</div>
-                <div class="input-row">
-                  <span class="input-label">Dominio / URL</span>
-                  <input class="text-input" id="custom-block-input" placeholder="ej: analytics.example.com" style="flex:1;"/>
-                  <button class="btn btn-sm" onclick="addCustomBlock()">+ Agregar</button>
-                </div>
-                <div class="rule-list" id="custom-block-list">
-                  <div style="color:var(--muted);font-size: 0.846rem;text-align:center;padding:12px 0;">Sin reglas custom aún</div>
-                </div>
-              </div>
-              <div class="card" style="margin-bottom:10px;">
-                <div class="card-title"><span class="ct-icon">&#127760;</span> DNS + Red</div>
-                <div class="input-row"><span class="input-label">DoH</span><select class="sel-input" id="doh-server" onchange="updateDoH(event)"><option value="cloudflare">Cloudflare</option><option value="google">Google</option><option value="quad9">Quad9</option><option value="nextdns">NextDNS</option><option value="adguard">AdGuard</option><option value="mullvad">Mullvad</option></select></div>
-                <div class="tog-row"><div><div class="tog-label">HTTPS-only</div></div><label class="toggle"><input type="checkbox" checked id="tog-https" onchange="updateProtections()"><span class="tslider"></span></label></div>
-                <div class="input-row" style="margin-top:6px;"><span class="input-label">Test</span><input class="text-input" id="doh-test" placeholder="domain.com" style="flex:1;"/><button class="btn btn-sm" onclick="testDoH()">Go</button></div>
-                <div id="doh-result" style="font-size: 0.769rem;color:var(--muted);margin-top:4px;"></div>
-              </div>
             </div>
           </details>
 
-          <!-- COOKIES (foldable dentro de Config) -->
           <details class="settings-details">
             <summary class="settings-summary">&#127850; Control de Cookies</summary>
             <div class="details-body">
-              <div class="card" style="margin-bottom:10px;">
+<div class="card" style="margin-bottom:10px;">
                 <div class="card-title"><span class="ct-icon">&#9989;</span> Allowlist manual por dominio</div>
                 <div class="input-row">
                   <span class="input-label">Dominio</span>
@@ -2047,7 +2047,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
                   <tbody id="cookie-allow-body"></tbody>
                 </table>
               </div>
-              <div class="card" style="margin-bottom:10px;">
+<div class="card" style="margin-bottom:10px;">
                 <div class="card-title"><span class="ct-icon">&#128203;</span> Set-Cookie interceptados en vivo</div>
                 <div class="ck-log" id="cookie-log">
                   <div style="color:var(--muted);font-size: 0.846rem;padding:8px 0;text-align:center;">Sin cookies interceptadas aún — navegá para verlas</div>
@@ -2060,11 +2060,10 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
             </div>
           </details>
 
-          <!-- PRIVACY (foldable dentro de Config) -->
           <details class="settings-details">
             <summary class="settings-summary">&#128373; Centro de Privacidad</summary>
             <div class="details-body">
-              <div class="card" style="margin-bottom:10px;">
+<div class="card" style="margin-bottom:10px;">
                 <div class="card-title"><span class="ct-icon">&#128737;</span> Nivel de privacidad</div>
                 <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap;">
                   <button class="btn ghost" onclick="setPrivacyLevel('custom')" style="padding:3px 6px;font-size: 0.769rem;">Custom</button>
@@ -2074,7 +2073,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
                 </div>
                 <div id="privacy-level-desc" style="font-size: 0.769rem;color:var(--muted);"></div>
               </div>
-              <div class="card" style="margin-bottom:10px;">
+<div class="card" style="margin-bottom:10px;">
                 <div class="card-title"><span class="ct-icon">&#128268;</span> Identidad activa (spoofed)</div>
                 <div class="id-block" id="identity-block">
                   <div><span class="id-key">User-Agent:    </span><span class="id-val" id="id-ua">...</span></div>
@@ -2086,7 +2085,7 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
                   <button class="btn ghost" onclick="copyIdentity()">&#128203; Copiar identidad estable</button>
                 </div>
               </div>
-              <div class="card" style="margin-bottom:10px;">
+<div class="card" style="margin-bottom:10px;">
                 <div class="card-title"><span class="ct-icon">&#129498;</span> Anti-Fingerprinting</div>
                 <div class="fp-grid">
                   <div class="fp-item spoofed"><div class="fp-item-label">Canvas</div><div class="fp-item-val">noise</div></div>
@@ -2105,7 +2104,10 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
             </div>
           </details>
 
-          <div class="card">
+          <details class="settings-details">
+            <summary class="settings-summary">&#128190; Datos y Sesión</summary>
+            <div class="details-body">
+<div class="card" style="margin-bottom:10px;">
             <div class="card-title"><span class="ct-icon">&#128190;</span> Almacenamiento y datos</div>
             <div style="display:flex;flex-direction:column;gap:10px;">
               <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
@@ -2120,16 +2122,17 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
               <label style="display:inline-flex;align-items:center;gap:6px;font-size: 0.846rem;color:var(--muted);"><input id="keep-sessions-clear3" type="checkbox"> Mantener sesiones actuales al borrar cookies</label>
             </div>
           </div>
-
-          <div class="card">
+<div class="card" style="margin-bottom:10px;">
             <div class="card-title"><span class="ct-icon">&#128190;</span> Sesión cifrada</div>
             <div style="display:flex;gap:8px;">
               <button class="btn ghost btn-sm" onclick="exportSession()">&#128190; Exportar sesión</button>
               <button class="btn ghost btn-sm" onclick="importSession()">&#128260; Importar sesión</button>
             </div>
           </div>
+            </div>
+          </details>
 
-          <div class="card">
+<div class="card">
             <div class="card-title"><span class="ct-icon">&#128204;</span> Acerca de MC Browser</div>
             <div style="font-size: 0.923rem;line-height:2;color:var(--muted2);" id="about-block">
               <div>Versión: <span style="color:var(--accent);">1.0.0</span></div>
@@ -7102,6 +7105,16 @@ async function loadPermissionsList() {
   const discoveredStreamHosts = Array.from(state.streamItems.values()).map(item => normalizeDomainInput(item?.url || '')).filter(Boolean);
   const hintedHosts = activeDomain ? (state.permissionHostHints[activeDomain] || []) : [];
   const allDiscoveredHosts = [...new Set([...discoveredPageHosts, ...discoveredStreamHosts, ...hintedHosts, ...(activeDomain ? [activeDomain] : [])])];
+  // Hosts que el motor de adblock (listas de filtros, no solo reglas
+  // manuales) bloqueó de verdad en la página activa — antes "Hosts cargados"
+  // solo miraba customBlocks/allowlist, así que algo bloqueado por las
+  // listas (la mayoría de los bloqueos reales) se veía como "Activo".
+  let engineBlockedHosts = new Set();
+  try {
+    const wvActive = $('webview-' + state.activeTab);
+    const activeWcId = wvActive && wvActive.getWebContentsId ? wvActive.getWebContentsId() : null;
+    if (activeWcId) engineBlockedHosts = new Set(await mc.getBlockedHosts(activeWcId));
+  } catch {}
   const originsByPermission = new Map();
   for (const item of Array.isArray(permissionOrigins) ? permissionOrigins : []) {
     const target = normalizeDomainInput(item?.domain || '');
@@ -7183,8 +7196,9 @@ async function loadPermissionsList() {
         const hasGlobalBlock = matchedPatterns.some(b => !state.siteBlockMap[b]);
         const currentSite = normalizeDomainInput(getCurrentPageDomain());
         const hasSiteBlock = currentSite && matchedPatterns.some(b => state.siteBlockMap[b] === currentSite);
-        const isBlocked = hasGlobalBlock || hasSiteBlock || state.cfg?.allowlist?.[host] === 'block' || state.cfg?.allowlist?.[host] === 'session';
-        const blockPill = isBlocked ? (hasGlobalBlock ? 'Bloqueado' : 'Bloqueado aquí') : 'Activo';
+        const blockedByEngine = engineBlockedHosts.has(host);
+        const isBlocked = hasGlobalBlock || hasSiteBlock || blockedByEngine || state.cfg?.allowlist?.[host] === 'block' || state.cfg?.allowlist?.[host] === 'session';
+        const blockPill = isBlocked ? (hasGlobalBlock ? 'Bloqueado' : hasSiteBlock ? 'Bloqueado aquí' : blockedByEngine ? 'Bloqueado (adblock)' : 'Bloqueado aquí') : 'Activo';
         const currentSiteLabel = currentSite ? escapeHtml(currentSite) : '';
         return '<div class="perm-domain"><div class="perm-domain-head"><strong>' + escapeHtml(host) + '</strong><span class="status-pill ' + (isBlocked ? 'deny' : 'muted') + '">' + blockPill + '</span></div>' +
           '<div class="perm-host-actions">' +
@@ -7350,11 +7364,22 @@ async function refreshPageCookies() {
   }
   const cookies = await mc.getSiteCookies(domain).catch(() => []);
   const domainRule = state.cfg?.allowlist?.[domain] || state.cfg?.allowlist?.['.' + domain] || null;
-  const policyLabel = domainRule === 'allow' ? 'Permitido por whitelist' : domainRule === 'session' ? 'Solo sesión' : 'Bloqueado por whitelist';
+  // 'allow'/'session' salen de la whitelist real. 'block' es una regla
+  // explícita (el usuario tocó "Bloquear cookies" / bloqueo permanente o
+  // global) — no tiene que ver con estar o no en la whitelist, así que no
+  // se etiqueta como tal. Ausencia de regla (null) sí es el caso de
+  // "no está en la whitelist" -> política de bloqueo por defecto.
+  const policyLabel = domainRule === 'allow' ? 'Permitido por whitelist'
+    : domainRule === 'session' ? 'Solo sesión'
+    : domainRule === 'block' ? 'Bloqueado (regla explícita)'
+    : 'Bloqueado por política por defecto (no está en la whitelist)';
   if (!Array.isArray(cookies) || !cookies.length) {
+    const policyNote = domainRule === 'block'
+      ? 'Bloqueaste las cookies de este dominio de forma explícita. Si el sitio las necesita para funcionar, podés revertirlo.'
+      : 'La política actual bloquea cookies y almacenamiento persistente para los dominios que no están en la whitelist. Si el sitio necesita guardar cookies, puedes conceder ese permiso para este dominio.';
     const statusHtml = '<div class="perm-cookie-summary" style="margin-bottom:8px;">Estado del dominio: <strong>' + escapeHtml(policyLabel) + '</strong></div>'
       + '<div class="bp-empty"><div class="bp-empty-icon">&#127850;</div><div>No hay cookies persistentes para ' + escapeHtml(domain) + '</div></div>'
-      + '<div class="perm-cookie-summary" style="margin-top:8px;">La política actual bloquea cookies y almacenamiento persistente fuera de la whitelist. Si el sitio necesita guardar cookies, puedes conceder ese permiso para este dominio.</div>'
+      + '<div class="perm-cookie-summary" style="margin-top:8px;">' + escapeHtml(policyNote) + '</div>'
       + '<div class="perm-cookie-actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">'
       + '<button class="mini-btn" onclick="allowCookie(' + JSON.stringify(domain) + ', ' + JSON.stringify('__site_permission__') + ', ' + JSON.stringify('/') + ')">Permitir cookies</button>'
       + '<button class="mini-btn danger" onclick="banCookieDomain(' + JSON.stringify(domain) + ')">Bloquear cookies</button>'

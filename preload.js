@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld('mc', {
   getStats:    ()      => ipcRenderer.invoke('get-stats'),
   resetStats:  ()      => ipcRenderer.invoke('reset-stats'),
   getMedia:    ()      => ipcRenderer.invoke('get-media'),
+  getBlockedHosts: (webContentsId) => ipcRenderer.invoke('get-blocked-hosts', webContentsId),
   getSysinfo:  ()      => ipcRenderer.invoke('get-sysinfo'),
   getProcesses:()      => ipcRenderer.invoke('get-processes'),
   getRealValues: ()     => getRealValues(),

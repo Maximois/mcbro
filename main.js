@@ -1497,6 +1497,29 @@ ipcMain.handle('proxy:set', async (_e, settings = {}) => {
 // Stats
 let STATS = { pagesLoaded: 0, totalRequests: 0, detectedAds: 0, detectedTrackers: 0, detectedThird: 0, blockedAds: 0, blockedTrackers: 0, blockedThird: 0, blockedCrypto: 0, detectedMedia: 0, requestsBlocked: 0, cookiesBlocked: 0, bytesDownloaded: 0, uptimeStart: Date.now() };
 const MEDIA_URLS = [];
+// webContentsId -> Set<host> bloqueado por el motor de adblock (ads/trackers/
+// third-party/reglas custom) en la página actual de esa pestaña. Antes solo
+// se avisaba al renderer de bloqueos de tipo 'script' (recordBlockedRequest);
+// el panel de Permisos ("Hosts cargados") solo conocía sus reglas manuales
+// (customBlocks/allowlist), así que un host bloqueado por las listas de
+// filtros (el motor principal) se mostraba igual como "Activo". Se resetea
+// por pestaña en cada navegación de frame principal (ver did-start-navigation).
+const blockedHostsByTab = new Map();
+function trackBlockedHost(webContentsId, url) {
+  if (!webContentsId) return;
+  let host;
+  try { host = new URL(url).hostname.replace(/^www\./i, '').toLowerCase(); } catch { return; }
+  if (!host) return;
+  let set = blockedHostsByTab.get(webContentsId);
+  if (!set) { set = new Set(); blockedHostsByTab.set(webContentsId, set); }
+  if (set.size < 500) set.add(host);
+  // Acotar cuántas pestañas se rastrean a la vez (memoria)
+  if (blockedHostsByTab.size > 200) {
+    const oldestKey = blockedHostsByTab.keys().next().value;
+    if (oldestKey !== webContentsId) blockedHostsByTab.delete(oldestKey);
+  }
+}
+ipcMain.handle('get-blocked-hosts', (_e, webContentsId) => Array.from(blockedHostsByTab.get(webContentsId) || []));
 const REQ_LOG_TYPES = new Set(['main_frame', 'mainFrame', 'xmlhttprequest', 'fetch', 'websocket', 'manifest', 'script']);
 const AD_REQUEST_RE = /doubleclick|googlesyndication|googleadservices|adservice|adsystem|adnxs|adsrvr|rubicon|criteo|pubmatic|openx|casalemedia|moatads|taboola|outbrain|popunder|popads|adserver|advertising|adskeeper|exoclick|adcash|monetag|trafficfactory|prebid|pagead|\/ads?(?:[/?#]|$)|\/advert(?:[/?#]|$)|\/banner(?:[/?#]|$)|\/vast(?:[/?#]|$)/i;
 const TRACKER_REQUEST_RE = /analytics|google-analytics|googletagmanager|tracking|tracker|telemetry|pixel|beacon|scorecardresearch|quantserve|demdex|hotjar|clarity\.ms|facebook\.net\/tr|fingerprint|session-replay|fullstory|mouseflow|mixpanel|amplitude|matomo|segment\.io/i;
@@ -1533,6 +1556,11 @@ function recordBlockedRequest(details, forcedType) {
   if (type === 'trackers') STATS.blockedTrackers++;
   if (type === 'third') STATS.blockedThird++;
   if (type === 'request') STATS.requestsBlocked++;
+  // Para TODOS los tipos de recurso (antes solo se avisaba de 'script' vía
+  // req-blocked) — así "Hosts cargados" en el panel de Permisos puede saber
+  // qué hosts bloqueó de verdad el motor de adblock, no solo los que el
+  // usuario bloqueó a mano.
+  trackBlockedHost(details.webContentsId, details.url);
   if (mainWin && !mainWin.isDestroyed()) {
     if (details?.resourceType === 'script') {
       mainWin.webContents.send('req-blocked', { type: 'script', resourceType: details.resourceType, blocked: true, url: details.url, msg: details.url });
@@ -3432,6 +3460,7 @@ app.on('web-contents-created', (event, wc) => {
   wc.on('did-navigate', () => keepExplicitNavigationAlive(wc.id));
   wc.on('did-fail-load', () => clearExplicitNavigation(wc.id));
   wc.on('did-start-navigation', (_event, url, isInPlace, isMainFrame) => {
+    if (isMainFrame) blockedHostsByTab.delete(wc.id);
     if (isMainFrame && /^https?:\/\/(?:[^/]+\.)?whatsapp\.(?:com|net)(?:\/|$)/i.test(url)) {
       wc.setUserAgent(UA_WHATSAPP);
     }
