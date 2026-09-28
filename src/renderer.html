@@ -2614,7 +2614,7 @@ function escHtml(s) {
 
 function isExplicitlyDraggable(node) {
   if (!node || !(node instanceof Element)) return false;
-  return !!node.closest('[data-draggable="true"], img, video, audio, canvas, svg');
+  return !!node.closest('[draggable="true"], [data-draggable="true"], img, video, audio, canvas, svg');
 }
 
 document.addEventListener('dragstart', (event) => {

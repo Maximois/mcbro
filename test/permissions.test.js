@@ -283,6 +283,13 @@ describe('navigation guard redirects', () => {
     assert.equal(isSameNavigationSite('https://example.com/a', 'https://redirect.example.com/?ad=1'), false);
   });
 
+  test('no trata como publicitarios subdominios legítimos como go./promo./offers.', () => {
+    assert.equal(isSameNavigationSite('https://www.microsoft.com/', 'https://go.microsoft.com/fwlink/?linkid=1'), true);
+    assert.equal(isSameNavigationSite('https://go.microsoft.com/fwlink/?linkid=1', 'https://learn.microsoft.com/es-es/'), true);
+    assert.equal(isSameNavigationSite('https://www.amazon.com/', 'https://offers.amazon.com/'), true);
+    assert.equal(isSameNavigationSite('https://www.nike.com/', 'https://promo.nike.com/'), true);
+  });
+
   test('mantiene bloqueadas redirecciones entre sitios distintos', () => {
     assert.equal(isSameNavigationSite('https://example.com/a', 'https://evil-example.com/b'), false);
     assert.equal(isSameNavigationSite('https://example.com/a', 'https://blog.example.net/b'), false);
