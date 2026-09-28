@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawn, execFile, execFileSync } = require('child_process');
 const crypto = require('crypto');
-const { isAggressiveAdNavigation, isExplicitlyBlocked, isTrustedResource, isVideoHost, isAdblockHostAllowed, isAdblockSiteAllowed, isYouTubeCoreRequest } = require('./modules/adblocker/main');
+const { isAggressiveAdNavigation, isExplicitlyBlocked, isTrustedResource, isVideoHost, isAdblockHostAllowed, isAdblockSiteAllowed, isYouTubeCoreRequest, isGoogleDocumentHost, isGoogleAdHost } = require('./modules/adblocker/main');
 const Permissions = require('./lib/permissions');
 const { isSameNavigationSite: isSameNavigationSiteShared } = require('./lib/navigation-guard');
 const { isWebContentsFrameAlive, sanitizeAiConfigForPublic } = Permissions;
@@ -256,12 +256,22 @@ function stripUrlQuery(url) {
   return String(url || '').split(/[?#]/)[0];
 }
 
+function requestDocumentUrl(details) {
+  const fallback = details?.documentUrl || details?.referrer || '';
+  try {
+    const topUrl = details?.frame?.top?.url;
+    if (topUrl && isGoogleDocumentHost(new URL(topUrl).hostname)) return topUrl;
+  } catch {}
+  return fallback;
+}
+
 function createRequestGuard() {
   return (details) => {
     try {
       const requestHost = normalizeSiteHost(details?.url || '');
       // Fallback a referrer cuando documentUrl viene vacío (primera navegación)
-      const documentHost = normalizeSiteHost(details?.documentUrl || details?.referrer || '');
+      const documentUrl = requestDocumentUrl(details);
+      const documentHost = normalizeSiteHost(documentUrl);
       // Coincidencia sin query string: muchos sitios (sobre todo los que
       // sirven recursos desde varios subdominios/CDN) regeneran sus scripts
       // con un parámetro de cache-busting o token distinto en cada carga.
@@ -334,6 +344,13 @@ function createRequestGuard() {
       const host = normalizeSiteHost(details?.documentUrl || details?.url || '');
       if (!host) return null;
       if (isSitePermissionAllowed(host)) return null;
+
+      // En páginas Google, permitir recursos ajenos salvo los hosts de anuncios
+      // enumerados; el adblocker recibe esos hosts para aplicar el bloqueo.
+      if (isGoogleDocumentHost(documentHost)) {
+        if (isGoogleAdHost(requestHost)) return null;
+        return { allow: true };
+      }
 
       // La cadena OAuth puede cargar scripts y recursos entre X, x.ai, Google y Grok.
       // Las reglas de permisos de contenido no deben cortar esos recursos.
@@ -885,7 +902,7 @@ ipcMain.handle('perchance:open-dl-folder', () => {
 const AUTH_DOMAINS = [
   'login.microsoftonline.com', 'login.live.com', 'login.windows.net',
   'accounts.google.com', 'accounts.youtube.com', 'oauth.googleusercontent.com',
-  'google.com', 'www.google.com', 'gmail.com', 'mail.google.com',
+  'google.com', 'google.com.py', 'www.google.com', 'gmail.com', 'mail.google.com',
   'googleusercontent.com', 'googleapis.com', 'gstatic.com', 'googlevideo.com',
   'youtube.com', 'www.youtube.com', 'myaccount.google.com', 'meet.google.com',
   'drive.google.com', 'docs.google.com', 'slides.google.com', 'sheets.google.com',
@@ -1082,6 +1099,10 @@ function isMainBrowsingSession(wc) {
   try { return wc?.session === session.fromPartition('persist:mc'); } catch { return false; }
 }
 
+function isWebchatSession(wc) {
+  try { return wc?.session === session.fromPartition(WEBCHAT_PARTITION); } catch { return false; }
+}
+
 function extraSessionPartition(id) {
   return 'persist:mc-session-' + id;
 }
@@ -1122,12 +1143,10 @@ function isExtraSessionWebContents(wc) {
 
 function setupWebchatSession() {
   const wchSess = session.fromPartition(WEBCHAT_PARTITION);
-  // Mismo sistema de permisos granulares por dominio que el resto (para que
-  // cámara/mic de modo voz en estos proveedores se pueda habilitar igual que
-  // en cualquier sitio), pero sin ad/tracker blocking ni política de cookies
-  // estricta: son 5 dominios fijos elegidos por el usuario, no navegación
-  // libre.
-  setupSessionPermissionHandlers(wchSess);
+  // WebChat es un webview de proveedores elegidos por el usuario: no hereda
+  // las reglas granulares de permisos del navegador principal.
+  wchSess.setPermissionRequestHandler((_webContents, _permission, callback) => callback(true));
+  wchSess.setPermissionCheckHandler(() => true);
   if (CFG.proxyEnabled && CFG.proxyHost) {
     wchSess.setProxy({ proxyRules: `${CFG.proxyType || 'socks5'}://${CFG.proxyHost}:${CFG.proxyPort || 1080}` })
       .catch(e => console.error('[PROXY][webchat]', e.message));
@@ -1268,10 +1287,11 @@ loadCfg();
 // === DOMINIOS CON SESIÓN PERSISTENTE POR DEFECTO ===
 // Cuando cookiePolicy es 'session', todas las cookies se degradan a sesión
 // (no persisten entre reinicios). Estos dominios necesitan cookies
-// persistentes para que el login funcione correctamente, pero NO están en
-// AUTH_DOMAINS para no desactivar el adblock en su contenido/anuncios.
-// Solo se añaden si el usuario no ha configurado ya una regla para ellos.
+// persistentes para que el login funcione correctamente. Esta lista solo
+// controla cookies y no sustituye la política del adblocker. Solo se añaden
+// si el usuario no ha configurado ya una regla para ellos.
 const DEFAULT_SESSION_DOMAINS = [
+  'gemini.google.com', 'accounts.google.com',
   'facebook.com', 'www.facebook.com', 'm.facebook.com', 'web.facebook.com',
   'instagram.com', 'www.instagram.com', 'i.instagram.com', 'm.instagram.com'
 ];
@@ -3461,6 +3481,7 @@ async function resolveCtxCssPoint(wc, params) {
 // === WINDOW EVENTS (popups -> nueva pestaña) ────────────
 app.on('web-contents-created', (event, wc) => {
   wc.on('will-redirect', (navigationEvent, url, isInPlace, isMainFrame) => {
+    if (isWebchatSession(wc)) return;
     // Excepción: la partición de Perchance (y cualquier salto *.perchance.org)
     // NO pasa por esta guardia. perchance.org redirige a ads.perchance.org /
     // partners con frecuencia; cortarlo degrada el motor aunque la allowlist
@@ -3568,7 +3589,7 @@ app.on('web-contents-created', (event, wc) => {
   // Captura la posición del clic derecho en píxeles CSS (exacta para elementFromPoint)
   wc.on('dom-ready', () => {
     try {
-      if (wc.getType() !== 'webview') return;
+      if (wc.getType() !== 'webview' || isWebchatSession(wc)) return;
       wc.executeJavaScript(`(() => {
         if (window.__mcCtxPosInstalled) return;
         window.__mcCtxPosInstalled = true;
@@ -3580,6 +3601,7 @@ app.on('web-contents-created', (event, wc) => {
     } catch {}
   });
   wc.on('context-menu', async (_contextEvent, params) => {
+    if (isWebchatSession(wc)) return;
     // Reglas cosméticas del usuario aplicables al dominio actual
     let pageDomain = '';
     try { pageDomain = new URL(wc.getURL()).hostname.replace(/^www\./i, '').toLowerCase(); } catch {}
@@ -3631,7 +3653,14 @@ app.on('web-contents-created', (event, wc) => {
       { label: 'Adelante', enabled: wc.canGoForward(), click: () => wc.goForward() },
       { label: 'Recargar', click: () => wc.reload() },
       { type: 'separator' },
-      { role: 'copy', label: 'Copiar', enabled: Boolean(params.selectionText) },
+      {
+        label: 'Copiar',
+        enabled: Boolean(params.selectionText),
+        click: () => {
+          const selectedText = String(params.selectionText || '');
+          if (selectedText) clipboard.writeText(selectedText);
+        }
+      },
       { role: 'selectAll', label: 'Seleccionar todo', enabled: Boolean(params.isEditable || params.selectionText) },
     ];
 
@@ -4088,6 +4117,7 @@ app.on('web-contents-created', (event, wc) => {
     }
   });
   wc.setWindowOpenHandler(({ url }) => {
+    if (isWebchatSession(wc)) return { action: 'allow' };
     const isPerchanceSession = (() => {
       try { return wc.session === session.fromPartition(PerchancePanel.PERCHANCE_PARTITION); } catch { return false; }
     })();

@@ -16,7 +16,7 @@ const {
   sanitizeAiConfigForPublic
 } = require('../lib/permissions');
 const { isSameNavigationSite, siteRootIdentity } = require('../lib/navigation-guard');
-const { isAggressiveAdNavigation, isAdblockHostAllowed, isAdblockSiteAllowed, isYouTubeCoreRequest, builtInCosmeticSelectors } = require('../modules/adblocker/main');
+const { createBlockHandler, isAggressiveAdNavigation, isGoogleDocumentHost, isGoogleAdHost, isAdblockHostAllowed, isAdblockSiteAllowed, isYouTubeCoreRequest, builtInCosmeticSelectors } = require('../modules/adblocker/main');
 
 describe('adblock host allowlist', () => {
   test('permite el dominio guardado y sus subdominios', () => {
@@ -251,6 +251,49 @@ describe('adblock banners / adtng', () => {
     assert.equal(isAggressiveAdNavigation('https://a.adtng.com/get/10016594?time=1769790006402'), true);
     assert.equal(isAggressiveAdNavigation('https://example.com/banner-ads.html'), true);
     assert.equal(isAggressiveAdNavigation('https://example.com/article'), false);
+  });
+
+  test('en páginas Google solo reconoce la lista explícita de dominios de anuncios', () => {
+    assert.equal(isGoogleDocumentHost('gemini.google.com'), true);
+    assert.equal(isGoogleDocumentHost('www.google.com.py'), true);
+    assert.equal(isGoogleDocumentHost('example.com'), false);
+    assert.equal(isGoogleAdHost('adservice.google.com'), true);
+    assert.equal(isGoogleAdHost('sub.pagead2.googlesyndication.com'), true);
+    assert.equal(isGoogleAdHost('googleadservices.com'), true);
+    assert.equal(isGoogleAdHost('tag.googletagmanager.com'), true);
+    assert.equal(isGoogleAdHost('googletagservices.com'), true);
+    assert.equal(isGoogleAdHost('www.google-analytics.com'), true);
+    assert.equal(isGoogleAdHost('doubleclick.net'), false);
+    assert.equal(isGoogleAdHost('cdn.googlesyndication.com'), false);
+    assert.equal(isGoogleAdHost('www.google.com'), false);
+  });
+
+  test('Gemini solo bloquea dominios Google enumerados y otras páginas conservan el adblock', () => {
+    const makeDecision = (url, documentUrl, topFrameUrl) => {
+      const handler = createBlockHandler(
+        () => ({ match: true }),
+        [],
+        () => true,
+        category => category === 'ads',
+        null,
+        true,
+        () => {},
+        null,
+        null
+      );
+      let decision = null;
+      const details = { url, documentUrl, resourceType: 'script' };
+      if (topFrameUrl) details.frame = { top: { url: topFrameUrl } };
+      handler(details, result => { decision = result; });
+      return decision;
+    };
+
+    assert.deepEqual(makeDecision('https://adservice.google.com/pagead/id', 'https://gemini.google.com/app/'), { cancel: true });
+    assert.deepEqual(makeDecision('https://adservice.google.com/pagead/id', 'https://third-party-frame.example/', 'https://gemini.google.com/app/'), { cancel: true });
+    assert.deepEqual(makeDecision('https://doubleclick.net/ad.js', 'https://gemini.google.com/app/'), { cancel: false });
+    assert.deepEqual(makeDecision('https://doubleclick.net/ad.js', 'https://third-party-frame.example/', 'https://gemini.google.com/app/'), { cancel: false });
+    assert.deepEqual(makeDecision('https://cdn.googlesyndication.com/script.js', 'https://gemini.google.com/app/'), { cancel: false });
+    assert.deepEqual(makeDecision('https://doubleclick.net/ad.js', 'https://example.com/'), { cancel: true });
   });
 });
 

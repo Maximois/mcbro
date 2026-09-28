@@ -87,6 +87,30 @@ function isAggressiveAdNavigation(rawUrl) {
   }
 }
 
+const GOOGLE_DOCUMENT_DOMAINS = ['google.com', 'google.com.py'];
+const GOOGLE_BLOCKED_AD_DOMAINS = [
+  'adservice.google.com',
+  'pagead2.googlesyndication.com',
+  'googleadservices.com',
+  'googletagmanager.com',
+  'googletagservices.com',
+  'google-analytics.com'
+];
+
+function hostMatchesDomain(host, domain) {
+  return host === domain || host.endsWith('.' + domain);
+}
+
+function isGoogleDocumentHost(host) {
+  const normalized = normalizeHost(host);
+  return GOOGLE_DOCUMENT_DOMAINS.some(domain => hostMatchesDomain(normalized, domain));
+}
+
+function isGoogleAdHost(host) {
+  const normalized = normalizeHost(host);
+  return GOOGLE_BLOCKED_AD_DOMAINS.some(domain => hostMatchesDomain(normalized, domain));
+}
+
 // YouTube: los streams de anuncios vienen de googlevideo.com con parámetros
 // ad_ en la URL (indistinguibles por dominio, pero distinguibles por URL).
 // Bloquearlos hace que YouTube salte el anuncio (como hace Brave/uBlock).
@@ -320,7 +344,11 @@ function createBlockHandler(getEngine, allowedDomains, isEnabled, isCategoryEnab
     try {
       const url = new URL(details.url);
       const host = url.hostname.toLowerCase();
-      const documentUrl = details.documentUrl || details.referrer || '';
+      let documentUrl = details.documentUrl || details.referrer || '';
+      try {
+        const topUrl = details.frame?.top?.url;
+        if (topUrl && isGoogleDocumentHost(new URL(topUrl).hostname)) documentUrl = topUrl;
+      } catch {}
       let documentHost = '';
       try { documentHost = new URL(documentUrl).hostname.toLowerCase(); } catch {}
 
@@ -335,6 +363,16 @@ function createBlockHandler(getEngine, allowedDomains, isEnabled, isCategoryEnab
       if (!isAdblockHostAllowed(host) && isExplicitlyBlocked(host, details.documentUrl || details.referrer || '')) {
         if (blockCb) blockCb(details, 'ads');
         return callback({ cancel: true });
+      }
+
+      // En páginas Google se desactiva el filtrado genérico de recursos:
+      // solo se bloquean los dominios publicitarios definidos arriba.
+      if (isGoogleDocumentHost(documentHost)) {
+        if (isCategoryEnabled('ads') && isGoogleAdHost(host)) {
+          if (blockCb) blockCb(details, 'ads');
+          return callback({ cancel: true });
+        }
+        return callback({ cancel: false });
       }
 
       if (isYouTubeCoreRequest(host, documentHost, details.url)) return callback({ cancel: false });
@@ -735,9 +773,12 @@ function setup(ctx) {
 
 module.exports = {
   setup,
+  createBlockHandler,
   FALLBACK_DOMAINS,
   shouldBypassAdblockForSession,
   isAggressiveAdNavigation,
+  isGoogleDocumentHost,
+  isGoogleAdHost,
   isExplicitlyBlocked,
   isAdblockHostAllowed,
   isAdblockSiteAllowed,

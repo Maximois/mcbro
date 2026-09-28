@@ -2641,9 +2641,6 @@ const WebChat = {
   _wv: null,
   _active: null,
   _ready: false,
-  _contextTimer: null,
-  _lastAuthRefreshAt: 0,
-  _lastAuthRefreshUrl: '',
 
   _bg: { data: null },
   _bgDefault: null,
@@ -2651,9 +2648,6 @@ const WebChat = {
   init() {
     this.injectSidebar();
     this.loadBg();
-    if (typeof mc !== 'undefined' && mc?.on) {
-      mc.on('auth-session-updated', () => this.refreshSession());
-    }
   },
 
   injectSidebar() {
@@ -2670,8 +2664,6 @@ const WebChat = {
       </div>
       <div class="wch-provider-row" id="wch-providers"></div>
       <div class="wch-actions">
-        <button class="wch-action-btn" onclick="WebChat.attachPage()" title="Enviar contexto de la página activa al chat">📋 Adjuntar página</button>
-        <button class="wch-action-btn" onclick="WebChat.attachSelection()" title="Enviar selección de texto al chat">✂️ Selección</button>
         <button class="wch-action-btn" onclick="WebChat.reload()" title="Recargar chat">🔄</button>
         <button class="wch-action-btn" onclick="WebChat.clearData()" title="Borrar cookies/caché/datos de este panel (sesión propia, no afecta al resto del navegador)">🧹</button>
       </div>
@@ -2754,20 +2746,6 @@ const WebChat = {
       }
     });
 
-    wv.addEventListener('did-navigate', () => {
-      this.injectContextElement();
-    });
-
-    wv.addEventListener('did-finish-load', () => {
-      this.injectContextElement();
-    });
-
-    wv.addEventListener('new-window', (e) => {
-      e.preventDefault();
-      const wv = this._wv;
-      if (wv && e.url) wv.loadURL(e.url);
-    });
-
     wv.addEventListener('did-fail-load', (e) => {
       if (e.errorCode !== -3) {
         console.error('[WebChat] fail load:', e.errorDescription, e.url);
@@ -2777,43 +2755,6 @@ const WebChat = {
     wv.addEventListener('permissionrequest', (e) => {
       e.request.allow();
     });
-  },
-
-  // Inyecta un div oculto con contexto actualizado de pestañas
-  injectContextElement() {
-    const wv = this._wv;
-    if (!wv) return;
-    try {
-      const ctx = this.getContextJSON();
-      wv.executeJavaScript(`
-        (function(){
-          var el = document.getElementById('__mc-ctx-data');
-          if (!el) {
-            el = document.createElement('div');
-            el.id = '__mc-ctx-data';
-            el.style.display = 'none';
-            document.body.appendChild(el);
-          }
-          el.textContent = ${ctx};
-          el.dataset.context = ${ctx};
-        })()
-      `).catch(() => {});
-    } catch (e) {}
-  },
-
-  getContextJSON() {
-    try {
-      const tabs = typeof window.__mcGetTabs === 'function' ? window.__mcGetTabs() : [];
-      const activeId = typeof window.__mcGetActiveTabId === 'function' ? window.__mcGetActiveTabId() : null;
-      const url = document.getElementById('urlinput')?.value || '';
-      return JSON.stringify({
-        timestamp: new Date().toISOString(),
-        totalTabs: tabs.length,
-        activeTabId: activeId,
-        activeTabUrl: url,
-        tabs: tabs.map(t => ({ id: t.id, title: t.title, url: t.url, active: t.id === activeId }))
-      });
-    } catch { return '{}'; }
   },
 
   toggle() {
@@ -2835,7 +2776,6 @@ const WebChat = {
       const btn = document.getElementById('webchat-btn');
       if (btn) btn.classList.add('active');
       this.ensureWebview();
-      if (!this._contextTimer) this._contextTimer = setInterval(() => this.injectContextElement(), 3000);
       // cargar provider activo (setActive carga vía src directamente)
       if (this._wv && this._active) {
         this.setActive(this._active);
@@ -2863,10 +2803,6 @@ const WebChat = {
     this._wv = null;
     this._ready = false;
     this._pendingUrl = '';
-    if (this._contextTimer) {
-      clearInterval(this._contextTimer);
-      this._contextTimer = null;
-    }
     document.querySelectorAll('.tnbtn').forEach(b => b.classList.remove('active'));
     const btn = document.getElementById('chat-toggle-web');
     if (btn) { btn.className = 'chat-toggle closed'; btn.innerHTML = '&#9664;'; btn.title = 'Abrir WebChat (Ctrl+Shift+W)'; }
@@ -2889,23 +2825,6 @@ const WebChat = {
         alert('No se pudo borrar: ' + (res?.error || 'error desconocido'));
       }
     } catch (e) { alert('No se pudo borrar: ' + e.message); }
-  },
-
-  refreshSession() {
-    const wv = this._wv;
-    if (!wv || !this._ready || !wv.getURL || typeof wv.reload !== 'function') return;
-    let currentUrl = '';
-    try { currentUrl = wv.getURL() || ''; } catch {}
-    if (!/^https?:\/\//i.test(currentUrl) || currentUrl === 'about:blank') return;
-    const isLoginPage = /\/signin|\/login|\/auth|\/oauth|\/account|\/challenge/i.test(currentUrl);
-    const now = Date.now();
-    if (isLoginPage && (now - this._lastAuthRefreshAt > 5000 || this._lastAuthRefreshUrl !== currentUrl)) {
-      this._lastAuthRefreshAt = now;
-      this._lastAuthRefreshUrl = currentUrl;
-      setTimeout(() => {
-        try { wv.reload(); } catch {}
-      }, 500);
-    }
   },
 
   // ── Background ──
@@ -2958,109 +2877,6 @@ const WebChat = {
     const file = document.getElementById('wch-bg-file');
     if (file) file.value = '';
   },
-  // ── Inyección de contexto de página activa ──────────
-  async attachPage() {
-    const wv = this._wv;
-    if (!wv) return;
-    try {
-      const activeWv = document.querySelector('.tab-webview.active');
-      if (!activeWv || !activeWv.getWebContentsId) {
-        this.injectFallbackText('(no hay página activa para adjuntar)');
-        return;
-      }
-      const res = await mc.aiPageDom({ webContentsId: activeWv.getWebContentsId() });
-      if (!res?.html) {
-        this.injectFallbackText('(no se pudo obtener el contenido de la página)');
-        return;
-      }
-
-      const title = res.title || 'Sin título';
-      const url = res.url || 'about:blank';
-
-      // Extraer texto del HTML (versión simplificada)
-      const text = this.htmlToText(res.html).slice(0, 8000);
-
-      // Inyectar en el input del chat
-      const contextText = `Estoy viendo esta página:\nTítulo: ${title}\nURL: ${url}\n\n${text}\n\n`;
-      this.injectIntoChat(contextText);
-    } catch (e) {
-      console.error('[WebChat] attachPage error:', e);
-      this.injectFallbackText('(error al obtener contexto: ' + e.message + ')');
-    }
-  },
-
-  async attachSelection() {
-    const wv = this._wv;
-    if (!wv) return;
-    try {
-      const activeWv = document.querySelector('.tab-webview.active');
-      if (!activeWv || !activeWv.getWebContentsId) return;
-      const text = await activeWv.executeJavaScript('window.getSelection()?.toString() || ""');
-      if (text) {
-        this.injectIntoChat(`Seleccioné el siguiente texto de la página:\n\n${text.slice(0, 5000)}\n\n`);
-      } else {
-        this.injectFallbackText('(no hay texto seleccionado en la página)');
-      }
-    } catch (e) {
-      console.error('[WebChat] attachSelection error:', e);
-    }
-  },
-
-  // Inyecta texto en el input/textarea del chat web
-  injectIntoChat(text) {
-    const wv = this._wv;
-    if (!wv) return;
-    const escaped = JSON.stringify(text);
-    wv.executeJavaScript(`
-      (function(){
-        var inp = document.querySelector('textarea, [contenteditable="true"], [role="textbox"], input[type="text"]');
-        if (!inp) return false;
-        if (inp.tagName === 'TEXTAREA' || inp.tagName === 'INPUT') {
-          inp.value = ${escaped} + inp.value;
-          inp.dispatchEvent(new Event('input', { bubbles: true }));
-          inp.dispatchEvent(new Event('change', { bubbles: true }));
-          inp.focus();
-        } else if (inp.isContentEditable) {
-          inp.textContent = ${escaped} + inp.textContent;
-          inp.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        return true;
-      })()
-    `).then(ok => {
-      if (!ok) this.injectFallbackText(text);
-    }).catch(() => this.injectFallbackText(text));
-  },
-
-  injectFallbackText(text) {
-    // usar prompt como fallback
-    const wv = this._wv;
-    if (!wv) return;
-    const escaped = JSON.stringify(text);
-    wv.executeJavaScript(`
-      (function(){
-        var inp = document.querySelector('textarea, [contenteditable="true"], [role="textbox"], input[type="text"]');
-        if (!inp) return;
-        inp.focus();
-        // Try execCommand insertText
-        document.execCommand('insertText', false, ${escaped});
-      })()
-    `).catch(() => {
-      // último fallback: notificar al usuario
-      alert('Pega este contexto en el chat:\n\n' + text.slice(0, 2000));
-    });
-  },
-
-  htmlToText(html) {
-    try {
-      const tmp = document.createElement('div');
-      tmp.innerHTML = html;
-      // Remove script/style
-      tmp.querySelectorAll('script, style, noscript, svg, canvas').forEach(e => e.remove());
-      return tmp.textContent.replace(/\s+/g, ' ').trim().slice(0, 8000);
-    } catch {
-      return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 8000);
-    }
-  }
 };
 
 //  WhatsAppChat — Sidebar dedicado a WhatsApp Web
