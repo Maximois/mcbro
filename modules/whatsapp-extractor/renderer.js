@@ -163,7 +163,14 @@
             const parentTag = el.parentElement?.tagName?.toLowerCase() || '';
             const type = tag === 'img' ? 'image' : (tag === 'video' || parentTag === 'video') ? 'video' : (tag === 'audio' || parentTag === 'audio') ? 'audio' : 'image';
             const cat = categorize(el);
-            const label = (el.alt || el.title || '').trim() || (cat + ' ' + type);
+            let urlName = '';
+            try {
+              if (!/^https?:/i.test(src)) throw new Error('embedded media');
+              urlName = decodeURIComponent(new URL(src, location.href).pathname.split('/').pop() || '').replace(/\.[^.]+$/, '');
+            } catch {}
+            const label = (el.alt || el.title || '').trim() || urlName || (type === 'image' ? 'Imagen' : type === 'video' ? 'Video' : 'Audio');
+            const width = type === 'image' ? (mediaEl.naturalWidth || mediaEl.clientWidth || 0) : 0;
+            const height = type === 'image' ? (mediaEl.naturalHeight || mediaEl.clientHeight || 0) : 0;
             let url = src;
             let preview = null;
             if (src.startsWith('blob:')) {
@@ -175,7 +182,7 @@
             } else {
               continue;
             }
-            add({ url, type, label, source: cat, preview });
+            add({ url, type, label, source: cat, preview, width, height });
           }
           return { title: 'WhatsApp Web', resources: found.slice(0, 500) };
         })()`);
@@ -302,15 +309,17 @@
         return;
       }
       list.innerHTML = items.map(({ item, index }) => {
-        const typeLabel = item.type === 'image' ? 'IMG' : item.type === 'video' ? 'VID' : item.type === 'audio' ? 'AUD' : 'LNK';
         const thumb = item.preview
           ? `<img src="${item.preview.replace(/"/g, '&quot;')}" onerror="this.style.display='none'">`
-          : `<span class="wa-extractor-thumb-icon">${typeLabel}</span>`;
+          : '';
+        const dimensions = item.type === 'image' && item.width > 0 && item.height > 0
+          ? `${item.width} × ${item.height} px`
+          : '';
         return `<div class="wa-extractor-item">
           <div class="wa-extractor-thumb">${thumb}</div>
           <div class="wa-extractor-info">
-            <div class="wa-extractor-label">${escapeHtml(item.label)} <span class="wa-extractor-src">${escapeHtml(item.source || '')}</span></div>
-            <div class="wa-extractor-url" title="${escapeHtml(item.url)}">${escapeHtml(item.url.slice(0, 90))}</div>
+            <div class="wa-extractor-label">${escapeHtml(item.label)}</div>
+            ${dimensions ? `<div class="wa-extractor-url">${dimensions}</div>` : ''}
           </div>
           <div class="wa-extractor-actions">
             <button class="btn ghost btn-sm" onclick="WhatsAppExtractor.openItem(${index})" title="Abrir en pestaña">↗</button>

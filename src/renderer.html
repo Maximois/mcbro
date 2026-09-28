@@ -2685,6 +2685,7 @@ const Sessions = {
       <div class="session-topbar">
         <div class="session-brand"><span class="session-brand-mark">MC</span></div>
         <select id="session-select" class="session-select"></select>
+        <button class="session-action-btn" onclick="Sessions.renameCurrent()" title="Renombrar esta sesión">&#9998;</button>
         <button class="session-action-btn" onclick="Sessions.createNew()" title="Nueva sesión">&#43;</button>
         <button class="session-action-btn" onclick="Sessions.deleteCurrent()" title="Eliminar esta sesión y todos sus datos">&#128465;</button>
         <button class="session-action-btn" onclick="Sessions.toggleTools()" title="Marcadores, historial y configuración">&#128209;</button>
@@ -2901,7 +2902,7 @@ const Sessions = {
   },
 
   addHistory(url, title) {
-    if (!url || /^(about|mc|chrome):/i.test(url)) return;
+    if (!url || isInternalHistoryUrl(url)) return;
     this.history = this.history.filter(item => item.url !== url);
     this.history.unshift({ url, title: title || url, time: Date.now() });
     this.history = this.history.slice(0, 200);
@@ -4012,29 +4013,33 @@ async function loadHistoryLS() {
     const nativeHistory = await mc.historyList();
     if (nativeHistory.length) {
       state.history = nativeHistory.filter(entry => !isInternalHistoryUrl(entry?.url));
+      saveHistoryLS();
       return;
     }
     const raw = localStorage.getItem('mc_history');
     const legacy = raw ? JSON.parse(raw) : [];
     if (Array.isArray(legacy) && legacy.length) {
-      for (const entry of legacy) await mc.historyAdd(entry);
+      for (const entry of legacy.filter(item => !isInternalHistoryUrl(item?.url))) await mc.historyAdd(entry);
       state.history = await mc.historyList();
       saveHistoryLS();
     }
   } catch {
     try {
       const raw = localStorage.getItem('mc_history');
-      if (raw) state.history = JSON.parse(raw);
+      if (raw) {
+        state.history = JSON.parse(raw).filter(item => !isInternalHistoryUrl(item?.url));
+        saveHistoryLS();
+      }
     } catch {}
   }
 }
 
 function isInternalHistoryUrl(url) {
-  return /^(?:data:text\/html|blob:)/i.test(String(url || '')) || String(url || '') === 'mc:player';
+  return /^(?:data:text\/html|blob:|file:|about:|mc:|chrome:)/i.test(String(url || ''));
 }
 
 function addHistory(url) {
-  if (!url || url === 'mc://newtab' || isInternalHistoryUrl(url)) return;
+  if (!url || isInternalHistoryUrl(url)) return;
   const last = state.history[0];
   if (last && last.url === url) return;
   state.history.unshift({ url, title: url.replace(/https?:\/\//,'').split('/')[0], ts: Date.now() });

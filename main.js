@@ -89,8 +89,8 @@ let mainWin;
 let devWatchers = [];
 let devReloadTimer = null;
 
-// WebContents con una navegación EXPLÍCITA del usuario en curso (barra de
-// URL, marcador, historial, atajo, clic en enlace). Mientras una webContents
+// WebContents con una navegación EXPLÍCITA iniciada por controles del navegador
+// (barra de URL, marcador, historial o atajo). Mientras una webContents
 // está en este estado, `will-redirect` NO bloquea sus redirecciones: las reglas
 // anti-redirección solo aplican a auto-redirecciones iniciadas por la página.
 const userNavWebContents = new Map();
@@ -2515,14 +2515,34 @@ ipcMain.handle('clear-cache', async () => {
 // Paleta fija de acento por sesión — solo para distinguir a simple vista
 // una sesión aislada de otra (y de los paneles de chat, que no usan esto).
 const SESSION_COLOR_PALETTE = ['#ff6b6b', '#ffa94d', '#ffd43b', '#69db7c', '#4dabf7', '#748ffc', '#da77f2', '#f783ac'];
-ipcMain.handle('sessions:list', () => CFG.extraSessions || []);
+ipcMain.handle('sessions:list', () => {
+  const entries = CFG.extraSessions || [];
+  const usedNames = new Set(entries.filter(s => s.name !== 'Nueva sesión').map(s => s.name));
+  let suffix = 0;
+  let changed = false;
+  for (const entry of entries) {
+    if (entry.name !== 'Nueva sesión') continue;
+    let name = suffix === 0 ? 'MC' : `MC-${suffix}`;
+    while (usedNames.has(name)) name = `MC-${++suffix}`;
+    entry.name = name;
+    usedNames.add(name);
+    suffix++;
+    changed = true;
+  }
+  if (changed) saveCfg();
+  return entries;
+});
 ipcMain.handle('sessions:create', (e, { name, color } = {}) => {
   const id = 'sess_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const existingNames = new Set((CFG.extraSessions || []).map(s => s.name));
+  let suffix = 0;
+  let defaultName = 'MC';
+  while (existingNames.has(defaultName)) defaultName = `MC-${++suffix}`;
   const usedColors = new Set((CFG.extraSessions || []).map(s => s.color));
   const autoColor = SESSION_COLOR_PALETTE.find(c => !usedColors.has(c)) || SESSION_COLOR_PALETTE[(CFG.extraSessions || []).length % SESSION_COLOR_PALETTE.length];
   const entry = {
     id,
-    name: String(name || 'Nueva sesión').trim().slice(0, 40) || 'Nueva sesión',
+    name: String(name || defaultName).trim().slice(0, 40) || defaultName,
     color: SESSION_COLOR_PALETTE.includes(color) ? color : autoColor,
     createdAt: Date.now()
   };
@@ -3380,19 +3400,13 @@ async function resolveCtxCssPoint(wc, params) {
 
 // === WINDOW EVENTS (popups -> nueva pestaña) ────────────
 app.on('web-contents-created', (event, wc) => {
-  // Una navegación iniciada desde la página (por ejemplo, un enlace con
-  // destino externo) también es una intención explícita. Marcarla aquí
-  // permite que el servidor complete su cadena HTTP de redirecciones sin que
-  // la política anti-redirección la corte en el primer dominio externo.
-  wc.on('will-navigate', () => markExplicitNavigation(wc.id));
   wc.on('will-redirect', (navigationEvent, url, isInPlace, isMainFrame) => {
     // Incluso con navegación explícita, un salto que matchea patrones
     // CONOCIDOS de red de anuncios/malvertising se bloquea igual — esto no
     // afecta cadenas legítimas (afiliados, OAuth, pasarelas de pago), que por
     // definición no matchean esos patrones. Cierra el hueco por el que un
-    // script de anuncios embebido en la página (que dispara su propio
-    // 'will-navigate', marcado como intención explícita para no romper
-    // redirecciones reales) podía saltar a un dominio de ads sin que esta
+    // script de anuncios embebido en la página podía aprovechar una marca
+    // amplia de navegación explícita y saltar a un dominio de ads sin que esta
     // guardia lo viera, aunque la lista de red ya lo conociera.
     //
     // Excepción: la partición de Perchance (y cualquier salto *.perchance.org)
@@ -3415,9 +3429,9 @@ app.on('web-contents-created', (event, wc) => {
       keepExplicitNavigationAlive(wc.id);
       return;
     }
-    // Navegación explícita del usuario (barra de URL, marcador, historial,
-    // atajo, clic en enlace): NO bloquear sus redirecciones. Las reglas
-    // anti-redirección solo aplican a auto-redirecciones de la página.
+    // Navegación explícita iniciada por la interfaz del navegador: preservar
+    // su cadena de redirecciones. Las navegaciones de la página no reciben
+    // esta excepción automáticamente.
     if (hasExplicitNavigation(wc.id)) {
       // Cada salto mantiene abierta la autorización; la cadena puede pasar
       // por dominios distintos antes de llegar a su destino real.
