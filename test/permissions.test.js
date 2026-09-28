@@ -256,6 +256,10 @@ describe('adblock banners / adtng', () => {
   test('en páginas Google solo reconoce la lista explícita de dominios de anuncios', () => {
     assert.equal(isGoogleDocumentHost('gemini.google.com'), true);
     assert.equal(isGoogleDocumentHost('www.google.com.py'), true);
+    assert.equal(isGoogleDocumentHost('gemini.google.co.uk'), true);
+    assert.equal(isGoogleDocumentHost('www.google.es'), true);
+    assert.equal(isGoogleDocumentHost('notgoogle.com'), false);
+    assert.equal(isGoogleDocumentHost('google.com.evil.io'), false);
     assert.equal(isGoogleDocumentHost('example.com'), false);
     assert.equal(isGoogleAdHost('adservice.google.com'), true);
     assert.equal(isGoogleAdHost('sub.pagead2.googlesyndication.com'), true);

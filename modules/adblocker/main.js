@@ -87,7 +87,8 @@ function isAggressiveAdNavigation(rawUrl) {
   }
 }
 
-const GOOGLE_DOCUMENT_DOMAINS = ['google.com', 'google.com.py'];
+// google.com y sus dominios por país (google.com.py, google.co.uk, google.es...)
+const GOOGLE_DOCUMENT_HOST_RE = /^(?:[a-z0-9-]+\.)*google\.(?:com?\.[a-z]{2}|[a-z]{2,3})$/;
 const GOOGLE_BLOCKED_AD_DOMAINS = [
   'adservice.google.com',
   'pagead2.googlesyndication.com',
@@ -103,7 +104,7 @@ function hostMatchesDomain(host, domain) {
 
 function isGoogleDocumentHost(host) {
   const normalized = normalizeHost(host);
-  return GOOGLE_DOCUMENT_DOMAINS.some(domain => hostMatchesDomain(normalized, domain));
+  return GOOGLE_DOCUMENT_HOST_RE.test(normalized);
 }
 
 function isGoogleAdHost(host) {

@@ -565,7 +565,10 @@ const AI = {
       wv = document.createElement('webview');
       wv.id = 'ai-wv';
       wv.style.cssText = 'flex:0;border:none;height:0;min-height:0;';
-      wv.setAttribute('partition', 'persist:mc');
+      // Partición aislada (la misma que el panel WebChat): antes usaba
+      // 'persist:mc' y compartía cookies, adblock y reglas de permisos con
+      // las pestañas del navegador, lo que rompía Gemini y otros chats web.
+      wv.setAttribute('partition', 'persist:mc-webchat');
       wv.setAttribute('allow', 'autoplay; media; encrypted-media; clipboard-read; clipboard-write');
       wv.setAttribute('webpreferences', 'contextIsolation=yes');
       const msgsEl = document.getElementById('ai-msgs');
