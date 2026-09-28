@@ -89,6 +89,7 @@ function isCloudflareChallengeHost(host) {
 // El evento 'will-download' es SÍNCRONO: lo que no fijes ahí, no pasa después.
 
 const DEFAULT_FOLDER = path.join(app && app.getPath ? app.getPath("downloads") : process.cwd(), "Perchance");
+let perchanceDownloadSequence = 0;
 
 function downloadFolder(folder = DEFAULT_FOLDER) {
   try { fs.mkdirSync(folder, { recursive: true }); } catch (e) { console.error("[perchance] no pude crear", folder, e); }
@@ -108,8 +109,10 @@ function installPerchanceDownloads(partition = PERCHANCE_PARTITION, opts = {}) {
 
   // El panel de Perchance no hace restricción de red ni allowlist. Solo dejamos
   // la descarga funcional y no cancelamos nada arbitrariamente.
-  ses.on("will-download", (event, item) => {
+  ses.on("will-download", (event, item, webContents) => {
     const url = item.getURL();
+    const id = `dl-perchance-${Date.now()}-${++perchanceDownloadSequence}`;
+    const pageUrl = webContents?.getURL?.() || "";
     if (!/^(blob|data):/i.test(url) && !isAllowedUrl(url)) {
       console.warn("[perchance] descarga no permitida por regla de seguridad:", url);
       item.cancel();
@@ -122,15 +125,15 @@ function installPerchanceDownloads(partition = PERCHANCE_PARTITION, opts = {}) {
     // (c) RUTA SÍNCRONA = descarga garantizada, sin diálogo, sin depender del SO.
     item.setSavePath(fullPath);
 
-    onEvent({ type: "start", url, filename, path: fullPath, totalBytes: item.getTotalBytes() });
+    onEvent({ id, type: "start", url, pageUrl, filename, path: fullPath, totalBytes: item.getTotalBytes() });
 
     item.on("updated", (_e, state) => {
-      onEvent({ type: "progress", state, filename, receivedBytes: item.getReceivedBytes(), totalBytes: item.getTotalBytes() });
+      onEvent({ id, type: "progress", state, url, pageUrl, filename, path: fullPath, receivedBytes: item.getReceivedBytes(), totalBytes: item.getTotalBytes() });
     });
     item.once("done", (_e, state) => {
       const ok = state === "completed";
       if (!ok) console.warn("[perchance] descarga NO completada:", state, url);
-      onEvent({ type: "done", state, filename, path: fullPath, success: ok });
+      onEvent({ id, type: "done", state, url, pageUrl, filename, path: fullPath, receivedBytes: item.getReceivedBytes(), totalBytes: item.getTotalBytes(), success: ok });
     });
   });
 

@@ -490,7 +490,15 @@
   // Descargas del panel (blob/data) → log
   if (window.mc && typeof mc.onPerchanceDownload === 'function') {
     mc.onPerchanceDownload((ev) => {
-      if (ev && ev.type === 'done') console.log('[PERCHANCE] descarga:', ev.success ? 'OK' : 'falló', ev.filename);
+      if (!ev) return;
+      window.trackPerchanceDownload?.(ev);
+      if (ev.type === 'start') {
+        addSidebarLog('info', '[PERCHANCE] Descarga iniciada: ' + (ev.filename || 'archivo'));
+      } else if (ev.type === 'done') {
+        const status = ev.success ? 'allowed' : 'blocked';
+        const result = ev.success ? 'Guardado' : 'Falló';
+        addSidebarLog(status, '[PERCHANCE] ' + result + ': ' + (ev.path || ev.filename || 'archivo'));
+      }
     });
     mc.on('perchance-open-tab', (url) => {
       if (!/^https?:\/\//i.test(url || '')) return;

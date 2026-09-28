@@ -911,73 +911,40 @@ const AUTH_DOMAINS = [
   'api.instagram.com', 'i.instagram.com'
 ];
 
-function extFromMime(mime) {
-  const map = {
-    'image/png': '.png', 'image/jpeg': '.jpg', 'image/jpg': '.jpg', 'image/webp': '.webp',
-    'image/gif': '.gif', 'image/bmp': '.bmp', 'image/svg+xml': '.svg', 'image/avif': '.avif',
-    'video/mp4': '.mp4', 'video/webm': '.webm', 'audio/mpeg': '.mp3', 'audio/wav': '.wav',
-    'application/pdf': '.pdf', 'text/plain': '.txt'
-  };
-  return map[String(mime || '').split(';')[0].trim().toLowerCase()] || '';
-}
-
-// webContents.downloadURL() hace un pedido de RED — no puede alcanzar
-// blob:/data: URLs, que solo existen en la memoria de la propia página (el
-// caso típico de generadores de imagen client-side sin URL persistente,
-// como perchance.org). Para esos, hay que pedirle a la página misma que
-// lea el blob (fetch dentro de su propio contexto) y nos devuelva los
-// bytes, en vez de intentar bajarlo desde afuera.
-async function saveBlobOrDataUrlToDownloads(wc, srcURL, hintName) {
+// Las URL blob/data deben descargarse dentro de su frame de origen para que
+// Chromium y la sesión del sitio procesen el DownloadItem de forma normal.
+async function saveBlobOrDataUrlToDownloads(wc, srcURL, hintName, sourceFrame) {
   try {
-    let mime = '';
-    let buffer = null;
-    if (/^data:/i.test(srcURL)) {
-      const match = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(srcURL);
-      if (!match) return { ok: false, error: 'data URL inválida' };
-      mime = match[1] || 'application/octet-stream';
-      buffer = match[2] ? Buffer.from(match[3], 'base64') : Buffer.from(decodeURIComponent(match[3]), 'binary');
-    } else if (/^blob:/i.test(srcURL)) {
-      if (!wc || wc.isDestroyed()) return { ok: false, error: 'página no disponible' };
-      const result = await wc.executeJavaScript(`
-        (async () => {
-          try {
-            const resp = await fetch(${JSON.stringify(srcURL)});
-            const blob = await resp.blob();
-            const buf = await blob.arrayBuffer();
-            const bytes = new Uint8Array(buf);
-            let binary = '';
-            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-            return { mime: blob.type || '', base64: btoa(binary) };
-          } catch (e) { return { error: e.message || String(e) }; }
-        })()
-      `, true);
-      if (!result || result.error) return { ok: false, error: result?.error || 'no se pudo leer el blob' };
-      mime = result.mime || 'application/octet-stream';
-      buffer = Buffer.from(result.base64, 'base64');
-    } else {
-      return { ok: false, error: 'no es blob: ni data:' };
-    }
-
-    const dlDir = CFG.downloadDir || app.getPath('downloads');
-    if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
-    const ext = extFromMime(mime) || path.extname(hintName || '') || '.bin';
-    const base = (hintName ? hintName.replace(/\.[a-z0-9]+$/i, '') : 'imagen').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) || 'descarga';
-    let filename = base + ext;
-    let filePath = path.join(dlDir, filename);
-    let n = 1;
-    while (fs.existsSync(filePath)) {
-      filename = `${base} (${n})${ext}`;
-      filePath = path.join(dlDir, filename);
-      n++;
-    }
-    fs.writeFileSync(filePath, buffer);
-
-    const dlId = 'dl-blob-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
-    const pageUrl = wc?.getURL?.() || '';
-    ACTIONS.emit('dl-native', { id: dlId, url: srcURL.slice(0, 60) + '...', filename, totalBytes: buffer.length, pageUrl, state: 'active' });
-    ACTIONS.emit('dl-native-progress', { id: dlId, url: srcURL, filename, received: buffer.length, totalBytes: buffer.length, pct: 100, state: 'progressing' });
-    ACTIONS.emit('dl-native-done', { id: dlId, url: srcURL, filename, file: filePath, size: (buffer.length / 1048576).toFixed(1), state: 'completed', cancelled: false });
-    return { ok: true, file: filePath };
+    if (!/^(blob|data):/i.test(srcURL)) return { ok: false, error: 'no es blob: ni data:' };
+    if (!wc || wc.isDestroyed()) return { ok: false, error: 'página no disponible' };
+    const safeHint = String(hintName || '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim();
+    const script = `
+      (() => {
+        try {
+          const url = ${JSON.stringify(srcURL)};
+          const hint = ${JSON.stringify(safeHint)};
+          const original = Array.from(document.querySelectorAll('a[href]')).find(link => link.href === url);
+          const originalName = original && original.getAttribute('download');
+          const filename = originalName || (/\\.[a-z0-9]{2,8}$/i.test(hint) ? hint : '');
+          const anchor = document.createElement('a');
+          anchor.href = url;
+          if (filename) anchor.download = filename;
+          anchor.style.display = 'none';
+          (document.body || document.documentElement).appendChild(anchor);
+          anchor.click();
+          setTimeout(() => anchor.remove(), 1000);
+          return { ok: true };
+        } catch (error) {
+          return { error: error.message || String(error) };
+        }
+      })()
+    `;
+    const executor = sourceFrame && typeof sourceFrame.executeJavaScript === 'function' ? sourceFrame : wc;
+    const result = executor === wc
+      ? await wc.executeJavaScript(script, true)
+      : await executor.executeJavaScript(script, true);
+    if (!result || result.error) return { ok: false, error: result?.error || 'no se pudo iniciar la descarga' };
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message || String(e) };
   }
@@ -3689,12 +3656,51 @@ app.on('web-contents-created', (event, wc) => {
         {
           label: 'Descargar enlace',
           click: () => {
-            if (/^https?:\/\//i.test(params.linkURL)) mainWin?.webContents?.downloadURL(params.linkURL);
-            else if (params.linkURL) shell.openExternal(params.linkURL).catch(() => {});
+            const linkUrl = String(params.linkURL || '');
+            if (/^https?:\/\//i.test(linkUrl)) wc.downloadURL(linkUrl);
+            else if (/^(blob|data):/i.test(linkUrl)) {
+              saveBlobOrDataUrlToDownloads(wc, linkUrl, params.linkText || 'descarga', params.frame)
+                .then(result => { if (!result.ok) console.error('[blob-download]', result.error); });
+            }
           }
         }
       );
     }
+    template.push(
+      { type: 'separator' },
+      {
+        label: 'Guardar página completa',
+        click: async () => {
+          if (!wc || wc.isDestroyed()) return;
+          try {
+            const pageUrl = params.pageURL || wc.getURL() || '';
+            let title = wc.getTitle() || '';
+            if (!title) {
+              try { title = new URL(pageUrl).hostname; } catch {}
+            }
+            const safeTitle = String(title || 'pagina-web').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(0, 100) || 'pagina-web';
+            const dlDir = CFG.downloadDir || app.getPath('downloads');
+            if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
+            const save = await dialog.showSaveDialog(mainWin, {
+              title: 'Guardar página completa',
+              defaultPath: path.join(dlDir, safeTitle + '.mhtml'),
+              filters: [{ name: 'Página web completa', extensions: ['mhtml'] }]
+            });
+            if (save.canceled || !save.filePath) return;
+            const savedPath = await wc.savePage(save.filePath, 'MHTML');
+            const filename = path.basename(savedPath || save.filePath);
+            const filePath = savedPath || save.filePath;
+            const sizeBytes = fs.statSync(filePath).size;
+            const id = 'dl-page-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+            ACTIONS.emit('dl-native', { id, url: pageUrl, filename, totalBytes: sizeBytes, pageUrl, state: 'active' });
+            ACTIONS.emit('dl-native-progress', { id, url: pageUrl, filename, received: sizeBytes, totalBytes: sizeBytes, pct: 100, state: 'progressing' });
+            ACTIONS.emit('dl-native-done', { id, url: pageUrl, filename, file: filePath, size: (sizeBytes / 1048576).toFixed(1), state: 'completed', cancelled: false });
+          } catch (error) {
+            console.error('[save-page]', error.message || error);
+          }
+        }
+      }
+    );
     if (params.selectionText) {
       template.push({
         label: 'Buscar selección en nueva pestaña',
@@ -3715,7 +3721,7 @@ app.on('web-contents-created', (event, wc) => {
           click: () => {
             if (/^https?:\/\//i.test(params.srcURL)) wc.downloadURL(params.srcURL);
             else if (/^(blob|data):/i.test(params.srcURL)) {
-              saveBlobOrDataUrlToDownloads(wc, params.srcURL, 'imagen')
+              saveBlobOrDataUrlToDownloads(wc, params.srcURL, 'imagen', params.frame)
                 .then(r => { if (!r.ok) console.error('[blob-download]', r.error); });
             }
           }
@@ -3745,7 +3751,7 @@ app.on('web-contents-created', (event, wc) => {
           click: () => {
             if (/^https?:\/\//i.test(params.srcURL)) mainWin?.webContents?.downloadURL(params.srcURL);
             else if (/^(blob|data):/i.test(params.srcURL)) {
-              saveBlobOrDataUrlToDownloads(wc, params.srcURL, 'multimedia')
+              saveBlobOrDataUrlToDownloads(wc, params.srcURL, 'multimedia', params.frame)
                 .then(r => { if (!r.ok) console.error('[blob-download]', r.error); });
             }
           }

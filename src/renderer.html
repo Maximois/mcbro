@@ -5985,6 +5985,54 @@ function trackDownload(entry) {
   if (state.downloads.length > 500) state.downloads.length = 500;
   saveDownloadsLS();
 }
+function trackPerchanceDownload(event) {
+  if (!event?.id) return;
+  const previous = state.downloads.find(download => download.id === event.id);
+  const received = Math.max(0, Number(event.receivedBytes) || 0);
+  const total = Math.max(0, Number(event.totalBytes) || 0);
+  const isDone = event.type === 'done';
+  const completed = isDone && event.success === true;
+  const cancelled = isDone && event.state === 'cancelled';
+  const downloadState = !isDone ? 'active' : completed ? 'done' : cancelled ? 'cancelled' : 'error';
+  const progress = total > 0 ? Math.min(100, Math.round(received / total * 100)) : 0;
+  if (event.type === 'start' && !previous) {
+    dlActive++;
+    setText('dl-count-badge', dlActive + ' activas');
+    const dot = $('dl-badge-dot'); if (dot) dot.style.display = 'block';
+  }
+  trackDownload({
+    id: event.id, url: event.url || '', type: 'FILE', page: event.pageUrl || '',
+    name: event.filename || 'descarga', filename: event.filename || 'descarga',
+    file: completed ? (event.path || '') : '', size: (received / 1048576).toFixed(1),
+    received, total, progress, state: downloadState, native: true, perchance: true,
+    error: completed ? '' : (event.state || ''), ts: Date.now()
+  });
+
+  let item = document.getElementById(event.id);
+  if (isDone) {
+    if (previous?.state === 'active') dlActive = Math.max(0, dlActive - 1);
+    item?.remove();
+    renderPersistedDownloads();
+    item = document.getElementById(event.id);
+    const queue = $('download-queue');
+    if (item && queue) queue.insertBefore(item, queue.firstChild);
+    setText('dl-count-badge', dlActive + ' activas');
+    const dot = $('dl-badge-dot'); if (dot) dot.style.display = dlActive > 0 ? 'block' : 'none';
+    return;
+  }
+  if (!item) {
+    renderPersistedDownloads();
+    item = document.getElementById(event.id);
+    const queue = $('download-queue');
+    if (item && queue) queue.insertBefore(item, queue.firstChild);
+  }
+  if (item) {
+    const fill = $('fill-' + event.id); if (fill) fill.style.width = progress + '%';
+    const pct = $('pct-' + event.id); if (pct) pct.textContent = total > 0 ? progress + '%' : 'Descargando';
+    const meta = $('meta-' + event.id); if (meta) meta.textContent = fmtBytes(received) + ' / ' + fmtBytes(total);
+  }
+}
+window.trackPerchanceDownload = trackPerchanceDownload;
 function renderPersistedDownloads() {
   // Renderiza el historial persistente en la cola de descargas
   const queue = $('download-queue');
@@ -5993,7 +6041,7 @@ function renderPersistedDownloads() {
   // Solo renderizar las que no están ya en el DOM (las activas se renderizan en vivo)
   state.downloads.forEach(d => {
     if (document.getElementById(d.id)) return;
-    if (d.state === 'active') return; // las activas se renderizan en vivo
+    if (d.state === 'active' && !d.perchance) return; // las demás activas se renderizan en vivo
     const el = document.createElement('div');
     el.className = 'dl-item'; el.id = d.id;
     el.draggable = false;
@@ -6004,6 +6052,7 @@ function renderPersistedDownloads() {
     el.dataset.name = d.name || '';
     el.dataset.state = d.state || 'done';
     el.dataset.file = d.file || '';
+    el.dataset.perchance = d.perchance ? 'true' : 'false';
     el.dataset.native = d.native || String(d.id).startsWith('dl-native-') ? 'true' : 'false';
     const dom = (d.url || '').replace(/https?:\/\//, '').split('/')[0] || '';
     const fullName = d.state === 'done' && d.filename
@@ -6011,23 +6060,27 @@ function renderPersistedDownloads() {
       : (d.name ? d.name.replace(/_\d+$/, '') : (d.filename || 'descarga'));
     const friendly = compactDownloadName(fullName);
     const stateLabel = d.state === 'done' ? '✓ ' + (d.size || '') + ' MB' :
+               d.state === 'active' ? (d.total > 0 ? (d.progress || 0) + '%' : 'Descargando') :
                        d.state === 'error' ? '✗ ERROR' :
                        d.state === 'cancelled' ? '✕ Cancelado' :
                        d.state === 'interrupted' ? '↻ Interrumpida' : '—';
     const stateColor = d.state === 'done' ? 'var(--success)' :
+               d.state === 'active' ? 'var(--accent)' :
                        d.state === 'error' ? 'var(--danger)' :
                        d.state === 'cancelled' ? 'var(--danger)' : 'var(--warn)';
     const metaHtml = d.state === 'done' && d.file
       ? '<a href="#" onclick="openDlFile(\'' + d.id + '\');return false;" style="color:var(--accent);text-decoration:underline;">Abrir archivo</a> &middot; <a href="#" onclick="mc.openDlFolder();return false;" style="color:var(--accent);text-decoration:underline;">Abrir carpeta</a>'
-      : escapeHtml(d.filename || friendly);
+      : d.state === 'active' && d.perchance
+        ? fmtBytes(d.received || 0) + ' / ' + fmtBytes(d.total || 0)
+        : escapeHtml(d.filename || friendly);
     el.innerHTML =
       '<div class="dl-header"><span class="dl-name" title="'+escapeHtml(fullName)+'">'+escapeHtml(friendly)+'</span><span class="dl-pct" id="pct-'+d.id+'" style="color:'+stateColor+'">'+stateLabel+'</span></div>'
     +'<div class="pbar"><div class="pfill" id="fill-'+d.id+'" style="width:'+(d.state==='done'?'100%':Math.min(100,Math.max(0,Number(d.progress)||0))+'%')+'"'+(d.state==='error'||d.state==='cancelled'?' class="error"':'')+'></div></div>'
     +'<div class="dl-meta"><span id="meta-'+d.id+'">'+metaHtml+'</span><span id="speed-'+d.id+'">'+(d.state === 'done' ? '' : '— KB/s')+'</span></div>'
      +'<div class="dl-actions">'
-     +  (d.state === 'interrupted'
+     +  (d.state === 'interrupted' && !d.perchance
        ? '<button class="dl-btn" data-act="resume" onclick="retryPersistedDownload(\''+d.id+'\')" title="Reanudar">▶</button><button class="dl-btn" data-act="pause" onclick="pausePersistedDownload(\''+d.id+'\')" title="Pausar" style="display:none">⏸</button><button class="dl-btn" data-act="cancel" onclick="cancelPersistedDownload(\''+d.id+'\')" title="Cancelar">✕</button>'
-       : d.state === 'error' || d.state === 'cancelled'
+       : !d.perchance && (d.state === 'error' || d.state === 'cancelled')
          ? '<button class="dl-btn" data-act="retry" onclick="dlAction(\'retry\',\''+d.id+'\')" title="Reintentar">↻</button>'
          : '')
      +'</div>';
