@@ -101,6 +101,23 @@ function isYouTubeAdStream(rawUrl) {
   }
 }
 
+function isYouTubeCoreRequest(rawHost, rawDocumentHost, rawUrl) {
+  const host = normalizeHost(rawHost);
+  let documentHost = normalizeHost(rawDocumentHost);
+  try {
+    if (documentHost.includes('://')) documentHost = new URL(documentHost).hostname.toLowerCase();
+  } catch { return false; }
+  const isYouTubeDocument = documentHost === 'youtube.com' || documentHost.endsWith('.youtube.com');
+  const coreHosts = [
+    'youtube.com', 'ytimg.com', 'googlevideo.com', 'googleusercontent.com',
+    'ggpht.com', 'youtube-nocookie.com', 'youtubei.googleapis.com', 'youtube.googleapis.com'
+  ];
+  const isCoreHost = coreHosts.some(domain => host === domain || host.endsWith('.' + domain));
+  if (!isCoreHost || (!isYouTubeDocument && host !== 'youtube.com' && !host.endsWith('.youtube.com'))) return false;
+  if (rawUrl && isYouTubeAdStream(rawUrl)) return false;
+  return true;
+}
+
 // ── Aislamiento estricto de terceros (port desde Android) ──
 // Equivalente a isUntrustedThirdPartyResource: corta recursos incrustados
 // (iframe/frame/embed/object) cuyo dominio no es el del documento actual.
@@ -218,6 +235,19 @@ function normalizeHost(host) {
   return String(host || '').toLowerCase().replace(/\.+$/, '');
 }
 
+function isAdblockHostAllowed(host, allowlist = cfg?.adblockAllowlist) {
+  const normalizedHost = normalizeHost(host).replace(/^www\./, '');
+  if (!normalizedHost || !Array.isArray(allowlist)) return false;
+  return allowlist.some(entry => {
+    const allowedHost = normalizeHost(String(entry || '').replace(/^\*\./, '')).replace(/^www\./, '');
+    return allowedHost && (normalizedHost === allowedHost || normalizedHost.endsWith('.' + allowedHost));
+  });
+}
+
+function isAdblockSiteAllowed(documentHost, allowlist = cfg?.adblockAllowedSites) {
+  return isAdblockHostAllowed(documentHost, allowlist);
+}
+
 function baseDomain(host) {
   const normalized = normalizeHost(host);
   const parts = normalized.split('.');
@@ -294,16 +324,20 @@ function createBlockHandler(getEngine, allowedDomains, isEnabled, isCategoryEnab
       let documentHost = '';
       try { documentHost = new URL(documentUrl).hostname.toLowerCase(); } catch {}
 
+      if (isAdblockHostAllowed(host) || isAdblockSiteAllowed(documentHost)) return callback({ cancel: false });
+
       // Perchance ejecuta cada generador en un subdominio propio y depende de
       // estos recursos; la excepción solo existe dentro de documentos Perchance.
       if (isPerchanceCompatibilityRequest(host, documentHost)) {
         return callback({ cancel: false });
       }
 
-      if (isExplicitlyBlocked(host, details.documentUrl || details.referrer || '')) {
+      if (!isAdblockHostAllowed(host) && isExplicitlyBlocked(host, details.documentUrl || details.referrer || '')) {
         if (blockCb) blockCb(details, 'ads');
         return callback({ cancel: true });
       }
+
+      if (isYouTubeCoreRequest(host, documentHost, details.url)) return callback({ cancel: false });
 
       // Bloquear los iframes/banner publicitarios directamente y no dejar
       // placeholders vacíos que sigan ocupando espacio visual.
@@ -466,14 +500,13 @@ const GENERIC_AD_COSMETIC_SELECTORS = [
 ];
 
 function builtInCosmeticSelectors(pageUrl) {
-  const selectors = [...GENERIC_AD_COSMETIC_SELECTORS];
   try {
     const hostname = new URL(pageUrl).hostname.toLowerCase();
     if (hostname === 'youtube.com' || hostname.endsWith('.youtube.com')) {
-      selectors.push(...YT_COSMETIC_SELECTORS);
+      return [...new Set(YT_COSMETIC_SELECTORS)];
     }
   } catch {}
-  return [...new Set(selectors)];
+  return [...new Set(GENERIC_AD_COSMETIC_SELECTORS)];
 }
 
 // ── Setup ──────────────────────────────────────────────────
@@ -642,7 +675,13 @@ function setup(ctx) {
   }
 
   function buildPageCosmeticCss(pageUrl) {
-    const fromEngine = (cfg?.blockAds === true || enabledAds)
+    let hostname = '';
+    try { hostname = new URL(pageUrl || '').hostname.toLowerCase(); } catch {}
+    const isYouTubePage = hostname === 'youtube.com' || hostname.endsWith('.youtube.com');
+    if (isYouTubePage && isAdblockSiteAllowed(hostname)) {
+      return { ok: true, count: 0, selectors: [], css: '' };
+    }
+    const fromEngine = !isYouTubePage && (cfg?.blockAds === true || enabledAds)
       ? manager.engine.buildCosmeticCss(pageUrl || '')
       : { selectors: [], css: '' };
     const userSelectors = userCosmeticSelectors(pageUrl);
@@ -700,6 +739,10 @@ module.exports = {
   shouldBypassAdblockForSession,
   isAggressiveAdNavigation,
   isExplicitlyBlocked,
+  isAdblockHostAllowed,
+  isAdblockSiteAllowed,
+  isYouTubeCoreRequest,
+  builtInCosmeticSelectors,
   isPerchanceCompatibilityRequest,
   isUntrustedThirdPartyResource,
   isTrustedResource,

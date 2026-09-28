@@ -6,10 +6,11 @@ const fs = require('fs');
 const os = require('os');
 const { spawn, execFile, execFileSync } = require('child_process');
 const crypto = require('crypto');
-const { isAggressiveAdNavigation, isExplicitlyBlocked, isTrustedResource, isVideoHost } = require('./modules/adblocker/main');
+const { isAggressiveAdNavigation, isExplicitlyBlocked, isTrustedResource, isVideoHost, isAdblockHostAllowed, isAdblockSiteAllowed, isYouTubeCoreRequest } = require('./modules/adblocker/main');
 const Permissions = require('./lib/permissions');
 const { isSameNavigationSite: isSameNavigationSiteShared } = require('./lib/navigation-guard');
 const { isWebContentsFrameAlive, sanitizeAiConfigForPublic } = Permissions;
+const { fingerprintHlsPlaylist, loadHlsResumeState, saveHlsResumeState } = require('./lib/hls-resume');
 // Panel aislado de Perchance: vista nativa (WebContentsView) con partición
 // propia, allowlist, permisos, CSP/XFO y descargas blob/data (perchance-panel.js).
 const PerchancePanel = require('./perchance/perchance-panel');
@@ -273,6 +274,9 @@ function createRequestGuard() {
           && (!rule.resourceType || rule.resourceType === details?.resourceType));
       if (resourceRule?.action === 'allow') return { allow: true };
       if (resourceRule?.action === 'block') return { cancel: true };
+      if (isAdblockHostAllowed(requestHost) || isAdblockSiteAllowed(requestHost) || isAdblockSiteAllowed(documentHost)) {
+        return { allow: true };
+      }
       // Reglas personalizadas:
       //  - site-scoped: SIEMPRE aplican en su sitio (incluso en dominios auth).
       //  - globales: NO aplican en dominios auth (proteger OAuth/login).
@@ -288,7 +292,8 @@ function createRequestGuard() {
         .filter(r => r && r.host);
       // Sitio/contenedor puede abrir un dominio de la lista de bloqueo manual,
       // pero no implica desactivar adblock ni permisos de contenido en terceros.
-      const siteOverridesBlock = isSitePermissionAllowed(requestHost) || isSitePermissionAllowed(documentHost);
+      const siteOverridesBlock = isSitePermissionAllowed(requestHost) || isSitePermissionAllowed(documentHost)
+        || isAdblockHostAllowed(requestHost) || isAdblockSiteAllowed(documentHost);
       if (!siteOverridesBlock) {
         // Reglas site-scoped: SIEMPRE aplican en su sitio (incluso en dominios auth)
         if (documentHost && siteScopedBlocks.some(rule => {
@@ -306,6 +311,8 @@ function createRequestGuard() {
           }
         }
       }
+
+      if (isYouTubeCoreRequest(requestHost, documentHost, details?.url)) return { allow: true };
 
       const resourceType = String(details?.resourceType || '').toLowerCase();
       const isMainFrame = resourceType === 'mainframe' || resourceType === 'main_frame';
@@ -1255,7 +1262,7 @@ let CFG = {
   uiTextSize: 'x1',
   currentUA: 'win-chrome', rotateUA: false,
   language: '', refererPolicy: '',
-  downloadDir: '', allowlist: {}, customRules: [], permissions: {}, permissionOrigins: [], resourceRules: [], userCosmeticRules: [],
+  downloadDir: '', allowlist: {}, adblockAllowlist: [], adblockAllowedSites: [], customRules: [], permissions: {}, permissionOrigins: [], resourceRules: [], userCosmeticRules: [],
   extraSessions: [],
   aiConfig: {
     provider: 'ollama', ollamaUrl: 'http://localhost:11434', ollamaModel: 'qwen2.5:1.5b',
@@ -1898,24 +1905,32 @@ async function downloadSegment(url, referer, signal) {
 
 function pickBestHlsVariant(manifestText, baseUrl) {
   let bestUrl = baseUrl;
-  let bestScore = -1;
-  for (const block of manifestText.split('#EXT-X-STREAM-INF')) {
-    const lines = block.trim().split('\n');
-    if (lines.length < 2) continue;
-    const inf = lines[0];
-    const uri = lines[1].trim();
-    if (!uri || uri.startsWith('#')) continue;
-    const bwMatch = inf.match(/BANDWIDTH=(\d+)/i);
-    const resMatch = inf.match(/RESOLUTION=(\d+)x(\d+)/i);
-    const bandwidth = bwMatch ? parseInt(bwMatch[1], 10) : 0;
-    const resolution = resMatch ? parseInt(resMatch[1], 10) * parseInt(resMatch[2], 10) : 0;
-    const score = bandwidth > 0 ? bandwidth : resolution;
-    if (score > bestScore) {
-      bestScore = score;
+  let bestResolution = -1;
+  let bestBandwidth = -1;
+  const lines = manifestText.replace(/\r/g, '').split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const info = lines[i].trim();
+    if (!info.startsWith('#EXT-X-STREAM-INF:')) continue;
+    let uri = '';
+    for (let next = i + 1; next < lines.length; next++) {
+      const candidate = lines[next].trim();
+      if (!candidate || candidate.startsWith('#')) continue;
+      uri = candidate;
+      break;
+    }
+    if (!uri) continue;
+    const attributes = info.slice('#EXT-X-STREAM-INF:'.length);
+    const resolutionMatch = attributes.match(/(?:^|,)RESOLUTION=(\d+)x(\d+)(?=,|$)/i);
+    const bandwidthMatch = attributes.match(/(?:^|,)BANDWIDTH=(\d+)(?=,|$)/i);
+    const resolution = resolutionMatch ? Number(resolutionMatch[1]) * Number(resolutionMatch[2]) : 0;
+    const bandwidth = bandwidthMatch ? Number(bandwidthMatch[1]) : 0;
+    if (resolution > bestResolution || (resolution === bestResolution && bandwidth > bestBandwidth)) {
+      bestResolution = resolution;
+      bestBandwidth = bandwidth;
       bestUrl = resolveUrl(baseUrl, uri);
     }
   }
-  return bestScore >= 0 ? bestUrl : baseUrl;
+  return bestResolution >= 0 || bestBandwidth >= 0 ? bestUrl : baseUrl;
 }
 
 function parseHlsSegmentUrls(mediaText, playlistUrl) {
@@ -2214,6 +2229,18 @@ function dlWaitIfPaused(id) {
 }
 
 // ── Downloads ────────────────────────────────────
+function writeHlsChunk(output, buffer) {
+  return new Promise((resolve, reject) => {
+    output.write(buffer, error => error ? reject(error) : resolve());
+  });
+}
+
+function flushHlsOutput(output) {
+  return new Promise((resolve, reject) => {
+    fs.fsync(output.fd, error => error ? reject(error) : resolve());
+  });
+}
+
 ipcMain.handle('dl-hls', async (e, { id, url, name, pageUrl }) => {
   if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
     const error = 'URL HLS inválida o vacía';
@@ -2227,6 +2254,7 @@ ipcMain.handle('dl-hls', async (e, { id, url, name, pageUrl }) => {
   const extraHeaders = mediaRequestHeaders(pageUrl, url);
   const entry = dlRegister(id, url, 'hls');
   let hlsOutput;
+  let hlsResumePath = '';
   try {
     ACTIONS.emit('dl-progress', { id, url, pct: 0, done: 0, total: 1, speed: 0 });
     ACTIONS.emit('ytdlp-log', 'Iniciando descarga HLS: ' + url.substring(0, 80));
@@ -2272,18 +2300,38 @@ ipcMain.handle('dl-hls', async (e, { id, url, name, pageUrl }) => {
     if (!resolved.length) throw new Error('No se encontraron segmentos');
     const fname = path.join(dlDir, (name || 'stream_' + Date.now()) + '.mp4');
     const rawName = fname + '.part.ts';
-    hlsOutput = fs.createWriteStream(rawName);
-    let downloadedBytes = 0;
-    let failedSegments = 0;
+    hlsResumePath = rawName + '.resume.json';
     const mapMatch = mediaText.match(/#EXT-X-MAP:[^\n]*URI="([^"]+)"/i);
-    if (mapMatch) {
+    const isVodPlaylist = /^\s*#EXT-X-ENDLIST\s*$/im.test(mediaText);
+    const fingerprint = fingerprintHlsPlaylist(playlistUrl, mediaText);
+    const resumeState = isVodPlaylist
+      ? loadHlsResumeState(hlsResumePath, rawName, fingerprint, resolved.length)
+      : null;
+    if (!resumeState) try { fs.unlinkSync(hlsResumePath); } catch {}
+    const completedSegments = resumeState?.completedSegments || 0;
+    let downloadedBytes = resumeState?.bytes || 0;
+    let initIncluded = !!resumeState?.initIncluded;
+    if (resumeState) fs.truncateSync(rawName, downloadedBytes);
+    else downloadedBytes = 0;
+    hlsOutput = fs.createWriteStream(rawName, { flags: resumeState && downloadedBytes > 0 ? 'a' : 'w' });
+    let failedSegments = 0;
+    if (mapMatch && !initIncluded) {
       const initUrl = resolveUrl(playlistUrl, mapMatch[1]);
       const init = await downloadSegment(initUrl, pageUrl || new URL(playlistUrl).origin + '/', entry.controller.signal);
-      if (!hlsOutput.write(init)) await new Promise(resolve => hlsOutput.once('drain', resolve));
+      await writeHlsChunk(hlsOutput, init);
       downloadedBytes += init.length;
+      initIncluded = true;
+      if (isVodPlaylist) {
+        await flushHlsOutput(hlsOutput);
+        saveHlsResumeState(hlsResumePath, {
+          fingerprint, completedSegments, bytes: downloadedBytes, initIncluded, updatedAt: Date.now()
+        });
+      }
     }
     const concurrency = 4;
-    for (let i = 0; i < resolved.length; i += concurrency) {
+    const initialPct = Math.round(completedSegments / resolved.length * 100);
+    ACTIONS.emit('dl-progress', { id, url, pct: initialPct, done: completedSegments, total: resolved.length, speed: 0, kind: 'hls' });
+    for (let i = completedSegments; i < resolved.length; i += concurrency) {
       const st = await dlWaitIfPaused(id);
       if (st === 'cancelled') throw new Error('Cancelado por el usuario');
       const batch = resolved.slice(i, i + concurrency);
@@ -2298,21 +2346,31 @@ ipcMain.handle('dl-hls', async (e, { id, url, name, pageUrl }) => {
           return null;
         }
       })));
+      if (results.some(buffer => !buffer)) {
+        failedSegments += results.filter(buffer => !buffer).length;
+        throw new Error(`Fallaron ${failedSegments} segmentos HLS; conversión cancelada para evitar un archivo corrupto`);
+      }
       for (const buffer of results) {
-        if (!buffer) { failedSegments++; continue; }
-        if (!hlsOutput.write(buffer)) await new Promise(resolve => hlsOutput.once('drain', resolve));
+        await writeHlsChunk(hlsOutput, buffer);
         downloadedBytes += buffer.length;
       }
-      const pct = Math.round(Math.min(i + concurrency, resolved.length) / resolved.length * 100);
+      const batchEnd = Math.min(i + batch.length, resolved.length);
+      if (isVodPlaylist) {
+        await flushHlsOutput(hlsOutput);
+        saveHlsResumeState(hlsResumePath, {
+          fingerprint, completedSegments: batchEnd, bytes: downloadedBytes, initIncluded, updatedAt: Date.now()
+        });
+      }
+      const pct = Math.round(batchEnd / resolved.length * 100);
       const elapsed = (Date.now() - t0) / 1000;
-      ACTIONS.emit('dl-progress', { id, url, pct, done: Math.min(i + concurrency, resolved.length), total: resolved.length, speed: Math.round(downloadedBytes / 1024 / Math.max(elapsed, 0.1)), kind: 'hls' });
+      ACTIONS.emit('dl-progress', { id, url, pct, done: batchEnd, total: resolved.length, speed: Math.round(downloadedBytes / 1024 / Math.max(elapsed, 0.1)), kind: 'hls' });
     }
 
-    if (failedSegments) throw new Error(`Fallaron ${failedSegments} segmentos HLS; conversión cancelada para evitar un archivo corrupto`);
     await new Promise((resolve, reject) => { hlsOutput.end(error => error ? reject(error) : resolve()); });
     ACTIONS.emit('ytdlp-log', 'Descarga completa — convirtiendo a MP4...');
     const finalized = await finalizeMediaFile(rawName, fname, mapMatch ? 'mp4' : 'mpegts');
     const resultPath = finalized.path;
+    try { fs.unlinkSync(hlsResumePath); } catch {}
     const size = (downloadedBytes / 1048576).toFixed(1);
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
     ACTIONS.emit('dl-complete', { id, url, file: resultPath, size, secs, filename: path.basename(resultPath) });
@@ -2356,14 +2414,18 @@ ipcMain.handle('dl-file', async (e, { id, url, name, pageUrl }) => {
   const finalNameBase = safeBase.toLowerCase().endsWith(detectedExt.toLowerCase()) ? safeBase : safeBase + detectedExt;
   const finalTarget = path.join(dlDir, finalNameBase);
   const rawName = finalTarget + '.part';
+  let offset = 0;
+  let totalLen = 0;
+  try {
+    if (fs.existsSync(rawName)) offset = totalLen = fs.statSync(rawName).size;
+  } catch {}
   let output;
   try {
     ACTIONS.emit('dl-progress', { id, url, pct: 0, done: 0, total: 1, speed: 0 });
     ACTIONS.emit('ytdlp-log', 'Descargando: ' + url.substring(0, 100));
-    let totalLen = 0;
-    let offset = 0;
+    let expectedTotal = 0;
     let lastSpeedT = t0;
-    let lastSpeedBytes = 0;
+    let lastSpeedBytes = offset;
     while (true) {
       if (entry.state === 'cancelled') throw new Error('Cancelado por el usuario');
       if (entry.state === 'paused') { await new Promise(r => setTimeout(r, 250)); continue; }
@@ -2373,6 +2435,8 @@ ipcMain.handle('dl-file', async (e, { id, url, name, pageUrl }) => {
       const ct = res.headers.get('content-type') || '?';
       const cl = parseInt(res.headers.get('content-length') || '0');
       if (!res.ok && res.status !== 206) throw new Error(`HTTP ${res.status} (${ct})`);
+      const rangeTotal = (res.headers.get('content-range') || '').match(/\/(\d+)$/);
+      expectedTotal = res.status === 206 && rangeTotal ? Number(rangeTotal[1]) : cl;
       if (res.status === 200 && offset > 0) {
         // El servidor ignoró Range → reiniciar desde cero
         if (output) { output.close(); output = null; }
@@ -2395,8 +2459,8 @@ ipcMain.handle('dl-file', async (e, { id, url, name, pageUrl }) => {
           if (now - lastSpeedT > 500) {
             const speed = Math.round((totalLen - lastSpeedBytes) / 1024 / ((now - lastSpeedT) / 1000));
             lastSpeedT = now; lastSpeedBytes = totalLen;
-            const pct = cl > 0 ? Math.round(totalLen / cl * 100) : 0;
-            ACTIONS.emit('dl-progress', { id, url, pct, done: totalLen, total: cl, speed, kind: 'file' });
+            const pct = expectedTotal > 0 ? Math.round(totalLen / expectedTotal * 100) : 0;
+            ACTIONS.emit('dl-progress', { id, url, pct, done: totalLen, total: expectedTotal, speed, kind: 'file' });
           }
         }
       } catch (err) {
@@ -2468,14 +2532,15 @@ ipcMain.handle('dl-native-cancel', (_e, id) => {
   if (!entry || !['active', 'paused'].includes(entry.state)) return { ok: false };
   try { entry.item.cancel(); entry.state = 'cancelled'; return { ok: true }; } catch { return { ok: false }; }
 });
-ipcMain.handle('dl-native-retry', (_e, id) => {
+ipcMain.handle('dl-native-retry', (_e, id, saved = {}) => {
   const entry = nativeDlRegistry.get(id);
-  if (!entry || !entry.url) return { ok: false };
+  const url = entry?.url || saved.url;
+  if (!url) return { ok: false };
   try {
     pendingNativeRetryId = id;
-    const source = require('electron').webContents.fromId(entry.webContentsId);
+    const source = entry?.webContentsId ? require('electron').webContents.fromId(entry.webContentsId) : null;
     if (source && !source.isDestroyed()) source.downloadURL(entry.url);
-    else sess.downloadURL(entry.url);
+    else session.fromPartition(saved.partition || 'persist:mc').downloadURL(url);
     return { ok: true };
   } catch { return { ok: false }; }
 });
@@ -2684,6 +2749,34 @@ ipcMain.handle('remove-site-cookie', async (e, { domain, name, path: cookiePath 
   }
 });
 // Block rules
+ipcMain.handle('adblock:host-allow', (_e, { host, allowed } = {}) => {
+  const rawHost = String(host || '').trim();
+  const normalizedHost = normalizeSiteHost(/^https?:\/\//i.test(rawHost) ? rawHost : 'https://' + rawHost);
+  if (!normalizedHost) return { ok: false, error: 'dominio inválido' };
+  if (!Array.isArray(CFG.adblockAllowlist)) CFG.adblockAllowlist = [];
+  const canonicalHost = normalizedHost.replace(/^www\./i, '');
+  CFG.adblockAllowlist = CFG.adblockAllowlist
+    .map(value => normalizeSiteHost(/^https?:\/\//i.test(String(value)) ? String(value) : 'https://' + String(value)))
+    .filter(Boolean)
+    .filter(value => value !== canonicalHost);
+  if (allowed === true) CFG.adblockAllowlist.push(canonicalHost);
+  saveCfg();
+  return { ok: true };
+});
+ipcMain.handle('adblock:site-allow', (_e, { site, allowed } = {}) => {
+  const rawSite = String(site || '').trim();
+  const normalizedSite = normalizeSiteHost(/^https?:\/\//i.test(rawSite) ? rawSite : 'https://' + rawSite);
+  if (!normalizedSite) return { ok: false, error: 'sitio inválido' };
+  if (!Array.isArray(CFG.adblockAllowedSites)) CFG.adblockAllowedSites = [];
+  const canonicalSite = normalizedSite.replace(/^www\./i, '');
+  CFG.adblockAllowedSites = CFG.adblockAllowedSites
+    .map(value => normalizeSiteHost(/^https?:\/\//i.test(String(value)) ? String(value) : 'https://' + String(value)))
+    .filter(Boolean)
+    .filter(value => value !== canonicalSite);
+  if (allowed === true) CFG.adblockAllowedSites.push(canonicalSite);
+  saveCfg();
+  return { ok: true };
+});
 ipcMain.handle('add-block-rule', (e, rule) => {
   if (rule && rule.pattern) { CFG.customRules.push(rule); saveCfg(); }
   return { ok: true };
@@ -3401,14 +3494,6 @@ async function resolveCtxCssPoint(wc, params) {
 // === WINDOW EVENTS (popups -> nueva pestaña) ────────────
 app.on('web-contents-created', (event, wc) => {
   wc.on('will-redirect', (navigationEvent, url, isInPlace, isMainFrame) => {
-    // Incluso con navegación explícita, un salto que matchea patrones
-    // CONOCIDOS de red de anuncios/malvertising se bloquea igual — esto no
-    // afecta cadenas legítimas (afiliados, OAuth, pasarelas de pago), que por
-    // definición no matchean esos patrones. Cierra el hueco por el que un
-    // script de anuncios embebido en la página podía aprovechar una marca
-    // amplia de navegación explícita y saltar a un dominio de ads sin que esta
-    // guardia lo viera, aunque la lista de red ya lo conociera.
-    //
     // Excepción: la partición de Perchance (y cualquier salto *.perchance.org)
     // NO pasa por esta guardia. perchance.org redirige a ads.perchance.org /
     // partners con frecuencia; cortarlo degrada el motor aunque la allowlist
@@ -3416,12 +3501,22 @@ app.on('web-contents-created', (event, wc) => {
     const isPerchanceSession = (() => {
       try { return wc.session === session.fromPartition(PerchancePanel.PERCHANCE_PARTITION); } catch { return false; }
     })();
+    const sourceUrl = wc.getURL();
     let targetHostForAdCheck = '';
     try { targetHostForAdCheck = new URL(url).hostname.toLowerCase(); } catch {}
+
+    // Reglas de prioridad: primero bloqueamos redes publicitarias o redirecciones
+    // explícitas a subdominios de anuncios del mismo dominio. Solo después se
+    // permite el caso de navegación del mismo sitio y sin indicios publicitarios.
     if (!isPerchanceSession && !isPerchanceHost(targetHostForAdCheck) &&
-        targetHostForAdCheck && (isAggressiveAdNavigation(url) || isExplicitlyBlocked(targetHostForAdCheck, wc.getURL()))) {
+        targetHostForAdCheck && (isAggressiveAdNavigation(url) || isExplicitlyBlocked(targetHostForAdCheck, sourceUrl))) {
       try { navigationEvent.preventDefault(); } catch {}
       try { mainWin?.webContents?.send('req-blocked', { type: 'navigation', url, msg: 'Redirección a dominio de anuncios bloqueada' }); } catch {}
+      return;
+    }
+    const isSameSiteRedirect = !!sourceUrl && isSameNavigationSite(sourceUrl, url);
+    if (isSameSiteRedirect || (sourceUrl && allowNavigationTransition(sourceUrl, url))) {
+      keepExplicitNavigationAlive(wc.id);
       return;
     }
     if (isPerchanceSession) {
@@ -3433,8 +3528,6 @@ app.on('web-contents-created', (event, wc) => {
     // su cadena de redirecciones. Las navegaciones de la página no reciben
     // esta excepción automáticamente.
     if (hasExplicitNavigation(wc.id)) {
-      // Cada salto mantiene abierta la autorización; la cadena puede pasar
-      // por dominios distintos antes de llegar a su destino real.
       keepExplicitNavigationAlive(wc.id);
       return;
     }
@@ -3443,11 +3536,7 @@ app.on('web-contents-created', (event, wc) => {
       targetHost = new URL(url).hostname.toLowerCase();
     } catch {}
     const isAllowedRedirectHost = !!targetHost && (isExplicitMediaRedirectHost(targetHost) || isVideoHost(targetHost));
-    // Mantener la restricción estricta: solo bloqueamos navegación externa real
-    // del frame principal, o redirecciones a subframes que no entren en la lista
-    // explícita de hosts multimedia permitidos.
     if (!isMainFrame && !isAllowedRedirectHost) return;
-    const sourceUrl = wc.getURL();
     try {
       const sourceHost = new URL(sourceUrl).hostname;
       if (isAuthRedirectFlow(targetHost, sourceHost)) return;

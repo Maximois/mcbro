@@ -16,7 +16,52 @@ const {
   sanitizeAiConfigForPublic
 } = require('../lib/permissions');
 const { isSameNavigationSite, siteRootIdentity } = require('../lib/navigation-guard');
-const { isAggressiveAdNavigation } = require('../modules/adblocker/main');
+const { isAggressiveAdNavigation, isAdblockHostAllowed, isAdblockSiteAllowed, isYouTubeCoreRequest, builtInCosmeticSelectors } = require('../modules/adblocker/main');
+
+describe('adblock host allowlist', () => {
+  test('permite el dominio guardado y sus subdominios', () => {
+    assert.equal(isAdblockHostAllowed('youtube.com', ['youtube.com']), true);
+    assert.equal(isAdblockHostAllowed('www.youtube.com', ['youtube.com']), true);
+    assert.equal(isAdblockHostAllowed('google.com.py', ['*.google.com.py']), true);
+  });
+
+  test('no permite coincidencias parciales de dominios', () => {
+    assert.equal(isAdblockHostAllowed('notyoutube.com', ['youtube.com']), false);
+    assert.equal(isAdblockHostAllowed('youtube.com.evil.test', ['youtube.com']), false);
+    assert.equal(isAdblockHostAllowed('youtube.com', []), false);
+  });
+
+  test('permite los recursos de un sitio sin eximir ese host en otros sitios', () => {
+    assert.equal(isAdblockSiteAllowed('www.youtube.com', ['youtube.com']), true);
+    assert.equal(isAdblockSiteAllowed('youtube.com.evil.test', ['youtube.com']), false);
+    assert.equal(isAdblockSiteAllowed('example.com', ['youtube.com']), false);
+  });
+});
+
+describe('YouTube core resources', () => {
+  test('permite recursos esenciales de YouTube sin configuración manual', () => {
+    assert.equal(isYouTubeCoreRequest('www.youtube.com', '', 'https://www.youtube.com/'), true);
+    assert.equal(isYouTubeCoreRequest('i.ytimg.com', 'www.youtube.com', 'https://i.ytimg.com/vi/id/hqdefault.jpg'), true);
+    assert.equal(isYouTubeCoreRequest('r1.googlevideo.com', 'www.youtube.com', 'https://r1.googlevideo.com/videoplayback?id=1'), true);
+  });
+
+  test('mantiene bloqueados los streams de anuncios de googlevideo', () => {
+    assert.equal(isYouTubeCoreRequest('r1.googlevideo.com', 'www.youtube.com', 'https://r1.googlevideo.com/videoplayback?ad_tag=1'), false);
+    assert.equal(isYouTubeCoreRequest('www.youtube.com', 'www.youtube.com', 'https://www.youtube.com/pagead/id'), true);
+  });
+
+  test('no permite hosts de recursos de YouTube en páginas ajenas', () => {
+    assert.equal(isYouTubeCoreRequest('i.ytimg.com', 'example.com', 'https://i.ytimg.com/asset'), false);
+  });
+
+  test('limita los selectores cosméticos de YouTube a elementos publicitarios concretos', () => {
+    const youtubeSelectors = builtInCosmeticSelectors('https://www.youtube.com/');
+    const genericSelectors = builtInCosmeticSelectors('https://example.com/');
+    assert.ok(youtubeSelectors.includes('#player-ads'));
+    assert.equal(youtubeSelectors.includes('iframe[src*="adtng.com"]'), false);
+    assert.ok(genericSelectors.includes('iframe[src*="adtng.com"]'));
+  });
+});
 
 // ── normalizeSiteHost ──────────────────────────────────────────────────
 describe('normalizeSiteHost', () => {
@@ -231,6 +276,11 @@ describe('navigation guard redirects', () => {
       'https://vww.monoschinos2.net/anime',
       'https://monoschinos.st/ads/continue'
     ), true);
+  });
+
+  test('mantiene bloqueadas redirecciones a subdominios publicitarios del mismo dominio', () => {
+    assert.equal(isSameNavigationSite('https://example.com/a', 'https://ads.example.com/click'), false);
+    assert.equal(isSameNavigationSite('https://example.com/a', 'https://redirect.example.com/?ad=1'), false);
   });
 
   test('mantiene bloqueadas redirecciones entre sitios distintos', () => {

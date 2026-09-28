@@ -123,6 +123,9 @@
         const data = await wv.executeJavaScript(`(async () => {
           const found = [];
           const seen = new Set();
+          const embedded = window.__mcWaEmbeddedMedia = Object.create(null);
+          window.__mcWaEmbeddedData = Object.create(null);
+          let embeddedCount = 0;
           const add = (item) => {
             if (!item || !item.url) return;
             const key = item.url + '|' + item.type;
@@ -155,13 +158,32 @@
             if (isStatus) return 'Imagen';
             return 'Imagen';
           };
+          const makeThumbnail = (mediaEl) => {
+            try {
+              const width = mediaEl.videoWidth || mediaEl.naturalWidth || mediaEl.clientWidth;
+              const height = mediaEl.videoHeight || mediaEl.naturalHeight || mediaEl.clientHeight;
+              if (!width || !height) return null;
+              const scale = Math.min(1, 96 / Math.max(width, height));
+              const canvas = document.createElement('canvas');
+              canvas.width = Math.max(1, Math.round(width * scale));
+              canvas.height = Math.max(1, Math.round(height * scale));
+              canvas.getContext('2d').drawImage(mediaEl, 0, 0, canvas.width, canvas.height);
+              return canvas.toDataURL('image/jpeg', 0.72);
+            } catch { return null; }
+          };
           const els = [...document.querySelectorAll('img, video, audio, source')];
           for (const el of els) {
-            const src = el.currentSrc || el.src;
-            if (!src) continue;
             const tag = el.tagName.toLowerCase();
-            const parentTag = el.parentElement?.tagName?.toLowerCase() || '';
+            const parent = el.parentElement;
+            const parentTag = parent?.tagName?.toLowerCase() || '';
+            const mediaEl = tag === 'source' ? parent : el;
+            const src = el.currentSrc || el.src || (tag === 'video' ? el.querySelector('source')?.src : '');
+            if (!src) continue;
+            if (el.tagName.toLowerCase() === 'img' && el.naturalWidth === 1 && el.naturalHeight === 1) continue;
             const type = tag === 'img' ? 'image' : (tag === 'video' || parentTag === 'video') ? 'video' : (tag === 'audio' || parentTag === 'audio') ? 'audio' : 'image';
+            const sourceKey = src + '|' + type;
+            if (seen.has(sourceKey)) continue;
+            seen.add(sourceKey);
             const cat = categorize(el);
             let urlName = '';
             try {
@@ -173,16 +195,28 @@
             const height = type === 'image' ? (mediaEl.naturalHeight || mediaEl.clientHeight || 0) : 0;
             let url = src;
             let preview = null;
-            if (src.startsWith('blob:')) {
-              // El blob se convierte solo al abrirlo o descargarlo. Convertir
-              // todos los medios aquí multiplica el uso de RAM del renderer.
-              preview = null;
+            let mediaKey = null;
+            const poster = type === 'video' ? mediaEl.poster : '';
+            if (src.startsWith('blob:') || /^data:[^,]*;base64,/i.test(src)) {
+              if (embeddedCount >= 100) continue;
+              mediaKey = 'media-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '-' + embeddedCount++;
+              embedded[mediaKey] = src;
+              url = 'wa-embedded:' + mediaKey;
+              if (type === 'image') preview = makeThumbnail(mediaEl);
+              else if (type === 'video' && poster) {
+                if (/^https?:/i.test(poster)) preview = poster;
+                else {
+                  const posterImage = new Image();
+                  posterImage.src = poster;
+                  try { await posterImage.decode(); preview = makeThumbnail(posterImage); } catch {}
+                }
+              } else if (type === 'video' && mediaEl.readyState >= 2) preview = makeThumbnail(mediaEl);
             } else if (/^https?:/i.test(src)) {
-              preview = src;
+              preview = type === 'video' ? (poster || null) : src;
             } else {
               continue;
             }
-            add({ url, type, label, source: cat, preview, width, height });
+            add({ url, type, label, source: cat, preview, mediaKey, width, height });
           }
           return { title: 'WhatsApp Web', resources: found.slice(0, 500) };
         })()`);
@@ -309,6 +343,7 @@
         return;
       }
       list.innerHTML = items.map(({ item, index }) => {
+        const isEmbedded = Boolean(item.mediaKey);
         const thumb = item.preview
           ? `<img src="${item.preview.replace(/"/g, '&quot;')}" onerror="this.style.display='none'">`
           : '';
@@ -323,7 +358,7 @@
           </div>
           <div class="wa-extractor-actions">
             <button class="btn ghost btn-sm" onclick="WhatsAppExtractor.openItem(${index})" title="Abrir en pestaña">↗</button>
-            <button class="btn ghost btn-sm" onclick="WhatsAppExtractor.copyItem(${index})" title="Copiar URL">⧉</button>
+            ${isEmbedded ? '' : `<button class="btn ghost btn-sm" onclick="WhatsAppExtractor.copyItem(${index})" title="Copiar URL">⧉</button>`}
             <button class="btn warn btn-sm" onclick="WhatsAppExtractor.download(${index})" title="Descargar">⬇</button>
           </div>
         </div>`;
@@ -331,6 +366,51 @@
     },
 
     // ── Acciones ──
+    async _readEmbeddedData(item) {
+      const wv = document.getElementById('wa-wv');
+      if (!wv?.executeJavaScript || !item?.mediaKey) return null;
+      const key = JSON.stringify(item.mediaKey);
+      try {
+        const details = await wv.executeJavaScript(`(async () => {
+          try {
+            const source = window.__mcWaEmbeddedMedia?.[${key}];
+            if (!source) return null;
+            let dataUrl = source;
+            if (source.startsWith('blob:')) {
+              const blob = await fetch(source).then(response => response.blob());
+              if (blob.size > 60 * 1024 * 1024) return null;
+              dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsDataURL(blob);
+              });
+            }
+            if (typeof dataUrl !== 'string' || !/^data:[^,]*;base64,/i.test(dataUrl)) return null;
+            if (dataUrl.length > 80 * 1024 * 1024) return null;
+            window.__mcWaEmbeddedData[${key}] = dataUrl;
+            return { length: dataUrl.length, mimeType: /^data:([^;,]*)/i.exec(dataUrl)?.[1] || '' };
+          } catch { return null; }
+        })()`);
+        if (!details?.length) return null;
+        const chunkSize = 512 * 1024;
+        let dataUrl = '';
+        for (let offset = 0; offset < details.length; offset += chunkSize) {
+          if (!wv.isConnected || document.getElementById('wa-wv') !== wv) return null;
+          const chunk = await wv.executeJavaScript(`window.__mcWaEmbeddedData?.[${key}]?.slice(${offset}, ${offset + chunkSize}) || ''`);
+          if (!chunk) return null;
+          dataUrl += chunk;
+        }
+        return dataUrl;
+      } catch (error) {
+        console.warn('[WA-EXTRACT] No se pudo leer el multimedia embebido:', error.message || error);
+        return null;
+      } finally {
+        if (wv.isConnected && document.getElementById('wa-wv') === wv) {
+          wv.executeJavaScript(`if (window.__mcWaEmbeddedData) delete window.__mcWaEmbeddedData[${key}]`).catch(() => {});
+        }
+      }
+    },
     async _blobToDataUrl(item) {
       const wv = document.getElementById('wa-wv');
       if (!wv?.executeJavaScript || !item?.url?.startsWith('blob:')) return null;
@@ -353,8 +433,8 @@
     async openItem(index) {
       const item = this._resources[index];
       if (!item?.url) return;
-      if (item.url.startsWith('blob:')) {
-        const dataUrl = await this._blobToDataUrl(item);
+      if (item.mediaKey || item.url.startsWith('blob:')) {
+        const dataUrl = item.mediaKey ? await this._readEmbeddedData(item) : await this._blobToDataUrl(item);
         if (!dataUrl) return;
         if (typeof mc?.waMediaOpen === 'function') {
           const res = await mc.waMediaOpen({ data: dataUrl });
@@ -390,7 +470,8 @@
       const item = this._resources[index];
       if (!item?.url) return;
       let dataUrl = item.url;
-      if (item.url.startsWith('blob:')) dataUrl = await this._blobToDataUrl(item);
+      if (item.mediaKey) dataUrl = await this._readEmbeddedData(item);
+      else if (item.url.startsWith('blob:')) dataUrl = await this._blobToDataUrl(item);
       if (dataUrl?.startsWith('data:')) {
         const m = /^data:([^;,]*);base64,(.*)$/s.exec(dataUrl);
         if (!m) return;

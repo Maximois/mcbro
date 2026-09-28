@@ -118,7 +118,7 @@ contextBridge.exposeInMainWorld('mc', {
   dlNativePause:  (id) => ipcRenderer.invoke('dl-native-pause', id),
   dlNativeResume: (id) => ipcRenderer.invoke('dl-native-resume', id),
   dlNativeCancel: (id) => ipcRenderer.invoke('dl-native-cancel', id),
-  dlNativeRetry:  (id) => ipcRenderer.invoke('dl-native-retry', id),
+  dlNativeRetry:  (id, saved) => ipcRenderer.invoke('dl-native-retry', id, saved),
   openDlFolder: ()         => ipcRenderer.invoke('open-dl-folder'),
   openDlFile:   (path)     => ipcRenderer.invoke('dl:open-file', path),
   chooseDlDir:  ()         => ipcRenderer.invoke('choose-dl-dir'),
@@ -140,6 +140,8 @@ contextBridge.exposeInMainWorld('mc', {
   removeCookieRule:(domain)         => ipcRenderer.invoke('remove-cookie-rule', {domain}),
 
   // Reglas
+  setAdblockHostAllowed: (host, allowed) => ipcRenderer.invoke('adblock:host-allow', { host, allowed }),
+  setAdblockSiteAllowed: (site, allowed) => ipcRenderer.invoke('adblock:site-allow', { site, allowed }),
   addBlockRule:   (rule)    => ipcRenderer.invoke('add-block-rule',    rule),
   removeBlockRule:(pattern) => ipcRenderer.invoke('remove-block-rule', {pattern}),
   addResourceRule: (rule) => ipcRenderer.invoke('add-resource-rule', rule),

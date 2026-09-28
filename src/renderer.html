@@ -709,10 +709,10 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
 .pfill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .3s; }
 .pfill.error { background: var(--danger); }
 
-.dl-item { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 6px; }
-.dl-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
-.dl-name { font-size: 0.846rem; color: var(--text); }
-.dl-pct { font-size: 0.846rem; font-weight: 700; color: var(--accent); }
+.dl-item { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 6px; min-width: 0; }
+.dl-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 5px; min-width: 0; }
+.dl-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.846rem; color: var(--text); }
+.dl-pct { flex-shrink: 0; font-size: 0.846rem; font-weight: 700; color: var(--accent); }
 .dl-url { font-size: 0.692rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dl-meta { display: flex; gap: 10px; margin-top: 4px; font-size: 0.692rem; color: var(--muted2); flex-wrap: wrap; }
 .dl-actions { display: flex; gap: 4px; margin-top: 6px; }
@@ -2509,11 +2509,13 @@ function renderBookmarks() {
   list.innerHTML = filtered.map((b, i) => {
     const faviconUrl = b.icon || ('https://www.google.com/s2/favicons?domain=' + new URL(b.url).hostname + '&sz=32');
     const idx = _bookmarks.indexOf(b);
-    return `<div class="bp-item" draggable="true" data-idx="${idx}" onclick="navigateToBookmark('${b.id}')" title="${b.url}">
+    const label = humanizeUrlLabel(b.url, b.title || 'Marcador');
+    const titleText = b.title || label;
+    return `<div class="bp-item" draggable="true" data-idx="${idx}" onclick="navigateToBookmark('${b.id}')" title="${escHtml(label)}">
       <div class="bp-item-icon"><img src="${faviconUrl}" onerror="this.style.display='none';this.parentNode.textContent='🔗';" /></div>
       <div class="bp-item-info">
-        <div class="bp-item-title">${escHtml(b.title || b.url)}</div>
-        <div class="bp-item-url">${escHtml(b.url)}</div>
+        <div class="bp-item-title">${escHtml(titleText)}</div>
+        <div class="bp-item-url">${escHtml(label)}</div>
       </div>
       <button class="bp-item-del" onclick="event.stopPropagation();removeBookmark('${b.id}')" title="Eliminar">&#10005;</button>
     </div>`;
@@ -2522,14 +2524,22 @@ function renderBookmarks() {
   updateBookmarkStar();
   // Drag & drop reorder
   list.querySelectorAll('.bp-item').forEach(el => {
-    el.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', el.dataset.idx); el.classList.add('dragging'); });
+    el.addEventListener('dragstart', (e) => {
+      const idx = parseInt(el.dataset.idx, 10);
+      const bookmark = _bookmarks[idx];
+      const label = humanizeUrlLabel(bookmark?.url || '', bookmark?.title || 'Marcador');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('application/x-mc-bookmark-index', String(idx));
+      e.dataTransfer.setData('text/plain', label);
+      el.classList.add('dragging');
+    });
     el.addEventListener('dragend', () => el.classList.remove('dragging'));
     el.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
     el.addEventListener('drop', async (e) => {
       e.preventDefault();
-      const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
-      const toIdx = parseInt(el.dataset.idx);
-      if (fromIdx !== toIdx) { await mc.bookmarksReorder(fromIdx, toIdx); await loadBookmarks(); }
+      const fromIdx = parseInt(e.dataTransfer.getData('application/x-mc-bookmark-index') || e.dataTransfer.getData('text/plain') || '-1', 10);
+      const toIdx = parseInt(el.dataset.idx, 10);
+      if (Number.isInteger(fromIdx) && fromIdx >= 0 && fromIdx !== toIdx) { await mc.bookmarksReorder(fromIdx, toIdx); await loadBookmarks(); }
     });
   });
 }
@@ -2602,8 +2612,41 @@ function escHtml(s) {
   return d.innerHTML;
 }
 
+function isExplicitlyDraggable(node) {
+  if (!node || !(node instanceof Element)) return false;
+  return !!node.closest('[data-draggable="true"], img, video, audio, canvas, svg');
+}
+
+document.addEventListener('dragstart', (event) => {
+  const node = event.target;
+  if (!(node instanceof Element)) return;
+  if (isExplicitlyDraggable(node)) return;
+  event.preventDefault();
+  event.stopPropagation();
+}, true);
+
+function humanizeUrlLabel(url, fallback = 'Sin título') {
+  const raw = String(url || '').trim();
+  if (!raw) return fallback;
+  try {
+    const u = new URL(raw);
+    const host = (u.hostname || '').replace(/^www\./i, '');
+    const pathParts = (u.pathname || '').split('/').filter(Boolean).slice(0, 3).map(p => p.replace(/[-_]+/g, ' ').trim()).filter(Boolean);
+    if (!host) return fallback;
+    return pathParts.length ? host + ' • ' + pathParts.join(' / ') : host;
+  } catch {
+    const cleaned = raw
+      .replace(/^https?:\/\//i, '')
+      .replace(/^file:\/\//i, '')
+      .replace(/[?#].*$/, '')
+      .replace(/\/+$|\\+$/g, '')
+      .trim();
+    return cleaned || fallback;
+  }
+}
+
 function getTitleForUrl(url) {
-  try { return new URL(url).hostname; } catch { return ''; }
+  return humanizeUrlLabel(url, 'Sin título');
 }
 
 // Init bookmarks panel collapsed state
@@ -4100,6 +4143,10 @@ function notifyNavIntent(wv) {
 
 function applyAdBannerHider(wv) {
   if (!wv || typeof wv.executeJavaScript !== 'function') return;
+  try {
+    const host = new URL(wv.getURL()).hostname.toLowerCase();
+    if (host === 'youtube.com' || host.endsWith('.youtube.com')) return;
+  } catch {}
   const hideScript = `(() => {
     try {
       const selectors = [
@@ -4255,6 +4302,10 @@ function bindWebviewToTab(id, wv) {
       const result = await mc.adblockCosmetics(pageUrl);
       if (!result?.ok || !result.css) return;
       await wv.insertCSS(result.css);
+      try {
+        const hostname = new URL(pageUrl).hostname.toLowerCase();
+        if (hostname === 'youtube.com' || hostname.endsWith('.youtube.com')) return;
+      } catch {}
       await wv.executeJavaScript(`(() => {
         try {
           const hideAds = () => {
@@ -5570,7 +5621,7 @@ function renderSidebarStreamItemHtml(item) {
   const dlName = friendlyFileName(item.url, item.type, item.pageUrl || item.origin || item.displayName, visibleTitle).replace(/'/g, "\\'");
   return '<div class="stream-row">' +
     '<span style="flex-shrink:0;">' + icon + '</span>' +
-    '<span class="resource-summary"><span class="resource-name" title="'+escapeHtml(item.url)+'">' + escapeHtml(label) + '</span>' +
+    '<span class="resource-summary"><span class="resource-name">' + escapeHtml(label) + '</span>' +
     (host ? '<span class="resource-host" style="display:block;font-size: 0.615rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+escapeHtml(item.pageUrl||'')+'">' + escapeHtml(host) + '</span>' : '') +
     '<span class="resource-details">' + badges + fragBadge + timeBadge + '</span></span>' +
     '<span class="stream-actions"><button class="btn ghost btn-sm" onclick="openStreamResource(\'' + safeUrl + '\',\'' + (item.type||'') + '\',\'' + (item.pageUrl||'').replace(/'/g,"\\'") + '\')" title="Abrir recurso">Abrir</button>' +
@@ -5916,6 +5967,14 @@ function loadDownloadsLS() {
     const raw = localStorage.getItem('mc_downloads');
     if (raw) state.downloads = JSON.parse(raw);
     if (!Array.isArray(state.downloads)) state.downloads = [];
+    let recovered = false;
+    state.downloads.forEach(download => {
+      if (download.state === 'active' || download.state === 'paused') {
+        download.state = 'interrupted';
+        recovered = true;
+      }
+    });
+    if (recovered) saveDownloadsLS();
   } catch { state.downloads = []; }
 }
 function trackDownload(entry) {
@@ -5937,12 +5996,15 @@ function renderPersistedDownloads() {
     if (d.state === 'active') return; // las activas se renderizan en vivo
     const el = document.createElement('div');
     el.className = 'dl-item'; el.id = d.id;
+    el.draggable = false;
+    el.addEventListener('dragstart', (e) => { e.preventDefault(); e.stopPropagation(); });
     el.dataset.url = d.url || '';
     el.dataset.type = d.type || 'MP4';
     el.dataset.page = d.page || '';
     el.dataset.name = d.name || '';
     el.dataset.state = d.state || 'done';
     el.dataset.file = d.file || '';
+    el.dataset.native = d.native || String(d.id).startsWith('dl-native-') ? 'true' : 'false';
     const dom = (d.url || '').replace(/https?:\/\//, '').split('/')[0] || '';
     const fullName = d.state === 'done' && d.filename
       ? d.filename
@@ -5950,7 +6012,8 @@ function renderPersistedDownloads() {
     const friendly = compactDownloadName(fullName);
     const stateLabel = d.state === 'done' ? '✓ ' + (d.size || '') + ' MB' :
                        d.state === 'error' ? '✗ ERROR' :
-                       d.state === 'cancelled' ? '✕ Cancelado' : '—';
+                       d.state === 'cancelled' ? '✕ Cancelado' :
+                       d.state === 'interrupted' ? '↻ Interrumpida' : '—';
     const stateColor = d.state === 'done' ? 'var(--success)' :
                        d.state === 'error' ? 'var(--danger)' :
                        d.state === 'cancelled' ? 'var(--danger)' : 'var(--warn)';
@@ -5959,15 +6022,39 @@ function renderPersistedDownloads() {
       : escapeHtml(d.filename || friendly);
     el.innerHTML =
       '<div class="dl-header"><span class="dl-name" title="'+escapeHtml(fullName)+'">'+escapeHtml(friendly)+'</span><span class="dl-pct" id="pct-'+d.id+'" style="color:'+stateColor+'">'+stateLabel+'</span></div>'
-     +'<div class="pbar"><div class="pfill" id="fill-'+d.id+'" style="width:'+(d.state==='done'?'100%':'0%')+'"'+(d.state==='error'||d.state==='cancelled'?' class="error"':'')+'></div></div>'
+    +'<div class="pbar"><div class="pfill" id="fill-'+d.id+'" style="width:'+(d.state==='done'?'100%':Math.min(100,Math.max(0,Number(d.progress)||0))+'%')+'"'+(d.state==='error'||d.state==='cancelled'?' class="error"':'')+'></div></div>'
     +'<div class="dl-meta"><span id="meta-'+d.id+'">'+metaHtml+'</span><span id="speed-'+d.id+'">'+(d.state === 'done' ? '' : '— KB/s')+'</span></div>'
      +'<div class="dl-actions">'
-     +  (d.state === 'error' || d.state === 'cancelled'
+     +  (d.state === 'interrupted'
+       ? '<button class="dl-btn" data-act="resume" onclick="retryPersistedDownload(\''+d.id+'\')" title="Reanudar">▶</button><button class="dl-btn" data-act="pause" onclick="pausePersistedDownload(\''+d.id+'\')" title="Pausar" style="display:none">⏸</button><button class="dl-btn" data-act="cancel" onclick="cancelPersistedDownload(\''+d.id+'\')" title="Cancelar">✕</button>'
+       : d.state === 'error' || d.state === 'cancelled'
          ? '<button class="dl-btn" data-act="retry" onclick="dlAction(\'retry\',\''+d.id+'\')" title="Reintentar">↻</button>'
          : '')
      +'</div>';
     queue.appendChild(el);
   });
+}
+function retryPersistedDownload(id) {
+  const item = document.getElementById(id);
+  if (item?.dataset.native === 'true') dlNativeAction('retry', id);
+  else dlAction('retry', id);
+}
+function pausePersistedDownload(id) {
+  const item = document.getElementById(id);
+  if (item?.dataset.native === 'true') dlNativeAction('pause', id);
+  else dlAction('pause', id);
+}
+function cancelPersistedDownload(id) {
+  const item = document.getElementById(id);
+  if (!item) return;
+  item.dataset.state = 'cancelled';
+  const pct = $('pct-' + id);
+  if (pct) { pct.textContent = '✕ Cancelado'; pct.style.color = 'var(--danger)'; }
+  const fill = $('fill-' + id);
+  if (fill) { fill.style.width = '100%'; fill.classList.add('error'); }
+  const actions = item.querySelector('.dl-actions');
+  if (actions) actions.innerHTML = '';
+  trackDownload({ id, state: 'cancelled', ts: Date.now() });
 }
 function clearDownloads() {
   state.downloads = state.downloads.filter(d => d.state === 'active' || d.state === 'paused');
@@ -6004,6 +6091,8 @@ function dlMedia(url, type, pageUrl, displayName) {
   const dot = $('dl-badge-dot'); if (dot) dot.style.display = 'block';
   const el = document.createElement('div');
   el.className='dl-item'; el.id=dlId;
+  el.draggable = false;
+  el.addEventListener('dragstart', (e) => { e.preventDefault(); e.stopPropagation(); });
   el.dataset.url = url;
   el.dataset.type = type;
   el.dataset.page = resolvedPage || '';
@@ -6114,6 +6203,7 @@ function bindDownloadEvents() {
       const m = $('meta-'+id);
       if (m) m.textContent = d.kind === 'file' ? fmtBytes(d.done)+' / '+fmtBytes(d.total) : d.done+' / '+d.total+' segmentos';
       const s = $('speed-'+id); if (s) s.textContent = d.speed+' KB/s';
+      trackDownload({ id, progress: d.pct, received: d.done, total: d.total });
     }
   });
   mc.on('dl-complete', d => {
@@ -6206,6 +6296,7 @@ function bindDownloadEvents() {
     el.dataset.page = d.pageUrl || '';
     el.dataset.name = d.filename || 'descarga';
     el.dataset.state = 'active';
+    el.dataset.native = 'true';
     el.innerHTML =
       '<div class="dl-header"><span class="dl-name" title="'+escapeHtml(fullName)+'">'+escapeHtml(friendly)+'</span><span class="dl-pct" id="pct-'+dlId+'">0%</span></div>'
      +'<div class="pbar"><div class="pfill" id="fill-'+dlId+'" style="width:0%"></div></div>'
@@ -6221,7 +6312,7 @@ function bindDownloadEvents() {
     trackDownload({
       id: dlId, url: d.url || '', type: 'FILE', page: d.pageUrl || '',
       name: d.filename || 'descarga', filename: d.filename || 'descarga',
-      state: 'active', ts: Date.now()
+      native: true, state: 'active', ts: Date.now()
     });
   });
 
@@ -6252,6 +6343,7 @@ function bindDownloadEvents() {
     const p = $('pct-'+id); if (p) p.textContent = d.pct + '%';
     const m = $('meta-'+id);
     if (m) m.textContent = fmtBytes(d.received||0)+' / '+fmtBytes(d.totalBytes||0);
+    trackDownload({ id, progress: d.pct, received: d.received, total: d.totalBytes });
   });
 
   window.dlNativeAction = async (action, id) => {
@@ -6261,7 +6353,12 @@ function bindDownloadEvents() {
     if (action === 'pause') result = await mc.dlNativePause(id);
     else if (action === 'resume') result = await mc.dlNativeResume(id);
     else if (action === 'cancel') result = await mc.dlNativeCancel(id);
-    else result = await mc.dlNativeRetry(id);
+    else result = await mc.dlNativeRetry(id, {
+      url: item.dataset.url,
+      filename: item.dataset.name,
+      pageUrl: item.dataset.page,
+      partition: 'persist:mc'
+    });
     if (!result?.ok) return;
     const p = $('pct-' + id);
     if (action === 'pause') {
@@ -7454,6 +7551,9 @@ async function banCookieDomain(domain) {
 async function blockHost(domain, mode = 'domain', site) {
   const host = normalizeDomainInput(domain);
   if (!host) return;
+  const currentSite = normalizeDomainInput(getCurrentPageDomain());
+  if (currentSite) await mc.setAdblockSiteAllowed(currentSite, false);
+  await mc.setAdblockHostAllowed(host, false);
   const pattern = mode === 'subdomain' ? '*.' + host : host;
   // Verificar si ya existe esta regla (global o misma sitio)
   const exists = state.customBlocks.some(b => {
@@ -7489,6 +7589,7 @@ async function blockHostSite(domain) {
 async function unblockHost(domain) {
   const host = normalizeDomainInput(domain);
   if (!host) return;
+  const currentSite = normalizeDomainInput(getCurrentPageDomain());
   // Remover todas las reglas que coincidan con este host (globales y site-scoped)
   const toRemove = state.customBlocks.filter(b => patternMatchesHost(b, host));
   for (const pattern of toRemove) {
@@ -7496,6 +7597,8 @@ async function unblockHost(domain) {
     delete state.siteBlockMap[pattern];
     await mc.removeBlockRule(pattern);
   }
+  await mc.setAdblockHostAllowed(host, true);
+  if (currentSite) await mc.setAdblockSiteAllowed(currentSite, true);
   await mc.setCookiePolicyForDomain(host, 'allow');
   if (state.cfg) state.cfg.allowlist = { ...(state.cfg.allowlist || {}), [host]: 'allow' };
   await renderPermissionsList();
