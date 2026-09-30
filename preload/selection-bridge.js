@@ -24,5 +24,5 @@ contextBridge.exposeInMainWorld('__mcSelectionBridge', {
   },
   setHlsReferer: (token, referer) => ipcRenderer.invoke('streams:hls-player-referer', { token, referer }),
   setHlsEntryReferer: (token, url, referer) => ipcRenderer.invoke('streams:entry-referer', { token, url, referer }),
-  tapContainerPlay: (token, x, y) => ipcRenderer.invoke('streams:container-player-tap', { token, x, y })
+  tapContainerPlay: (token) => ipcRenderer.invoke('streams:container-player-tap', { token })
 });

@@ -6190,10 +6190,12 @@ function openStreamResource(url, type, pageUrl, refererToken = '', refererValue 
         setTimeout(async () => {
           const tap = window.__mcSelectionBridge?.tapContainerPlay;
           if (!tap) { statusText.textContent = 'Contenedor cargado; toque automático no disponible'; return; }
-          const rect = frame.getBoundingClientRect();
           try {
-            const sent = await tap(token, rect.left + rect.width / 2, rect.top + rect.height / 2);
-            statusText.textContent = sent ? 'Contenedor cargado; activación enviada' : 'Contenedor cargado; no se pudo activar';
+            const result = await tap(token);
+            if (result?.ok) statusText.textContent = 'Botón Reproducir activado';
+            else if (result?.reason === 'player-frame-not-found') statusText.textContent = 'No se encontró el frame del reproductor';
+            else if (result?.reason === 'play-button-not-found') statusText.textContent = 'No se encontró el botón Reproducir';
+            else statusText.textContent = 'No se pudo activar el reproductor';
           } catch {
             statusText.textContent = 'Contenedor cargado; no se pudo activar';
           }

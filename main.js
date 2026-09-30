@@ -3262,26 +3262,44 @@ ipcMain.handle('streams:entry-referer', (event, { token, url, referer } = {}) =>
     webContentsId: event.sender.id,
     expiresAt: Date.now() + 30000
   });
-  streamContainerPlayers.set(token, { webContentsId: event.sender.id, expiresAt: Date.now() + 30000, tapSent: false });
+  streamContainerPlayers.set(token, {
+    webContentsId: event.sender.id,
+    targetUrl: requestUrl.href,
+    expiresAt: Date.now() + 30000,
+    tapSent: false
+  });
   while (streamEntryReferers.size > 100) streamEntryReferers.delete(streamEntryReferers.keys().next().value);
   while (streamContainerPlayers.size > 100) streamContainerPlayers.delete(streamContainerPlayers.keys().next().value);
   return true;
 });
-ipcMain.handle('streams:container-player-tap', (event, { token, x, y } = {}) => {
+ipcMain.handle('streams:container-player-tap', async (event, { token } = {}) => {
   const entry = streamContainerPlayers.get(token);
   const senderUrl = (() => { try { return event.sender.getURL(); } catch { return ''; } })();
   if (!entry || entry.tapSent || entry.expiresAt <= Date.now() || entry.webContentsId !== event.sender.id || !senderUrl.includes(token)) return false;
-  if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > 5000 || y > 5000) return false;
   const ownerWindow = BrowserWindow.fromWebContents(event.sender);
   if (!ownerWindow || ownerWindow.isDestroyed() || !ownerWindow.isFocused()) return false;
+  let targetUrl;
+  try { targetUrl = new URL(entry.targetUrl); } catch { return false; }
+  let targetFrame = null;
+  try {
+    const frames = [event.sender.mainFrame, ...(event.sender.mainFrame?.framesInSubtree || [])].filter(Boolean);
+    targetFrame = frames.find(frame => {
+      try {
+        const frameUrl = new URL(frame.url);
+        return frameUrl.origin === targetUrl.origin && frameUrl.pathname === targetUrl.pathname;
+      } catch { return false; }
+    }) || null;
+  } catch {}
+  if (!targetFrame) return { ok: false, reason: 'player-frame-not-found' };
   entry.tapSent = true;
   try {
     event.sender.focus();
-    const point = { x: Math.round(x), y: Math.round(y) };
-    event.sender.sendInputEvent({ type: 'mouseMove', ...point });
-    event.sender.sendInputEvent({ type: 'mouseDown', ...point, button: 'left', clickCount: 1 });
-    event.sender.sendInputEvent({ type: 'mouseUp', ...point, button: 'left', clickCount: 1 });
-    return true;
+    return await targetFrame.executeJavaScript(`(() => {
+      const button = document.querySelector('button[data-testid="button-playback"][aria-label="Reproducir"]');
+      if (!button || button.disabled) return { ok: false, reason: 'play-button-not-found' };
+      button.click();
+      return { ok: true, label: button.getAttribute('aria-label') || '' };
+    })()`, true);
   } catch { return false; }
 });
 // yt-dlp
