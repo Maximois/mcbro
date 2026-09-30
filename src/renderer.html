@@ -6083,13 +6083,20 @@ function renderSidebarStreams() {
 }
 
 const CONTAINER_AUTOPLAY_PROFILES = [
-  { host: 'geo.dailymotion.com', path: /^\/player\//i, query: { autoplay: '1', mute: '1' } }
+  { host: 'geo.dailymotion.com', path: /^\/player\//i, query: { autoplay: '1', mute: '1' }, tapDelayMs: 650 }
 ];
+
+function getContainerAutoplayProfile(url) {
+  try {
+    const parsed = new URL(url);
+    return CONTAINER_AUTOPLAY_PROFILES.find(candidate => parsed.hostname === candidate.host && candidate.path.test(parsed.pathname)) || null;
+  } catch { return null; }
+}
 
 function applyContainerAutoplayProfile(url) {
   try {
     const parsed = new URL(url);
-    const profile = CONTAINER_AUTOPLAY_PROFILES.find(candidate => parsed.hostname === candidate.host && candidate.path.test(parsed.pathname));
+    const profile = getContainerAutoplayProfile(url);
     if (!profile) return url;
     for (const [key, value] of Object.entries(profile.query)) parsed.searchParams.set(key, value);
     return parsed.href;
@@ -6103,6 +6110,8 @@ function openStreamResource(url, type, pageUrl, refererToken = '', refererValue 
     addTab(url, pageUrl);
     return;
   }
+  const containerProfile = isContainer ? getContainerAutoplayProfile(url) : null;
+  const containerTapDelayMs = containerProfile?.tapDelayMs || 0;
   const playbackUrl = isContainer ? applyContainerAutoplayProfile(url) : url;
   const isAudio = /audio/i.test(type || '');
   const tag = isAudio ? 'audio' : 'video';
@@ -6169,9 +6178,26 @@ function openStreamResource(url, type, pageUrl, refererToken = '', refererValue 
       const token = ${hlsPlayerToken};
       const url = ${JSON.stringify(playbackUrl)};
       const referer = ${JSON.stringify(refererValue || '')};
+      const tapDelayMs = ${JSON.stringify(containerTapDelayMs)};
+      let targetNavigationStarted = false;
+      let tapScheduled = false;
       frame.addEventListener('load', () => {
+        if (!targetNavigationStarted) return;
         stage.classList.add('ready');
         statusText.textContent = 'Contenedor cargado';
+        if (!tapDelayMs || tapScheduled) return;
+        tapScheduled = true;
+        setTimeout(async () => {
+          const tap = window.__mcSelectionBridge?.tapContainerPlay;
+          if (!tap) { statusText.textContent = 'Contenedor cargado; toque automático no disponible'; return; }
+          const rect = frame.getBoundingClientRect();
+          try {
+            const sent = await tap(token, rect.left + rect.width / 2, rect.top + rect.height / 2);
+            statusText.textContent = sent ? 'Contenedor cargado; activación enviada' : 'Contenedor cargado; no se pudo activar';
+          } catch {
+            statusText.textContent = 'Contenedor cargado; no se pudo activar';
+          }
+        }, tapDelayMs);
       });
       frame.addEventListener('error', () => { statusText.textContent = 'No se pudo cargar el contenedor'; });
       (async () => {
@@ -6188,6 +6214,7 @@ function openStreamResource(url, type, pageUrl, refererToken = '', refererValue 
           statusText.textContent = 'MC Browser no pudo aplicar el Referer';
           return;
         }
+        targetNavigationStarted = true;
         frame.src = url;
       })().catch(() => {
         status.classList.add('error');

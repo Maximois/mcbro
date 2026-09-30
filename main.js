@@ -3001,6 +3001,7 @@ ipcMain.handle('import-session', async () => {
 let streamHlsCaptureEnabled = false;
 const streamPlayerReferers = new Map();
 const streamEntryReferers = new Map();
+const streamContainerPlayers = new Map();
 function findHlsPlayerEntry(details) {
   const webContentsId = Number(details?.webContentsId) || 0;
   const documentUrls = [details?.documentUrl, details?.webContentsURL, details?.frame?.url, details?.frame?.top?.url].filter(Boolean);
@@ -3261,8 +3262,22 @@ ipcMain.handle('streams:entry-referer', (event, { token, url, referer } = {}) =>
     webContentsId: event.sender.id,
     expiresAt: Date.now() + 30000
   });
+  streamContainerPlayers.set(token, { webContentsId: event.sender.id, expiresAt: Date.now() + 30000, tapSent: false });
   while (streamEntryReferers.size > 100) streamEntryReferers.delete(streamEntryReferers.keys().next().value);
+  while (streamContainerPlayers.size > 100) streamContainerPlayers.delete(streamContainerPlayers.keys().next().value);
   return true;
+});
+ipcMain.handle('streams:container-player-tap', (event, { token, x, y } = {}) => {
+  const entry = streamContainerPlayers.get(token);
+  const senderUrl = (() => { try { return event.sender.getURL(); } catch { return ''; } })();
+  if (!entry || entry.tapSent || entry.expiresAt <= Date.now() || entry.webContentsId !== event.sender.id || !senderUrl.includes(token)) return false;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > 5000 || y > 5000) return false;
+  entry.tapSent = true;
+  try {
+    event.sender.sendInputEvent({ type: 'mouseDown', x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 });
+    event.sender.sendInputEvent({ type: 'mouseUp', x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 });
+    return true;
+  } catch { return false; }
 });
 // yt-dlp
 let ytdlpPath = '';
