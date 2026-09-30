@@ -1,15 +1,19 @@
-# Captura HLS con Referer y MC Player
+# MC Player universal y captura HLS con Referer
 
 **Estado:** implementado en MC Browser desktop. Esta guía documenta el flujo actual y sirve como referencia para una futura integración en MC-TV; no implica que esa integración ya esté aprobada ni que las arquitecturas sean intercambiables.
 
 ## Objetivo
 
-Capturar URLs de playlists HLS (`.m3u8`) que el detector de página puede no descubrir, conservar el `Referer` observado en la solicitud y ofrecer una reproducción alternativa en MC Player. StreamHunt conserva su escaneo y descarga existentes: la captura de red es una función separada.
+MC Player se plantea como una carcasa universal para probar fuentes y contenedores con el contexto de Referer que requieren. Sus comportamientos se ampliarán de forma incremental según el tipo de fuente o proveedor: hoy incluye playlist HLS directa y contenedor/player web embebido. StreamHunt conserva su escaneo y descarga existentes; la captura de red es una función separada.
+
+El objetivo de aislamiento actual es **visual/funcional**: presentar dentro de la carcasa solo el player o contenedor elegido, ocultando el resto de la página original. No equivale a aislar el proceso, la sesión, las cookies o el almacenamiento del webview.
 
 La interfaz vive en el panel lateral **Stream Hunt > Streams**. Tiene dos caminos:
 
 - **Captura de red:** se activa explícitamente y escucha nuevas solicitudes `.m3u8`; cada resultado muestra URL, página de origen y `Referer` si el navegador lo envió.
 - **Prueba manual:** permite introducir una URL `.m3u8` o una página/player HTTP(S), junto con un `Referer`. Una playlist abre con HLS.js dentro de MC Player; una página contenedora se carga en un iframe dentro de la misma carcasa con su `Referer` de entrada, incluso si la política global de Referer lo eliminaría. Esta ruta no asume que el contenedor exponga una URL `.m3u8` ni intenta resolverla automáticamente. Los valores iniciales corresponden a la señal en vivo de SNT.
+
+Para ocultar la página del canal y probar solo un player embebido, usar la URL directa del player (por ejemplo `geo.dailymotion.com/player/...`) y el Referer del sitio padre (por ejemplo `https://www.abc.com.py/tv/`). Si se introduce la URL de la página padre, se mostrará esa página completa dentro del iframe; MC Player no busca ni extrae automáticamente un iframe desde otro sitio.
 
 ## Flujo actual
 
@@ -19,6 +23,18 @@ La interfaz vive en el panel lateral **Stream Hunt > Streams**. Tiene dos camino
 4. MC Player se genera como una página `data:` dentro de una pestaña normal y usa HLS.js. Antes de `loadSource()`, el player solicita al preload `preload/selection-bridge.js` actualizar el Referer asociado a su token.
 5. El handler IPC de `main.js` acepta la actualización desde el renderer anfitrión que registra el reproductor o desde el propio webContents cuyo URL contiene el token. Al actualizar desde el player, el token queda ligado a ese `webContentsId`.
 6. El hook de red aplica el Referer solo a solicitudes multimedia cuyo documento aún contiene el token del player y cuyo webContents coincide. La respuesta multimedia de ese player recibe `Access-Control-Allow-Origin: *` para que una página `data:` pueda consumirla mediante HLS.js. No se modifica CORS para páginas normales ni para otros webContents.
+
+## Extender los comportamientos
+
+Al añadir una fuente nueva, mantener MC Player como carcasa compartida y definir su comportamiento como una ruta explícita, no como excepciones dispersas por el panel:
+
+- **Entrada:** tipo de URL, Referer de navegación (`entryReferer`) y, si corresponde, Referer de media (`mediaReferer`). No asumir que ambos valores son iguales.
+- **Presentación:** elemento HTML o contenedor que se monta dentro de `.stage`; por ejemplo, `video` + HLS.js para `.m3u8`, o `iframe` para un player web extraído.
+- **Inicialización:** pasos previos a asignar la fuente, incluyendo IPC de Referer, eventos de readiness e interacción específica si el proveedor la exige.
+- **Aislamiento visual:** mostrar el player objetivo sin el resto de la página cuando se conoce su URL de embed. Si se carga una página completa, no prometer extracción automática de su DOM cross-origin.
+- **Errores y limpieza:** reportar carga/reproducción, cancelar listeners/timers al cambiar fuente y no permitir que callbacks tardíos reemplacen otro canal.
+
+Para cada proveedor nuevo, añadir una ruta de comportamiento y sus pruebas sin cambiar el flujo de otros providers. La carcasa/iframe conserva la partición `persist:mc`: el aislamiento visual actual no es una frontera de seguridad ni una prueba de partición separada.
 
 ## Por qué el Referer se aplica en el proceso principal
 
