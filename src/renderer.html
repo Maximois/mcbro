@@ -1509,12 +1509,13 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
             <button class="btn ghost btn-sm" onclick="clearCapturedHls()">Limpiar HLS</button>
           </div>
           <details style="margin:8px 0;color:var(--muted);font-size:.72rem;">
-            <summary style="cursor:pointer;">Probar URL manual en MC Player</summary>
-            <label style="display:block;margin-top:8px;">Stream HLS URL</label>
+            <summary style="cursor:pointer;">Probar URL HLS o página de player</summary>
+            <label style="display:block;margin-top:8px;">URL HLS o página/player</label>
             <input class="text-input" id="hls-manual-url" type="url" value="https://live.getcirca.run/live/1277861264/medialist_15609871089997455276_hls.m3u8" style="width:100%;margin-top:4px;font-size:.68rem;">
-            <label style="display:block;margin-top:8px;">Referer objetivo</label>
+            <label style="display:block;margin-top:8px;">Referer inicial / objetivo</label>
             <input class="text-input" id="hls-manual-referer" type="url" value="https://www.snt.com.py/" style="width:100%;margin-top:4px;font-size:.68rem;">
-            <button class="btn ghost btn-sm" style="width:100%;margin-top:8px;" onclick="openManualHlsInPlayer()">Abrir en MC Player</button>
+            <div style="margin-top:6px;line-height:1.4;">Una playlist .m3u8 abre en MC Player. Para capturar la playlist de una página/player, activa antes la captura; luego se abrirá en una pestaña.</div>
+            <button class="btn ghost btn-sm" style="width:100%;margin-top:8px;" onclick="openManualHlsInPlayer()">Abrir URL / MC Player</button>
           </details>
           <div id="hls-captured-list" class="streams-empty">Sin enlaces HLS capturados</div>
         </div>
@@ -5900,8 +5901,17 @@ async function openCapturedHlsInPlayer(key) {
 async function openManualHlsInPlayer() {
   const url = String($('hls-manual-url')?.value || '').trim();
   const referer = String($('hls-manual-referer')?.value || '').trim();
-  if (!/^https?:\/\/.+\.m3u8(?:[?#].*)?$/i.test(url)) {
-    addSidebarLog('blocked', '[STREAM] Introduce una URL HLS .m3u8 válida');
+  if (!/^https?:\/\//i.test(url)) {
+    addSidebarLog('blocked', '[STREAM] Introduce una URL HTTP(S) válida');
+    return;
+  }
+  if (referer && !/^https?:\/\//i.test(referer)) {
+    addSidebarLog('blocked', '[STREAM] El Referer debe ser una URL HTTP(S)');
+    return;
+  }
+  if (!/\.m3u8(?:[?#].*)?$/i.test(url)) {
+    addTab(url, referer);
+    addSidebarLog('info', '[STREAM] Página de player abierta; activa la captura para detectar su playlist');
     return;
   }
   const token = 'mchls' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
