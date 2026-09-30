@@ -3000,6 +3000,7 @@ ipcMain.handle('import-session', async () => {
 // Streams
 let streamHlsCaptureEnabled = false;
 const streamPlayerReferers = new Map();
+const streamEntryReferers = new Map();
 function findHlsPlayerEntry(details) {
   const webContentsId = Number(details?.webContentsId) || 0;
   const documentUrls = [details?.documentUrl, details?.webContentsURL, details?.frame?.url, details?.frame?.top?.url].filter(Boolean);
@@ -3017,6 +3018,30 @@ function findHlsPlayerEntry(details) {
     if (documentUrls.some(url => url.includes(token)) && (!entry.webContentsId || entry.webContentsId === webContentsId)) return entry;
   }
   return null;
+}
+function findStreamEntryReferer(details) {
+  let requestUrl;
+  try {
+    requestUrl = new URL(details?.url || '');
+    requestUrl.hash = '';
+  } catch { return null; }
+  const key = requestUrl.href;
+  const entry = streamEntryReferers.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    streamEntryReferers.delete(key);
+    return null;
+  }
+  const webContentsId = Number(details?.webContentsId) || 0;
+  if (entry.webContentsId && entry.webContentsId !== webContentsId) return null;
+  const documentUrls = [details?.documentUrl, details?.webContentsURL, details?.frame?.url, details?.frame?.top?.url].filter(Boolean);
+  if (webContentsId) {
+    try {
+      const currentUrl = require('electron').webContents.fromId(webContentsId)?.getURL();
+      if (currentUrl) documentUrls.push(currentUrl);
+    } catch {}
+  }
+  return documentUrls.some(url => url.includes(entry.token)) ? { key, entry } : null;
 }
 const STREAM_SCAN_SCRIPT = `
   (function(){
@@ -3216,6 +3241,27 @@ ipcMain.handle('streams:hls-player-referer', (event, { token, referer } = {}) =>
     expiresAt: Date.now() + 15 * 60 * 1000
   });
   while (streamPlayerReferers.size > 100) streamPlayerReferers.delete(streamPlayerReferers.keys().next().value);
+  return true;
+});
+ipcMain.handle('streams:entry-referer', (event, { token, url, referer } = {}) => {
+  const senderUrl = (() => { try { return event.sender.getURL(); } catch { return ''; } })();
+  if (!/^mchls[a-z0-9-]{8,100}$/i.test(token || '') || !senderUrl.includes(token)) return false;
+  const targetUrl = String(url || '').trim();
+  const targetReferer = String(referer || '').trim();
+  let requestUrl, refererUrl;
+  try {
+    requestUrl = new URL(targetUrl);
+    refererUrl = new URL(targetReferer);
+    if (!/^https?:$/i.test(requestUrl.protocol) || !/^https?:$/i.test(refererUrl.protocol)) return false;
+  } catch { return false; }
+  requestUrl.hash = '';
+  streamEntryReferers.set(requestUrl.href, {
+    referer: refererUrl.href,
+    token,
+    webContentsId: event.sender.id,
+    expiresAt: Date.now() + 30000
+  });
+  while (streamEntryReferers.size > 100) streamEntryReferers.delete(streamEntryReferers.keys().next().value);
   return true;
 });
 // yt-dlp
@@ -4425,6 +4471,17 @@ app.whenReady().then(() => {
       delete headers.referer;
     } else if (CFG.refererPolicy === 'origin' && headers.Referer) {
       try { headers.Referer = new URL(headers.Referer).origin + '/'; } catch {}
+    }
+    const entryRefererMatch = findStreamEntryReferer(d);
+    if (entryRefererMatch) {
+      streamEntryReferers.delete(entryRefererMatch.key);
+      const entryReferer = entryRefererMatch.entry;
+      if (entryReferer.expiresAt > Date.now()) {
+        for (const key of Object.keys(headers)) {
+          if (key.toLowerCase() === 'referer') delete headers[key];
+        }
+        headers.Referer = entryReferer.referer;
+      }
     }
     const hlsPlayerEntry = isMediaRequest && !isMainFrame ? findHlsPlayerEntry(d) : null;
     if (hlsPlayerEntry?.referer) {

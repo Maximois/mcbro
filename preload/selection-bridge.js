@@ -22,5 +22,6 @@ contextBridge.exposeInMainWorld('__mcSelectionBridge', {
       ipcRenderer.sendToHost('mc-selection', value);
     }
   },
-  setHlsReferer: (token, referer) => ipcRenderer.invoke('streams:hls-player-referer', { token, referer })
+  setHlsReferer: (token, referer) => ipcRenderer.invoke('streams:hls-player-referer', { token, referer }),
+  setHlsEntryReferer: (token, url, referer) => ipcRenderer.invoke('streams:entry-referer', { token, url, referer })
 });

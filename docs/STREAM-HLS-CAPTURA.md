@@ -9,13 +9,13 @@ Capturar URLs de playlists HLS (`.m3u8`) que el detector de página puede no des
 La interfaz vive en el panel lateral **Stream Hunt > Streams**. Tiene dos caminos:
 
 - **Captura de red:** se activa explícitamente y escucha nuevas solicitudes `.m3u8`; cada resultado muestra URL, página de origen y `Referer` si el navegador lo envió.
-- **Prueba manual:** permite introducir una URL `.m3u8` o una página/player HTTP(S), junto con un `Referer`. Una playlist abre en MC Player; una página se abre como navegación normal con ese `Referer` de entrada, para que el reproductor del sitio inicialice y la captura registre la playlist que solicite. Los valores iniciales corresponden a la señal en vivo de SNT.
+- **Prueba manual:** permite introducir una URL `.m3u8` o una página/player HTTP(S), junto con un `Referer`. Una playlist abre con HLS.js dentro de MC Player; una página contenedora se carga en un iframe dentro de la misma carcasa con su `Referer` de entrada, incluso si la política global de Referer lo eliminaría. Esta ruta no asume que el contenedor exponga una URL `.m3u8` ni intenta resolverla automáticamente. Los valores iniciales corresponden a la señal en vivo de SNT.
 
 ## Flujo actual
 
 1. `main.js` mantiene el interruptor de captura. Al estar activo, el `onBeforeSendHeaders` de la sesión principal inspecciona solicitudes HTTP(S) `.m3u8`, toma `Referer` de los headers (con `d.referrer` como respaldo) y emite `streams:hls-captured` con URL, origen, `webContentsId` y hora.
-2. `preload.js` autoriza el evento y expone `mc.setHlsCapture()` / `mc.setHlsPlayerReferer()` al renderer anfitrión.
-3. `src/renderer.html` filtra resultados para la pestaña activa, elimina duplicados, presenta la lista y permite copiar URL/Referer o abrir la fuente en MC Player. La entrada manual enruta `.m3u8` a MC Player; las páginas HTTP(S) se abren en una pestaña normal usando `addTab(url, referer)` y pueden generar una captura nueva si la captura de red está activa.
+2. `preload.js` autoriza el evento y expone `mc.setHlsCapture()` / `mc.setHlsPlayerReferer()` al renderer anfitrión. `preload/selection-bridge.js` expone al MC Player la operación acotada `setHlsEntryReferer(token, url, referer)`.
+3. `src/renderer.html` filtra resultados para la pestaña activa, elimina duplicados, presenta la lista y permite copiar URL/Referer o abrir la fuente en MC Player. La entrada manual enruta `.m3u8` a HLS.js; una página HTTP(S) se carga en un iframe dentro del escenario, solo después de registrar su Referer contra el token y webContents del MC Player.
 4. MC Player se genera como una página `data:` dentro de una pestaña normal y usa HLS.js. Antes de `loadSource()`, el player solicita al preload `preload/selection-bridge.js` actualizar el Referer asociado a su token.
 5. El handler IPC de `main.js` acepta la actualización desde el renderer anfitrión que registra el reproductor o desde el propio webContents cuyo URL contiene el token. Al actualizar desde el player, el token queda ligado a ese `webContentsId`.
 6. El hook de red aplica el Referer solo a solicitudes multimedia cuyo documento aún contiene el token del player y cuyo webContents coincide. La respuesta multimedia de ese player recibe `Access-Control-Allow-Origin: *` para que una página `data:` pueda consumirla mediante HLS.js. No se modifica CORS para páginas normales ni para otros webContents.
@@ -24,7 +24,7 @@ La interfaz vive en el panel lateral **Stream Hunt > Streams**. Tiene dos camino
 
 El ejemplo habitual con un `<input id="refererUrl">` no cambia el header por sí mismo. JavaScript de página no puede asignar `Referer` mediante `fetch`, XHR ni `xhrSetup`, porque Chromium lo trata como un header controlado por el navegador. El campo solo es configuración hasta que una API confiable lo comunica al proceso principal; el hook `webRequest.onBeforeSendHeaders` es quien establece el header de red.
 
-El valor visible en el player significa **Referer configurado**, no una garantía de que el CDN acepte la petición. Un `403` aún puede indicar token vencido, cookies requeridas, restricciones de IP/UA, expiración o un Referer distinto del esperado.
+El valor visible en el player significa **Referer configurado**, no una garantía de que el sitio acepte la petición. Para una página contenedora, `streams:entry-referer` fuerza una sola vez el header de la navegación del iframe a la URL registrada y vence a los 30 segundos; sus recursos posteriores usan la política normal del navegador. Un `403` aún puede indicar cookies requeridas, restricciones de IP/UA u otra política del proveedor.
 
 CORS es independiente del Referer. El player interno tiene origen opaco (`data:`), por lo que HLS.js puede fallar aunque el header llegue correcto. La modificación CORS está limitada a respuestas de recursos multimedia asociadas al token del player; no equivale a desactivar `webSecurity` globalmente. El flujo actual no configura cookies/credenciales de sesión para el CDN.
 
@@ -103,6 +103,6 @@ Si el proveedor necesita interacción para iniciar la señal, cualquier toque au
 - `node --check preload.js`
 - `node --check preload/selection-bridge.js`
 - `npm test` (50 pruebas actuales; no es una prueba de Electron ni de SNT en vivo)
-- Probar manualmente en Electron con la captura activada antes de cargar/reproducir la página; luego abrir el recurso capturado o usar **Probar URL HLS o página de player**. Verificar por separado URL `.m3u8` directa y página/player con `Referer` de entrada.
+- Probar manualmente en Electron dos casos separados: URL `.m3u8` directa en MC Player y URL de página/player embebida en la carcasa con Referer de entrada. Confirmar que el iframe no navega antes de registrar el Referer y que el player del sitio se comporta igual que en su página original. La captura HLS es una observación aparte, no el mecanismo que abre el contenedor.
 
 La aceptación final depende de la respuesta real del servidor. Un parseo correcto y tests unitarios verdes no demuestran que un CDN externo acepte Referer, CORS o tokens.
