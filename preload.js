@@ -18,8 +18,10 @@ const ALLOWED = new Set([
   'clear-all','media-cleared','show-media',
   'export-session-menu','import-session-menu',
   'popup-allowed','popup-blocked',
+  'notification-permission-request',
   'auth-session-updated',
   'streams:found',
+  'streams:hls-captured',
   'ytdlp-log',
   'open-new-tab','external-url','perchance-open-tab','page-extract-results','ai-element-selected','cosmetic-block-result','cosmetic-unblock-result',
   'perchance:clear-data','perchance:open-dl-folder',
@@ -153,6 +155,9 @@ contextBridge.exposeInMainWorld('mc', {
   removePermission:(domain,permission) => ipcRenderer.invoke('remove-permission', {domain,permission}),
   setSitePermission:(domain,permission,value='allow',origin='') => ipcRenderer.invoke('set-site-permission', {domain,permission,value,origin}),
   removeSitePermission:(domain,permission) => ipcRenderer.invoke('remove-site-permission', {domain,permission}),
+  respondNotificationPermission: (requestId, allowed) => {
+    try { ipcRenderer.send('notification-permission-response', { requestId, allowed }); } catch {}
+  },
   getPermissions:  ()                  => ipcRenderer.invoke('get-permissions'),
   getPermissionOrigins: ()             => ipcRenderer.invoke('get-permission-origins'),
   getSiteCookies:  (domain)            => ipcRenderer.invoke('get-site-cookies', {domain}),
@@ -187,6 +192,8 @@ contextBridge.exposeInMainWorld('mc', {
 
    // Streams
    scanStreams: (id) => ipcRenderer.invoke('streams:scan', id),
+  setHlsCapture: (active) => ipcRenderer.invoke('streams:hls-capture', active),
+  setHlsPlayerReferer: (token, referer) => ipcRenderer.invoke('streams:hls-player-referer', { token, referer }),
 
    // yt-dlp
    ytdlpCheck:    ()     => ipcRenderer.invoke('ytdlp-check'),

@@ -206,6 +206,28 @@ function resolveMediaPermissionDecision(host, mediaTypes) {
   return Permissions.resolveMediaPermissionDecision(host, mediaTypes, CFG);
 }
 
+const pendingNotificationPermissions = new Map();
+const NOTIFICATION_PERMISSION_TIMEOUT_MS = 45000;
+
+function finishNotificationPermissionRequest(requestId, allowed, persistDecision = false) {
+  const pending = pendingNotificationPermissions.get(requestId);
+  if (!pending) return false;
+  pendingNotificationPermissions.delete(requestId);
+  clearTimeout(pending.timer);
+  if (persistDecision) {
+    setPermissionEntry(pending.host, 'notifications', allowed ? 'allow' : 'deny');
+  }
+  try { pending.callback(allowed); } catch {}
+  return true;
+}
+
+ipcMain.on('notification-permission-response', (event, response = {}) => {
+  if (!mainWin || event.sender !== mainWin.webContents) return;
+  const requestId = String(response.requestId || '');
+  const hasDecision = typeof response.allowed === 'boolean';
+  finishNotificationPermissionRequest(requestId, response.allowed === true, hasDecision);
+});
+
 function setupSessionPermissionHandlers(sess) {
   const decide = (host, permission, details) => {
     const key = String(permission || '').trim();
@@ -213,23 +235,22 @@ function setupSessionPermissionHandlers(sess) {
     return resolvePermissionDecision(host, key);
   };
   sess.setPermissionRequestHandler((webContents, permission, callback, details) => {
-    const host = normalizeSiteHost(webContents?.getURL?.() || '');
+    const requestingUrl = details?.requestingUrl || webContents?.getURL?.() || '';
+    const host = normalizeSiteHost(requestingUrl);
     if (String(permission || '').trim() === 'notifications' && host && !getPermissionRuleForHost(host, 'notifications')) {
-      const parent = BrowserWindow.fromWebContents(webContents) || mainWin;
-      dialog.showMessageBox(parent, {
-        type: 'question',
-        title: 'Permiso de notificaciones',
-        message: `${host} quiere enviarte notificaciones`,
-        detail: 'Puedes cambiar esta decisión después desde Privacidad y control.',
-        buttons: ['Permitir', 'Bloquear'],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true
-      }).then(result => {
-        const allow = result.response === 0;
-        setPermissionEntry(host, 'notifications', allow ? 'allow' : 'deny');
-        callback(allow);
-      }).catch(() => callback(false));
+      if (!mainWin || mainWin.isDestroyed() || mainWin.webContents.isDestroyed()) {
+        callback(false);
+        return;
+      }
+      const requestId = crypto.randomUUID();
+      const timer = setTimeout(() => finishNotificationPermissionRequest(requestId, false), NOTIFICATION_PERMISSION_TIMEOUT_MS);
+      pendingNotificationPermissions.set(requestId, { callback, host, timer });
+      try {
+        mainWin.webContents.send('notification-permission-request', { requestId, domain: host });
+      } catch {
+        finishNotificationPermissionRequest(requestId, false);
+      }
+      try { webContents.once('destroyed', () => finishNotificationPermissionRequest(requestId, false)); } catch {}
       return;
     }
     callback(decide(host, permission, details));
@@ -2977,6 +2998,26 @@ ipcMain.handle('import-session', async () => {
   } catch (e) { return { error: e.message }; }
 });
 // Streams
+let streamHlsCaptureEnabled = false;
+const streamPlayerReferers = new Map();
+function findHlsPlayerEntry(details) {
+  const webContentsId = Number(details?.webContentsId) || 0;
+  const documentUrls = [details?.documentUrl, details?.webContentsURL, details?.frame?.url, details?.frame?.top?.url].filter(Boolean);
+  if (webContentsId) {
+    try {
+      const currentUrl = require('electron').webContents.fromId(webContentsId)?.getURL();
+      if (currentUrl) documentUrls.push(currentUrl);
+    } catch {}
+  }
+  for (const [token, entry] of streamPlayerReferers) {
+    if (entry.expiresAt <= Date.now()) {
+      streamPlayerReferers.delete(token);
+      continue;
+    }
+    if (documentUrls.some(url => url.includes(token)) && (!entry.webContentsId || entry.webContentsId === webContentsId)) return entry;
+  }
+  return null;
+}
 const STREAM_SCAN_SCRIPT = `
   (function(){
     try {
@@ -3154,6 +3195,28 @@ ipcMain.handle('streams:scan', async (_e, id) => {
     }
     return items;
   } catch(e) { ACTIONS.emit('ytdlp-log', 'Stream scan error: ' + e.message); return []; }
+});
+ipcMain.handle('streams:hls-capture', (_e, active) => {
+  if (typeof active === 'boolean') streamHlsCaptureEnabled = active;
+  return streamHlsCaptureEnabled;
+});
+ipcMain.handle('streams:hls-player-referer', (event, { token, referer } = {}) => {
+  if (!/^[a-z0-9-]{8,100}$/i.test(token || '')) return false;
+  const normalizedReferer = String(referer || '').trim();
+  if (normalizedReferer && !/^https?:\/\//i.test(normalizedReferer)) return false;
+  const existing = streamPlayerReferers.get(token);
+  const senderUrl = (() => { try { return event.sender.getURL(); } catch { return ''; } })();
+  const isHostRenderer = event.sender === mainWin?.webContents;
+  const isPlayerRenderer = senderUrl.includes(token);
+  if (!isHostRenderer && !isPlayerRenderer) return false;
+  if (isPlayerRenderer && existing?.webContentsId && existing.webContentsId !== event.sender.id) return false;
+  streamPlayerReferers.set(token, {
+    referer: normalizedReferer,
+    webContentsId: isPlayerRenderer ? event.sender.id : (existing?.webContentsId || null),
+    expiresAt: Date.now() + 15 * 60 * 1000
+  });
+  while (streamPlayerReferers.size > 100) streamPlayerReferers.delete(streamPlayerReferers.keys().next().value);
+  return true;
 });
 // yt-dlp
 let ytdlpPath = '';
@@ -4325,6 +4388,20 @@ app.whenReady().then(() => {
   // ── Live request log & cookie interception ──
   sess.webRequest.onBeforeSendHeaders({ urls: ['<all_urls>'] }, (d, cb) => {
     if (!/^https?:\/\//i.test(d.url || '')) return cb({ requestHeaders: d.requestHeaders });
+    const playerDocumentUrl = d.documentUrl || d.webContentsURL || d.frame?.url || d.frame?.top?.url || '';
+    if (streamHlsCaptureEnabled && /\.m3u8(?:[?#]|$)/i.test(d.url)) {
+      const requestHeaders = d.requestHeaders || {};
+      const refererKey = Object.keys(requestHeaders).find(key => key.toLowerCase() === 'referer');
+      const refererValue = refererKey ? requestHeaders[refererKey] : '';
+      const referer = Array.isArray(refererValue) ? String(refererValue[0] || '') : String(refererValue || d.referrer || '');
+      ACTIONS.emit('streams:hls-captured', {
+        url: d.url,
+        referer: referer || d.referrer || '',
+        pageUrl: d.documentUrl || d.webContentsURL || d.referrer || '',
+        webContentsId: d.webContentsId || null,
+        detectedAt: Date.now()
+      });
+    }
     const headers = { ...d.requestHeaders };
     const isMediaRequest = d.resourceType === 'media' || /\.(?:m3u8|mpd|ts|m4s|mp4|aac|mp3|webm)(?:[?#]|$)|(?:segment|chunk|playlist|\/stream(?:\/|$))/i.test(d.url);
     const isMainFrame = d.resourceType === 'mainFrame' || d.resourceType === 'main_frame';
@@ -4348,6 +4425,13 @@ app.whenReady().then(() => {
       delete headers.referer;
     } else if (CFG.refererPolicy === 'origin' && headers.Referer) {
       try { headers.Referer = new URL(headers.Referer).origin + '/'; } catch {}
+    }
+    const hlsPlayerEntry = isMediaRequest && !isMainFrame ? findHlsPlayerEntry(d) : null;
+    if (hlsPlayerEntry?.referer) {
+        for (const key of Object.keys(headers)) {
+          if (key.toLowerCase() === 'referer') delete headers[key];
+        }
+        headers.Referer = hlsPlayerEntry.referer;
     }
     // WhatsApp (regla especial): alinear Client Hints con UA_WHATSAPP (Chrome 140)
     // para evitar el error de "navegador no compatible"
@@ -4375,6 +4459,13 @@ app.whenReady().then(() => {
       const host = new URL(d.url).hostname.toLowerCase();
       const docHost = d.documentUrl ? new URL(d.documentUrl).hostname.toLowerCase() : '';
       const isMediaRequest = d.resourceType === 'media' || /\.(?:m3u8|mpd|ts|m4s|mp4|aac|mp3|webm)(?:[?#]|$)|(?:segment|chunk|playlist|\/stream(?:\/|$))/i.test(d.url);
+      const hlsPlayerEntry = isMediaRequest ? findHlsPlayerEntry(d) : null;
+      if (hlsPlayerEntry) {
+        for (const key of Object.keys(responseHeaders)) {
+          if (key.toLowerCase() === 'access-control-allow-origin') delete responseHeaders[key];
+        }
+        responseHeaders['Access-Control-Allow-Origin'] = ['*'];
+      }
       // La partición dedicada de Perchance ya se prepara sin restricciones;
       // no se debe reintroducir una exception global por dominio aquí.
       if (isAuthDomain(host) || isAuthDomain(docHost) || isAuthRedirectFlow(host, docHost)) {

@@ -129,5 +129,6 @@ Al 2026-09-28, la suite tiene tres archivos de test y 50 tests; cubre reglas y f
 
 - [README del proyecto](../README.md): descripcion general, pendiente de sincronizar en algunos detalles.
 - [Ideas futuras](IDEAS-FUTURAS.md): propuestas y riesgos; nada de ahi se considera aprobado por defecto.
+- [Captura HLS con Referer](STREAM-HLS-CAPTURA.md): flujo de captura, player, limites de red y guia de portabilidad a otras apps.
 - [Arquitectura de Perchance](PERCHANCE-ARCHITECTURE.md): contrato especifico del panel, particion y red; documento congelado.
 - [Guardia de navegacion](../lib/navigation-guard.js), [permisos](../lib/permissions.js) y [bridge](../preload.js): reglas base que conviene leer antes de cambios de seguridad/navegacion.

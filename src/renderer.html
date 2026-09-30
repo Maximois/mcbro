@@ -31,6 +31,38 @@ html, body { height: 100%; overflow: hidden; }
 html { font-size: var(--ui-font-size, 13px); }
 body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace; font-size: 1rem; }
 
+#notification-permission-stack {
+  position: fixed;
+  right: 20px;
+  bottom: 42px;
+  z-index: 100000;
+  display: grid;
+  gap: 10px;
+  width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+.notification-permission-toast {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-left: 3px solid var(--warn);
+  border-radius: 7px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.42);
+  pointer-events: auto;
+  animation: notificationPermissionIn .18s ease-out;
+}
+.notification-permission-title { font-weight: 700; }
+.notification-permission-message { color: var(--muted2); line-height: 1.45; overflow-wrap: anywhere; }
+.notification-permission-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.notification-permission-actions button { min-width: 92px; padding: 7px 12px; border-radius: var(--radius-sm); cursor: pointer; font: inherit; }
+.notification-permission-deny { color: var(--text); background: var(--surface2); border: 1px solid var(--border2); }
+.notification-permission-allow { color: #07110e; background: var(--accent); border: 1px solid var(--accent); font-weight: 700 !important; }
+@keyframes notificationPermissionIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
 #browser { display: flex; flex-direction: column; height: 100vh; }
 
 /* TOP BAR */
@@ -555,6 +587,31 @@ input:checked + .tslider::before { transform: translateX(16px); }
 #webview-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; background: #fff; }
 #webview-container .tab-webview { position: absolute; inset: 0; width: 100%; height: 100%; display: none; }
 #webview-container .tab-webview.active { display: inline-flex; }
+.connection-failure { position:absolute; inset:0; z-index:3; overflow:auto; display:grid; place-items:center; color:#f0f3f1; background:#0c1117; }
+.connection-failure[hidden] { display:none; }
+.failure-layout { width:min(1120px,calc(100% - 48px)); min-height:100%; margin:auto; display:grid; grid-template-columns:minmax(0,520px) minmax(260px,1fr); align-items:center; gap:clamp(24px,4vw,48px); padding:32px 0; }
+.failure-illustration { overflow:hidden; border:1px solid #26303a; border-radius:6px; background:#101720; box-shadow:0 18px 42px rgba(0,0,0,.32); }
+.failure-canvas-header { min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 14px; border-bottom:1px solid #26303a; color:#84919b; font-size:.72rem; }
+.failure-brand { display:flex; align-items:center; gap:9px; color:#e1e7e4; font-weight:700; }
+.failure-brand-mark { display:block; width:30px; height:30px; flex:none; border-radius:6px; }
+.failure-brand-mark img { display:block; width:100%; height:100%; object-fit:contain; }
+.failure-live-dot { width:7px; height:7px; flex:none; border-radius:50%; background:#ff6262; box-shadow:0 0 9px rgba(255,98,98,.7); animation:failurePulse 1.5s ease-in-out infinite; }
+#failure-canvas { display:block; width:100%; height:auto; aspect-ratio:520/320; background:#080d12; }
+.failure-copy { max-width:440px; }
+.failure-status { display:inline-flex; align-items:center; gap:8px; padding:6px 11px; border:1px solid rgba(255,98,98,.24); border-radius:16px; color:#ff7777; background:rgba(255,98,98,.08); font-size:.72rem; font-weight:700; }
+.failure-title { margin-top:18px; color:#f0f3f1; font-size:2rem; line-height:1.16; }
+.failure-message { margin-top:14px; color:#a6b0b7; line-height:1.65; overflow-wrap:anywhere; }
+.failure-target { display:flex; align-items:center; gap:10px; min-width:0; margin-top:19px; padding:10px 12px; border:1px solid #26303a; border-radius:5px; color:#e5e9e7; background:#121922; }
+.failure-target-label { flex:none; color:#f0a14f; font-weight:700; }
+#failure-host { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.82rem; }
+.failure-code { margin-top:8px; color:#84919b; font-size:.72rem; overflow-wrap:anywhere; }
+.failure-retry { display:inline-flex; align-items:center; gap:9px; margin-top:22px; padding:11px 16px; border:0; border-radius:5px; color:#08130f; background:#61c28c; font:inherit; font-weight:700; cursor:pointer; }
+.failure-retry:hover { background:#7bd49f; }
+.failure-retry:focus-visible { outline:2px solid #f0a14f; outline-offset:3px; }
+@keyframes failurePulse { 50% { opacity:.48; transform:scale(.86); } }
+@media (max-width:760px) { .failure-layout { width:min(520px,calc(100% - 32px)); grid-template-columns:minmax(0,1fr); gap:20px; padding:22px 0; }.failure-copy { max-width:none; }.failure-title { margin-top:11px; font-size:1.65rem; }.failure-message { margin-top:9px; }.failure-target { margin-top:12px; }.failure-retry { margin-top:15px; } }
+@media (max-height:560px) and (min-width:761px) { .failure-layout { align-items:start; padding:18px 0; }.failure-copy { align-self:center; } }
+@media (prefers-reduced-motion:reduce) { .failure-live-dot { animation:none; } }
 /* Pantalla completa HTML5 del propio sitio (botón nativo de YouTube/Facebook/
    etc.): sacar el webview activo de su layout normal para que cubra toda la
    ventana, y ocultar la UI propia del navegador alrededor. */
@@ -1442,6 +1499,25 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
       <div class="resources-view active" data-resources-view="streams">
         <div class="resources-toolbar"><button class="btn ghost btn-sm" onclick="scanStreams()">Escanear</button><button class="btn ghost btn-sm" onclick="clearStreams()">Limpiar</button></div>
         <div id="resources-streams-list"></div>
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08);">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px;font-size:.72rem;font-weight:700;">
+            <span>Captura HLS de red</span>
+            <span id="hls-capture-status" class="badge gray">Inactiva</span>
+          </div>
+          <div class="resources-toolbar">
+            <button class="btn ghost btn-sm" id="hls-capture-toggle" onclick="toggleHlsCapture()">Iniciar captura</button>
+            <button class="btn ghost btn-sm" onclick="clearCapturedHls()">Limpiar HLS</button>
+          </div>
+          <details style="margin:8px 0;color:var(--muted);font-size:.72rem;">
+            <summary style="cursor:pointer;">Probar URL manual en MC Player</summary>
+            <label style="display:block;margin-top:8px;">Stream HLS URL</label>
+            <input class="text-input" id="hls-manual-url" type="url" value="https://live.getcirca.run/live/1277861264/medialist_15609871089997455276_hls.m3u8" style="width:100%;margin-top:4px;font-size:.68rem;">
+            <label style="display:block;margin-top:8px;">Referer objetivo</label>
+            <input class="text-input" id="hls-manual-referer" type="url" value="https://www.snt.com.py/" style="width:100%;margin-top:4px;font-size:.68rem;">
+            <button class="btn ghost btn-sm" style="width:100%;margin-top:8px;" onclick="openManualHlsInPlayer()">Abrir en MC Player</button>
+          </details>
+          <div id="hls-captured-list" class="streams-empty">Sin enlaces HLS capturados</div>
+        </div>
       </div>
       <div class="resources-view" data-resources-view="extract">
         <div class="extract-intro"><span class="extract-intro-icon">⌁</span><span><strong>Extractor de recursos</strong><br>Imágenes, vídeos, audio y enlaces de la página activa</span></div>
@@ -1697,6 +1773,26 @@ body.mc-html-fullscreen #webview-container { position: fixed; inset: 0; width: 1
         <!-- WEBVIEW CONTAINER: múltiples webviews, uno por pestaña -->
         <div id="webview-container">
           <!-- Los webviews se crean dinámicamente por pestaña -->
+          <section id="connection-failure" class="connection-failure" hidden role="status" aria-live="polite">
+            <div class="failure-layout">
+              <div class="failure-illustration">
+                <div class="failure-canvas-header">
+                  <div class="failure-brand"><span class="failure-brand-mark"><img src="../favicon/mc-browser.svg" alt="MC Browser"></span><span class="failure-live-dot"></span>PATRULLA DE RESCATE</div>
+                  <div>ERR-503</div>
+                </div>
+                <canvas id="failure-canvas" width="520" height="320" aria-hidden="true"></canvas>
+              </div>
+              <div class="failure-copy">
+                <div class="failure-status"><span class="failure-live-dot"></span> HOST INACCESIBLE</div>
+                <h1 class="failure-title">El servidor se fue a dormir o la red explotó.</h1>
+                <p class="failure-message"><strong>MC Browser</strong> intentó tocarle la puerta al servidor, pero parece que no hay nadie (o el cable salió volando por la ventana). Estamos intentando convencerlo de que vuelva a la vida.</p>
+                <div class="failure-target"><span class="failure-target-label">URL</span><span id="failure-host"></span></div>
+                <div id="failure-code" class="failure-code">MC_ERR_GATEWAY_TIMEOUT // PACKET_LOST</div>
+                <div id="failure-detail" class="failure-code"></div>
+                <button class="failure-retry" type="button" onclick="retryConnectionFailure()"><span aria-hidden="true">&#8635;</span> Reintentar Conexión</button>
+              </div>
+            </div>
+          </section>
         </div>
 
         <!-- NEW TAB -->
@@ -2286,6 +2382,8 @@ const state = {
   bgSettings: null,
   mediaItems: new Map(),
   streamItems: new Map(),
+  hlsCaptureItems: new Map(),
+  hlsCaptureActive: false,
   blockedScripts: [],
   downloads: [], // historial persistente de descargas
   permissionHostHints: {},
@@ -3188,6 +3286,7 @@ function showPanel(name) {
   const btns = document.querySelectorAll('.tnbtn');
   if (btns[map[name]]) btns[map[name]].classList.add('active');
   // ocultar webview cuando estamos en paneles internos
+  stopFailureScene();
   $('webview-container').style.display = 'none';
 }
 
@@ -3226,6 +3325,200 @@ async function openReader() {
   }
 }
 
+let failureSceneFrame = 0;
+let failureSceneTick = 0;
+
+function stopFailureScene() {
+  if (failureSceneFrame) cancelAnimationFrame(failureSceneFrame);
+  failureSceneFrame = 0;
+}
+
+function drawFailureTechnician(ctx, x, y, color, label, tick, working) {
+  const bob = Math.sin((tick + x) * 0.07) * 2;
+  const toolMotion = working ? Math.sin((tick + x) * 0.22) * 5 : 0;
+  ctx.save();
+  ctx.translate(x, y + bob);
+  ctx.fillStyle = '#151d25';
+  ctx.fillRect(-8, 12, 6, 25);
+  ctx.fillRect(2, 12, 6, 25);
+  ctx.fillStyle = '#080d12';
+  ctx.fillRect(-10, 34, 8, 5);
+  ctx.fillRect(2, 34, 9, 5);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(-12, -10, 24, 24, 4);
+  ctx.fill();
+  ctx.fillStyle = '#f0d28d';
+  ctx.fillRect(-12, -2, 24, 3);
+  ctx.fillStyle = '#142019';
+  ctx.font = 'bold 6px monospace';
+  ctx.fillText('MC', -5, 2);
+  ctx.fillStyle = '#dca77f';
+  ctx.beginPath();
+  ctx.arc(0, -18, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(0, -20, 9, Math.PI, 0);
+  ctx.fill();
+  ctx.fillRect(-10, -21, 20, 3);
+  ctx.fillStyle = color;
+  if (working) {
+    ctx.fillRect(9, -4 + toolMotion, 11, 5);
+    ctx.strokeStyle = '#c9d1d9';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(18, -10 + toolMotion);
+    ctx.lineTo(29, -21 + toolMotion);
+    ctx.stroke();
+    ctx.fillStyle = '#f0a14f';
+    ctx.fillRect(26, -24 + toolMotion, 7, 6);
+  } else {
+    ctx.fillRect(-18, -6, 7, 12);
+    ctx.fillStyle = '#0c1117';
+    ctx.fillRect(-23, -12, 12, 9);
+    ctx.fillStyle = '#ff6262';
+    ctx.fillRect(-21, -10, 8, 2);
+  }
+  ctx.fillStyle = '#a7b1b8';
+  ctx.font = '8px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, 0, 50);
+  ctx.restore();
+}
+
+function drawFailureScene() {
+  const overlay = $('connection-failure');
+  const canvas = $('failure-canvas');
+  if (!overlay || overlay.hidden || !canvas) {
+    stopFailureScene();
+    return;
+  }
+
+  const bounds = canvas.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return;
+  const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  const pixelWidth = Math.max(1, Math.round(bounds.width * pixelRatio));
+  const pixelHeight = Math.max(1, Math.round(bounds.height * pixelRatio));
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+  }
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.setTransform(pixelWidth / 520, 0, 0, pixelHeight / 320, 0, 0);
+  const tick = failureSceneTick++;
+  const sky = ctx.createLinearGradient(0, 0, 0, 320);
+  sky.addColorStop(0, '#111923');
+  sky.addColorStop(.68, '#202b31');
+  sky.addColorStop(1, '#333a32');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, 520, 320);
+
+  ctx.strokeStyle = 'rgba(120,150,153,.2)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= 520; x += 28) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 320); ctx.stroke(); }
+  for (let y = 0; y <= 320; y += 28) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(520, y); ctx.stroke(); }
+
+  ctx.fillStyle = '#283b3a';
+  ctx.beginPath(); ctx.moveTo(0, 218); ctx.lineTo(80, 154); ctx.lineTo(155, 218); ctx.lineTo(242, 170); ctx.lineTo(330, 220); ctx.lineTo(424, 156); ctx.lineTo(520, 220); ctx.lineTo(520, 320); ctx.lineTo(0, 320); ctx.fill();
+  ctx.fillStyle = '#10161b';
+  ctx.fillRect(0, 245, 520, 75);
+  ctx.strokeStyle = '#ff6262';
+  ctx.lineWidth = 3;
+  ctx.shadowColor = '#ff6262';
+  ctx.shadowBlur = 11;
+  ctx.beginPath();
+  ctx.moveTo(0, 252); ctx.lineTo(98, 264); ctx.lineTo(172, 247); ctx.lineTo(258, 270); ctx.lineTo(348, 246); ctx.lineTo(435, 263); ctx.lineTo(520, 251);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.save();
+  ctx.translate(260, 160);
+  ctx.rotate(.1);
+  ctx.fillStyle = '#161d25';
+  ctx.strokeStyle = '#73808a';
+  ctx.lineWidth = 2;
+  ctx.fillRect(-49, -72, 98, 142);
+  ctx.strokeRect(-49, -72, 98, 142);
+  ctx.fillStyle = '#080d12';
+  ctx.fillRect(-39, -58, 78, 42);
+  ctx.strokeStyle = '#ff6262';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(-24, -49); ctx.lineTo(24, -25); ctx.moveTo(24, -49); ctx.lineTo(-24, -25);
+  ctx.stroke();
+  ctx.font = 'bold 8px monospace';
+  ctx.fillStyle = '#ff8585';
+  ctx.textAlign = 'center';
+  ctx.fillText('SERVER OFFLINE', 0, -4);
+  for (let row = 0; row < 3; row++) {
+    const rowY = 8 + row * 21;
+    ctx.fillStyle = '#252f38';
+    ctx.fillRect(-39, rowY, 78, 15);
+    ctx.fillStyle = Math.floor(tick / 10 + row) % 2 ? '#59bd84' : '#ff6262';
+    ctx.beginPath();
+    ctx.arc(-27, rowY + 7, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.strokeStyle = '#f0a14f';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(176, 92); ctx.quadraticCurveTo(197, 162, 220, 248);
+  ctx.stroke();
+  if (Math.floor(tick / 6) % 4 === 0) {
+    ctx.strokeStyle = '#f4d79d';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(214, 229); ctx.lineTo(231, 239); ctx.lineTo(215, 255);
+    ctx.stroke();
+  }
+
+  drawFailureTechnician(ctx, 148, 232, '#4eb982', 'MC-DEV', tick, false);
+  drawFailureTechnician(ctx, 372, 232, '#f0a14f', 'MC-OPS', tick + 30, true);
+  ctx.fillStyle = 'rgba(224,231,227,.68)';
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('MC FIELD TEAM  /  SIGNAL RECOVERY', 14, 304);
+
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    failureSceneFrame = requestAnimationFrame(drawFailureScene);
+  } else {
+    failureSceneFrame = 0;
+  }
+}
+
+function renderConnectionFailure(wv) {
+  const overlay = $('connection-failure');
+  const failure = wv && wv.__mcLoadFailure;
+  const isVisible = !!failure && wv.id === 'webview-' + state.activeTab && state.currentPanel === 'webview';
+  if (!overlay) return;
+  overlay.hidden = !isVisible;
+  if (!isVisible) {
+    stopFailureScene();
+    return;
+  }
+
+  const targetUrl = failure.url || '';
+  $('failure-host').textContent = targetUrl;
+  $('failure-host').title = targetUrl;
+  $('failure-detail').textContent = failure.description || 'Error de conexión ' + failure.errorCode;
+  if (!failureSceneFrame) drawFailureScene();
+}
+
+function retryConnectionFailure() {
+  const wv = $('webview-' + state.activeTab);
+  if (!wv) return;
+  wv.__mcLoadFailure = null;
+  renderConnectionFailure(wv);
+  notifyNavIntent(wv);
+  try { wv.reload(); } catch {}
+}
+
 function showWebview() {
   const tab = state.tabs.find(t => t.id === state.activeTab);
   if (tab && tab.url === 'mc://newtab') { showPanel('newtab'); return; }
@@ -3237,6 +3530,7 @@ function showWebview() {
   const wv = $('webview-' + state.activeTab);
   if (wv) wv.classList.add('active');
   state.currentPanel = 'webview';
+  renderConnectionFailure(wv);
   updateBookmarkStar();
 }
 
@@ -4263,23 +4557,6 @@ function bindWebviewToTab(id, wv) {
   let lastPopupUrl = '';
   let lastPopupAt = 0;
 
-  const injectMouseNav = () => {
-    wv.executeJavaScript(`(() => {
-      if (window.__mcMouseNavInstalled) return true;
-      window.__mcMouseNavInstalled = true;
-      window.addEventListener('mousedown', (e) => {
-        if (e.button === 3) {
-          e.preventDefault();
-          try { window.history.back(); } catch {}
-        } else if (e.button === 4) {
-          e.preventDefault();
-          try { window.history.forward(); } catch {}
-        }
-      }, true);
-      return true;
-    })()`).catch(() => {});
-  };
-
   const injectSelectionBridge = () => {
     wv.executeJavaScript(`(() => {
       if (window.__mcSelectionBridge) return true;
@@ -4447,18 +4724,29 @@ function bindWebviewToTab(id, wv) {
   };
 
   wv.addEventListener('ipc-message', (event) => {
+    if (event.channel === 'mc-history-nav') {
+      const direction = event.args?.[0];
+      try {
+        if (direction === 'back' && wv.canGoBack()) {
+          notifyNavIntent(wv);
+          wv.goBack();
+        } else if (direction === 'forward' && wv.canGoForward()) {
+          notifyNavIntent(wv);
+          wv.goForward();
+        }
+      } catch {}
+      return;
+    }
     if (event.channel !== 'mc-selection') return;
     const text = String(event.args?.[0] || '').trim();
     if (text) window.dispatchEvent(new CustomEvent('mc-selection', { detail: text }));
   });
   wv.addEventListener('dom-ready', () => {
-    injectMouseNav();
     injectSelectionBridge();
     injectCosmeticFilters();
     injectYouTubeAdSkip();
   });
   wv.addEventListener('did-finish-load', () => {
-    injectMouseNav();
     injectSelectionBridge();
     injectCosmeticFilters();
     injectYouTubeAdSkip();
@@ -4579,6 +4867,8 @@ function bindWebviewToTab(id, wv) {
   });
 
   wv.addEventListener('did-start-loading', () => {
+    wv.__mcLoadFailure = null;
+    if (state.activeTab === id) renderConnectionFailure(wv);
     if (state.activeTab !== id) return;
     const shield = $('shield-icon');
     if (shield) shield.textContent = '⏳';
@@ -4591,8 +4881,13 @@ function bindWebviewToTab(id, wv) {
   });
 
   wv.addEventListener('did-fail-load', (e)=>{
+    if (e.errorCode === -3 || e.isMainFrame === false) return;
+    const failedUrl = e.validatedURL || wv.getURL();
+    if (!/^https?:\/\//i.test(failedUrl || '')) return;
+    wv.__mcLoadFailure = { url: failedUrl, description: e.errorDescription || '', errorCode: e.errorCode };
+    renderConnectionFailure(wv);
     if (state.activeTab !== id) return;
-    if (e.errorCode !== -3) addSidebarLog('blocked', '[ERR] '+ (e.errorDescription || e.errorCode));
+    addSidebarLog('blocked', '[ERR] '+ (e.errorDescription || e.errorCode));
     const shield = $('shield-icon');
     if (shield) shield.textContent = '🛡';
   });
@@ -5507,6 +5802,138 @@ function clearStreams() {
   addSidebarLog('info', '[STREAM] Lista limpiada — vuelve a escanear para redetectar');
 }
 
+function getActiveHlsCaptureWebContentsId() {
+  if (window.Sessions?._wv && document.getElementById('session-sidebar')?.classList.contains('open')) {
+    try { return Number(window.Sessions._wv.getWebContentsId()) || 0; } catch {}
+  }
+  const wv = $('webview-' + state.activeTab);
+  try { return Number(wv?.getWebContentsId?.()) || 0; } catch { return 0; }
+}
+
+function updateHlsCaptureUi() {
+  const status = $('hls-capture-status');
+  const button = $('hls-capture-toggle');
+  if (status) {
+    status.textContent = state.hlsCaptureActive ? 'Activa' : 'Inactiva';
+    status.className = 'badge ' + (state.hlsCaptureActive ? 'green' : 'gray');
+  }
+  if (button) button.textContent = state.hlsCaptureActive ? 'Detener captura' : 'Iniciar captura';
+}
+
+function renderCapturedHls() {
+  const list = $('hls-captured-list');
+  if (!list) return;
+  if (!state.hlsCaptureItems.size) {
+    list.className = 'streams-empty';
+    list.textContent = 'Sin enlaces HLS capturados';
+    return;
+  }
+  list.className = '';
+  list.innerHTML = Array.from(state.hlsCaptureItems.entries()).reverse().map(([key, item]) => {
+    const referer = item.referer
+      ? '<div style="display:flex;align-items:flex-start;gap:8px;margin-top:7px;flex-wrap:wrap;"><span style="color:var(--muted);">Referer:</span><code style="flex:1;min-width:180px;overflow-wrap:anywhere;">' + escapeHtml(item.referer) + '</code><button class="btn ghost btn-sm" data-copy-hls-value="' + escapeHtml(item.referer) + '">Copiar referer</button></div>'
+      : '<div style="margin-top:7px;color:var(--muted);">La petición no incluyó Referer</div>';
+    return '<div class="stream-row" style="align-items:flex-start;flex-wrap:wrap;"><div style="flex:1;min-width:220px;"><div style="font-weight:700;margin-bottom:5px;">Playlist HLS</div><code style="display:block;overflow-wrap:anywhere;">' + escapeHtml(item.url) + '</code>' + referer + '<div style="margin-top:6px;color:var(--muted);font-size:.72rem;">Página: ' + escapeHtml(item.pageUrl || 'No disponible') + '</div></div><span class="stream-actions"><button class="btn ghost btn-sm" data-copy-hls-value="' + escapeHtml(item.url) + '">Copiar URL</button><button class="btn warn btn-sm" data-open-hls-key="' + escapeHtml(key) + '">Abrir MC Player</button></span></div>';
+  }).join('');
+}
+
+function addCapturedHlsItem(item) {
+  if (!state.hlsCaptureActive || !item?.url) return;
+  const activeId = getActiveHlsCaptureWebContentsId();
+  const eventId = Number(item.webContentsId) || 0;
+  if (activeId && eventId && activeId !== eventId) return;
+  const pageUrl = item.pageUrl || '';
+  const activePage = getActivePageUrl();
+  if ((!activeId || !eventId) && pageUrl && activePage) {
+    try {
+      if (new URL(pageUrl).origin !== new URL(activePage).origin) return;
+    } catch {}
+  }
+  const key = item.url + '|' + pageUrl;
+  const existing = state.hlsCaptureItems.get(key);
+  if (existing) {
+    if (!existing.referer && item.referer) existing.referer = item.referer;
+  } else {
+    state.hlsCaptureItems.set(key, {
+      url: item.url,
+      referer: item.referer || '',
+      pageUrl,
+      detectedAt: item.detectedAt || Date.now()
+    });
+  }
+  while (state.hlsCaptureItems.size > 100) state.hlsCaptureItems.delete(state.hlsCaptureItems.keys().next().value);
+  renderCapturedHls();
+}
+
+async function toggleHlsCapture() {
+  const button = $('hls-capture-toggle');
+  if (button) button.disabled = true;
+  try {
+    state.hlsCaptureActive = await mc.setHlsCapture(!state.hlsCaptureActive);
+    updateHlsCaptureUi();
+    addSidebarLog('info', state.hlsCaptureActive ? '[STREAM] Captura HLS de red activada' : '[STREAM] Captura HLS de red detenida');
+  } catch {
+    addSidebarLog('blocked', '[STREAM] No se pudo cambiar la captura HLS');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function clearCapturedHls() {
+  state.hlsCaptureItems.clear();
+  renderCapturedHls();
+}
+
+async function openCapturedHlsInPlayer(key) {
+  const item = state.hlsCaptureItems.get(key);
+  if (!item) return;
+  const referer = item.referer || (/live\.getcirca\.run/i.test(item.url) ? 'https://www.snt.com.py/' : '');
+  const token = 'mchls' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  try {
+    if (!await mc.setHlsPlayerReferer(token, referer)) throw new Error('No se pudo registrar el Referer');
+    openStreamResource(item.url, 'HLS', item.pageUrl, token, referer);
+  } catch {
+    addSidebarLog('blocked', '[STREAM] No se pudo preparar el Referer de MC Player');
+  }
+}
+
+async function openManualHlsInPlayer() {
+  const url = String($('hls-manual-url')?.value || '').trim();
+  const referer = String($('hls-manual-referer')?.value || '').trim();
+  if (!/^https?:\/\/.+\.m3u8(?:[?#].*)?$/i.test(url)) {
+    addSidebarLog('blocked', '[STREAM] Introduce una URL HLS .m3u8 válida');
+    return;
+  }
+  const token = 'mchls' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  try {
+    if (!await mc.setHlsPlayerReferer(token, referer)) throw new Error('No se pudo registrar el Referer');
+    openStreamResource(url, 'HLS', referer, token, referer);
+  } catch {
+    addSidebarLog('blocked', '[STREAM] No se pudo preparar la configuración de MC Player');
+  }
+}
+
+$('hls-captured-list')?.addEventListener('click', async event => {
+  const button = event.target.closest('[data-copy-hls-value], [data-open-hls-key]');
+  if (!button) return;
+  if (button.dataset.openHlsKey) {
+    await openCapturedHlsInPlayer(button.dataset.openHlsKey);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(button.dataset.copyHlsValue || '');
+    addSidebarLog('info', '[STREAM] Valor HLS copiado');
+  } catch {
+    addSidebarLog('blocked', '[STREAM] No se pudo copiar el valor HLS');
+  }
+});
+
+if (window.mc?.on) mc.on('streams:hls-captured', addCapturedHlsItem);
+mc.setHlsCapture().then(active => {
+  state.hlsCaptureActive = active === true;
+  updateHlsCaptureUi();
+}).catch(() => {});
+
 function addStreamItem(item) {
   const activePage = getActivePageUrl();
   const currentPage = (activePage && /^https?:/i.test(activePage)) ? activePage : (item.pageUrl && /^https?:/i.test(item.pageUrl) ? item.pageUrl : '');
@@ -5644,7 +6071,7 @@ function renderSidebarStreams() {
   containers.forEach(container => { container.innerHTML = markup; });
 }
 
-function openStreamResource(url, type, pageUrl) {
+function openStreamResource(url, type, pageUrl, refererToken = '', refererValue = '') {
   if (!url) return;
   if (!/^(HLS|DASH)$/i.test(type || '') && !/\.(m3u8|mpd)(?:\?|#|$)/i.test(url)) {
     addTab(url, pageUrl);
@@ -5654,7 +6081,59 @@ function openStreamResource(url, type, pageUrl) {
   const tag = isAudio ? 'audio' : 'video';
   const hls = /\.(m3u8)(?:\?|#|$)/i.test(url) || /HLS/i.test(type || '');
   const hlsScript = hls ? '<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"><\/script>' : '';
-  const hlsInit = `<script>const p=document.querySelector('${tag}');const status=document.querySelector('#status');const statusText=status.querySelector('span:last-child');const stage=document.querySelector('#stage');const setStatus=(text,kind)=>{statusText.textContent=text;status.className='status'+(kind?' '+kind:'');};p.addEventListener('canplay',()=>{stage.classList.add('ready');setStatus('Reproduciendo','ok');});p.addEventListener('error',()=>setStatus('No se pudo reproducir la fuente','error'));${hls ? `if(window.Hls&&Hls.isSupported()){const h=new Hls();h.loadSource(${JSON.stringify(url)});h.attachMedia(p);h.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal)setStatus('Error HLS: '+(d.details||'fuente no disponible'),'error');});}else if(p.canPlayType('application/vnd.apple.mpegurl')){p.src=${JSON.stringify(url)};}else{setStatus('Este Chromium no reproduce HLS nativamente.','error');}` : `setStatus('Listo para reproducir');`}<\/script>`;
+  const hlsPlayerToken = JSON.stringify(refererToken || '');
+  const hlsInit = hls ? `<script>
+    (() => {
+      const video = document.getElementById('videoElement');
+      const status = document.getElementById('status');
+      const statusText = status.querySelector('span:last-child');
+      const stage = document.getElementById('stage');
+      const playerToken = ${hlsPlayerToken};
+      const url = ${JSON.stringify(url)};
+      const referer = ${JSON.stringify(refererValue || '')};
+      const setStatus = (text, kind) => {
+        statusText.textContent = text;
+        status.className = 'status' + (kind ? ' ' + kind : '');
+      };
+      video.addEventListener('canplay', () => { stage.classList.add('ready'); setStatus('Reproduciendo', 'ok'); });
+      video.addEventListener('error', () => setStatus('No se pudo reproducir la fuente', 'error'));
+      async function initPlayer() {
+        if (!/^https?:\\/\\/.+\\.m3u8(?:[?#].*)?$/i.test(url)) {
+          setStatus('Introduce una URL HLS .m3u8 válida', 'error');
+          return;
+        }
+        setStatus('Aplicando Referer y conectando...', '');
+        if (playerToken && window.__mcSelectionBridge?.setHlsReferer) {
+          const applied = await window.__mcSelectionBridge.setHlsReferer(playerToken, referer);
+          if (!applied) { setStatus('MC Browser no pudo aplicar el Referer', 'error'); return; }
+        }
+        if (window.hlsInstance) { window.hlsInstance.destroy(); window.hlsInstance = null; }
+        stage.classList.remove('ready');
+        if (window.Hls && Hls.isSupported()) {
+          const hlsInstance = new Hls({ debug: false, enableWorker: true });
+          window.hlsInstance = hlsInstance;
+          hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+            setStatus('Manifest cargado. Reproduciendo...', '');
+            video.play().catch(() => setStatus('Manifest cargado. Pulsa play para reproducir.', ''));
+          });
+          hlsInstance.on(Hls.Events.ERROR, (_, data) => {
+            if (!data.fatal) return;
+            const code = data.response?.code ? ' HTTP ' + data.response.code : '';
+            setStatus('Error HLS' + code + ': ' + (data.details || 'fuente no disponible'), 'error');
+            if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hlsInstance.recoverMediaError();
+          });
+          hlsInstance.loadSource(url);
+          hlsInstance.attachMedia(video);
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = url;
+          setStatus('Reproducción HLS nativa', '');
+        } else {
+          setStatus('HLS.js no está disponible en este navegador', 'error');
+        }
+      }
+      initPlayer();
+    })();
+  <\/script>` : `<script>document.querySelector('#status span:last-child').textContent='Listo para reproducir';<\/script>`;
   const sourceAttr = hls ? '' : ` src="${escapeHtml(url)}"`;
   const mediaLabel = isAudio ? 'Audio' : 'Video';
   const streamLabel = type || (hls ? 'HLS' : 'Stream');
@@ -5670,7 +6149,15 @@ function openStreamResource(url, type, pageUrl) {
     details.source{margin-top:22px;border-top:1px solid #29323e;padding-top:15px}details.source summary{cursor:pointer;color:#778493;font:10px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.08em;list-style:none;text-transform:uppercase}details.source summary::-webkit-details-marker{display:none}details.source summary:before{content:"";display:inline-block;width:6px;height:6px;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(-45deg);margin:0 9px 1px 2px}details.source[open] summary:before{transform:rotate(45deg);margin-bottom:3px}code{display:block;margin-top:12px;overflow-wrap:anywhere;color:#aab5c2;font:11px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;background:#0c1015;border:1px solid #29323e;border-radius:6px;padding:11px 13px}
     @media(max-width:600px){body{padding:16px}.topbar{margin-bottom:14px}.brand-sub{display:none}.player-footer{align-items:flex-start;flex-direction:column;gap:8px}.stage{border-radius:7px}}
   </style></head><body><main class="player-shell"><header class="topbar"><div class="brand"><span class="brand-mark"></span><span class="brand-name">MC Player</span><span class="brand-sub">/ ${mediaLabel}</span></div><span class="stream-badge"><i></i>${escapeHtml(streamLabel)}</span></header><section class="stage" id="stage"><div class="stage-placeholder"><span class="pulse"></span><span>Conectando con la señal</span></div><${tag} controls autoplay${sourceAttr}></${tag}></section><footer class="player-footer"><div class="status" id="status"><span class="status-dot"></span><span>Preparando reproducción</span></div><span style="color:var(--muted);font-size:11px">MC Browser</span></footer><details class="source"><summary>Información de la fuente</summary><code>${escapeHtml(url)}</code></details></main>${hlsScript}${hlsInit}</body></html>`;
-  addTab('data:text/html;charset=utf-8,' + encodeURIComponent(html), pageUrl);
+  const sourceCode = '<code>' + escapeHtml(url) + '</code></details>';
+  const refererCode = '<code>' + escapeHtml(refererValue || 'No configurado') + '</code></details>';
+  const sourceWithReferer = '<div style="color:#778493;font-size:10px;margin-top:14px;text-transform:uppercase;">Stream HLS URL</div><code>' + escapeHtml(url) + '</code><div style="color:#778493;font-size:10px;margin-top:12px;text-transform:uppercase;">Referer</div>' + refererCode;
+  let playerHtml = hls
+    ? html.replace(sourceCode, sourceWithReferer)
+      .replace('<' + tag + ' controls autoplay', '<' + tag + ' id="videoElement" controls autoplay')
+    : html;
+  if (refererToken) playerHtml = playerHtml.replace('<body>', '<body data-mc-hls-player="' + escapeHtml(refererToken) + '">');
+  addTab('data:text/html;charset=utf-8,' + encodeURIComponent(playerHtml), pageUrl);
 }
 
 function askStreamToAI(url, type) {
@@ -6928,6 +7415,55 @@ function resetShortcuts() {
     addCookieLog(d.action, d.domain, d.cookie);
     if (d.action === 'blocked') addSidebarLog('blocked', '[CK-BLOQ] '+d.domain);
   });
+  const notificationPermissionToasts = new Map();
+  mc.on('notification-permission-request', request => {
+    const requestId = String(request?.requestId || '');
+    const domain = String(request?.domain || 'este sitio');
+    if (!requestId || notificationPermissionToasts.has(requestId)) return;
+    let stack = document.getElementById('notification-permission-stack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'notification-permission-stack';
+      stack.setAttribute('aria-live', 'assertive');
+      document.body.appendChild(stack);
+    }
+    const toast = document.createElement('section');
+    toast.className = 'notification-permission-toast';
+    toast.setAttribute('role', 'alertdialog');
+    toast.setAttribute('aria-label', 'Permiso de notificaciones');
+    const title = document.createElement('div');
+    title.className = 'notification-permission-title';
+    title.textContent = 'Permiso de notificaciones';
+    const message = document.createElement('div');
+    message.className = 'notification-permission-message';
+    message.textContent = domain + ' quiere enviarte notificaciones.';
+    const actions = document.createElement('div');
+    actions.className = 'notification-permission-actions';
+    const deny = document.createElement('button');
+    deny.type = 'button';
+    deny.className = 'notification-permission-deny';
+    deny.textContent = 'Bloquear';
+    const allow = document.createElement('button');
+    allow.type = 'button';
+    allow.className = 'notification-permission-allow';
+    allow.textContent = 'Permitir';
+    const respond = decision => {
+      const pending = notificationPermissionToasts.get(requestId);
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      notificationPermissionToasts.delete(requestId);
+      toast.remove();
+      mc.respondNotificationPermission(requestId, decision);
+    };
+    deny.addEventListener('click', () => respond(false));
+    allow.addEventListener('click', () => respond(true));
+    actions.append(deny, allow);
+    toast.append(title, message, actions);
+    stack.appendChild(toast);
+    const timer = setTimeout(() => respond(null), 43000);
+    notificationPermissionToasts.set(requestId, { timer });
+    deny.focus();
+  });
   mc.on('webview-fullscreen', d => {
     // Solo aplica si el evento viene de la pestaña activa (una pestaña de
     // fondo no debería poder tapar toda la ventana).
@@ -7831,7 +8367,7 @@ function hookPermissionsRefresh() {
 hookPermissionsRefresh();
 </script>
 
-<!-- AI Assistant module: inyecta #ai-sidebar y #webchat-sidebar -->
+<!-- AI Assistant module: inyecta #ai-sidebar -->
 <script src="../modules/ai-assistant/renderer.js"></script>
 <!-- Stream Enhancer module: botones IA en media/streams -->
 <script src="../modules/stream-enhancer/renderer.js"></script>

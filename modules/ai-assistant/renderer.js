@@ -2623,12 +2623,6 @@ Usuario: "Descarga todos los videos de esta página"
   }
 };
 
-// ════════════════════════════════════════════════════════
-//  WebChat — Sidebar dedicado a chats web (Copilot, ChatGPT, etc.)
-//  Funciona como el Copilot de Edge: panel derecho con webview
-//  y capacidad de inyectar contexto de la página activa.
-// ════════════════════════════════════════════════════════
-
 const WCH_PROVIDERS = [
   { id: 'copilot',  label: 'Copilot',  url: 'https://copilot.microsoft.com' },
   { id: 'chatgpt',  label: 'ChatGPT',  url: 'https://chatgpt.com' },
