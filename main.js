@@ -3280,26 +3280,49 @@ ipcMain.handle('streams:container-player-tap', async (event, { token } = {}) => 
   if (!ownerWindow || ownerWindow.isDestroyed() || !ownerWindow.isFocused()) return false;
   let targetUrl;
   try { targetUrl = new URL(entry.targetUrl); } catch { return false; }
-  let targetFrame = null;
+  let candidateFrames = [];
   try {
     const frames = [event.sender.mainFrame, ...(event.sender.mainFrame?.framesInSubtree || [])].filter(Boolean);
-    targetFrame = frames.find(frame => {
+    candidateFrames = frames.filter(frame => {
       try {
         const frameUrl = new URL(frame.url);
-        return frameUrl.origin === targetUrl.origin && frameUrl.pathname === targetUrl.pathname;
+        const isDailymotion = frameUrl.hostname === 'dailymotion.com' || frameUrl.hostname.endsWith('.dailymotion.com');
+        return isDailymotion && (frameUrl.origin === targetUrl.origin && frameUrl.pathname === targetUrl.pathname || /\/(player|embed|video)\//i.test(frameUrl.pathname));
       } catch { return false; }
-    }) || null;
+    });
+    candidateFrames.sort((a, b) => Number(b.url === entry.targetUrl) - Number(a.url === entry.targetUrl));
   } catch {}
-  if (!targetFrame) return { ok: false, reason: 'player-frame-not-found' };
   entry.tapSent = true;
   try {
     event.sender.focus();
-    return await targetFrame.executeJavaScript(`(() => {
-      const button = document.querySelector('button[data-testid="button-playback"][aria-label="Reproducir"]');
-      if (!button || button.disabled) return { ok: false, reason: 'play-button-not-found' };
-      button.click();
-      return { ok: true, label: button.getAttribute('aria-label') || '' };
-    })()`, true);
+    for (const frame of candidateFrames) {
+      try {
+        const result = await frame.executeJavaScript(`(() => {
+          const selectors = [
+            'button[data-testid="button-playback"][aria-label="Reproducir"]',
+            'button[data-testid="button-playback"]',
+            'button[aria-label="Reproducir"]',
+            'button[aria-label="Play"]',
+            'button.playback_button'
+          ];
+          let button = null;
+          for (const selector of selectors) {
+            button = [...document.querySelectorAll(selector)].find(candidate => {
+              const rect = candidate.getBoundingClientRect();
+              return !candidate.disabled && rect.width > 0 && rect.height > 0;
+            });
+            if (button) break;
+          }
+          if (!button) return { ok: false, reason: 'play-button-not-found' };
+          const label = button.getAttribute('aria-label') || '';
+          if (/pausar|pause/i.test(label)) return { ok: true, alreadyPlaying: true, label };
+          button.click();
+          return { ok: true, clicked: true, label };
+        })()`, true);
+        if (result?.ok) return { ...result, frameUrl: frame.url };
+      } catch {}
+    }
+    return { ok: false, reason: candidateFrames.length ? 'play-button-not-found' : 'player-frame-not-found', framesChecked: candidateFrames.length };
   } catch { return false; }
 });
 // yt-dlp

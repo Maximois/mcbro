@@ -6192,8 +6192,9 @@ function openStreamResource(url, type, pageUrl, refererToken = '', refererValue 
           if (!tap) { statusText.textContent = 'Contenedor cargado; toque automático no disponible'; return; }
           try {
             const result = await tap(token);
-            if (result?.ok) statusText.textContent = 'Botón Reproducir activado';
-            else if (result?.reason === 'player-frame-not-found') statusText.textContent = 'No se encontró el frame del reproductor';
+            if (result?.alreadyPlaying) statusText.textContent = 'El contenedor ya estaba reproduciendo';
+            else if (result?.clicked) statusText.textContent = 'Clic enviado al botón Reproducir';
+            else if (result?.reason === 'player-frame-not-found') statusText.textContent = 'No se encontró frame Dailymotion (' + (result.framesChecked || 0) + ')';
             else if (result?.reason === 'play-button-not-found') statusText.textContent = 'No se encontró el botón Reproducir';
             else statusText.textContent = 'No se pudo activar el reproductor';
           } catch {
