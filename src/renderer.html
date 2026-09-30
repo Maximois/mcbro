@@ -6082,6 +6082,20 @@ function renderSidebarStreams() {
   containers.forEach(container => { container.innerHTML = markup; });
 }
 
+const CONTAINER_AUTOPLAY_PROFILES = [
+  { host: 'geo.dailymotion.com', path: /^\/player\//i, query: { autoplay: '1', mute: '1' } }
+];
+
+function applyContainerAutoplayProfile(url) {
+  try {
+    const parsed = new URL(url);
+    const profile = CONTAINER_AUTOPLAY_PROFILES.find(candidate => parsed.hostname === candidate.host && candidate.path.test(parsed.pathname));
+    if (!profile) return url;
+    for (const [key, value] of Object.entries(profile.query)) parsed.searchParams.set(key, value);
+    return parsed.href;
+  } catch { return url; }
+}
+
 function openStreamResource(url, type, pageUrl, refererToken = '', refererValue = '') {
   if (!url) return;
   const isContainer = /^CONTAINER$/i.test(type || '');
@@ -6089,6 +6103,7 @@ function openStreamResource(url, type, pageUrl, refererToken = '', refererValue 
     addTab(url, pageUrl);
     return;
   }
+  const playbackUrl = isContainer ? applyContainerAutoplayProfile(url) : url;
   const isAudio = /audio/i.test(type || '');
   const tag = isAudio ? 'audio' : 'video';
   const hls = !isContainer && (/\.(m3u8)(?:\?|#|$)/i.test(url) || /HLS/i.test(type || ''));
@@ -6101,7 +6116,7 @@ function openStreamResource(url, type, pageUrl, refererToken = '', refererValue 
       const statusText = status.querySelector('span:last-child');
       const stage = document.getElementById('stage');
       const playerToken = ${hlsPlayerToken};
-      const url = ${JSON.stringify(url)};
+      const url = ${JSON.stringify(playbackUrl)};
       const referer = ${JSON.stringify(refererValue || '')};
       const setStatus = (text, kind) => {
         statusText.textContent = text;
@@ -6152,7 +6167,7 @@ function openStreamResource(url, type, pageUrl, refererToken = '', refererValue 
       const statusText = status.querySelector('span:last-child');
       const stage = document.getElementById('stage');
       const token = ${hlsPlayerToken};
-      const url = ${JSON.stringify(url)};
+      const url = ${JSON.stringify(playbackUrl)};
       const referer = ${JSON.stringify(refererValue || '')};
       frame.addEventListener('load', () => {
         stage.classList.add('ready');
@@ -6180,7 +6195,7 @@ function openStreamResource(url, type, pageUrl, refererToken = '', refererValue 
       });
     })();
   <\/script>` : `<script>document.querySelector('#status span:last-child').textContent='Listo para reproducir';<\/script>`;
-  const sourceAttr = hls || isContainer ? '' : ` src="${escapeHtml(url)}"`;
+  const sourceAttr = hls || isContainer ? '' : ` src="${escapeHtml(playbackUrl)}"`;
   const mediaLabel = isAudio ? 'Audio' : 'Video';
   const streamLabel = isContainer ? 'Contenedor' : type || (hls ? 'HLS' : 'Stream');
   const playerElement = isContainer
@@ -6197,11 +6212,11 @@ function openStreamResource(url, type, pageUrl, refererToken = '', refererValue 
     .player-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 5px 0}.status{display:flex;align-items:center;gap:8px;color:var(--muted);font:11px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.04em}.status-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px rgba(255,171,74,.55)}.status.ok{color:var(--good)}.status.ok .status-dot{background:var(--good);box-shadow:0 0 8px rgba(89,211,155,.55)}.status.error{color:var(--danger)}.status.error .status-dot{background:var(--danger)}
     details.source{margin-top:22px;border-top:1px solid #29323e;padding-top:15px}details.source summary{cursor:pointer;color:#778493;font:10px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.08em;list-style:none;text-transform:uppercase}details.source summary::-webkit-details-marker{display:none}details.source summary:before{content:"";display:inline-block;width:6px;height:6px;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(-45deg);margin:0 9px 1px 2px}details.source[open] summary:before{transform:rotate(45deg);margin-bottom:3px}code{display:block;margin-top:12px;overflow-wrap:anywhere;color:#aab5c2;font:11px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;background:#0c1015;border:1px solid #29323e;border-radius:6px;padding:11px 13px}
     @media(max-width:600px){body{padding:16px}.topbar{margin-bottom:14px}.brand-sub{display:none}.player-footer{align-items:flex-start;flex-direction:column;gap:8px}.stage{border-radius:7px}}
-  </style></head><body><main class="player-shell"><header class="topbar"><div class="brand"><span class="brand-mark"></span><span class="brand-name">MC Player</span><span class="brand-sub">/ ${mediaLabel}</span></div><span class="stream-badge"><i></i>${escapeHtml(streamLabel)}</span></header><section class="stage" id="stage"><div class="stage-placeholder"><span class="pulse"></span><span>Conectando con la señal</span></div>${playerElement}</section><footer class="player-footer"><div class="status" id="status"><span class="status-dot"></span><span>Preparando reproducción</span></div><span style="color:var(--muted);font-size:11px">MC Browser</span></footer><details class="source"><summary>Información de la fuente</summary><code>${escapeHtml(url)}</code></details></main>${hlsScript}${hlsInit}</body></html>`;
-  const sourceCode = '<code>' + escapeHtml(url) + '</code></details>';
+  </style></head><body><main class="player-shell"><header class="topbar"><div class="brand"><span class="brand-mark"></span><span class="brand-name">MC Player</span><span class="brand-sub">/ ${mediaLabel}</span></div><span class="stream-badge"><i></i>${escapeHtml(streamLabel)}</span></header><section class="stage" id="stage"><div class="stage-placeholder"><span class="pulse"></span><span>Conectando con la señal</span></div>${playerElement}</section><footer class="player-footer"><div class="status" id="status"><span class="status-dot"></span><span>Preparando reproducción</span></div><span style="color:var(--muted);font-size:11px">MC Browser</span></footer><details class="source"><summary>Información de la fuente</summary><code>${escapeHtml(playbackUrl)}</code></details></main>${hlsScript}${hlsInit}</body></html>`;
+  const sourceCode = '<code>' + escapeHtml(playbackUrl) + '</code></details>';
   const refererCode = '<code>' + escapeHtml(refererValue || 'No configurado') + '</code></details>';
   const sourceTitle = isContainer ? 'URL del contenedor' : 'Stream HLS URL';
-  const sourceWithReferer = '<div style="color:#778493;font-size:10px;margin-top:14px;text-transform:uppercase;">' + sourceTitle + '</div><code>' + escapeHtml(url) + '</code><div style="color:#778493;font-size:10px;margin-top:12px;text-transform:uppercase;">Referer</div>' + refererCode;
+  const sourceWithReferer = '<div style="color:#778493;font-size:10px;margin-top:14px;text-transform:uppercase;">' + sourceTitle + '</div><code>' + escapeHtml(playbackUrl) + '</code><div style="color:#778493;font-size:10px;margin-top:12px;text-transform:uppercase;">Referer</div>' + refererCode;
   let playerHtml = hls || isContainer
     ? html.replace(sourceCode, sourceWithReferer)
       .replace('<' + tag + ' controls autoplay', '<' + tag + ' id="videoElement" controls autoplay')

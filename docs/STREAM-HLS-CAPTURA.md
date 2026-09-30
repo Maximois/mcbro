@@ -36,6 +36,8 @@ Al añadir una fuente nueva, mantener MC Player como carcasa compartida y defini
 
 Para cada proveedor nuevo, añadir una ruta de comportamiento y sus pruebas sin cambiar el flujo de otros providers. La carcasa/iframe conserva la partición `persist:mc`: el aislamiento visual actual no es una frontera de seguridad ni una prueba de partición separada.
 
+Perfil de autoplay actual: para rutas `/player/` de `geo.dailymotion.com`, MC Player añade `autoplay=1` y `mute=1` al URL del iframe. No simula clics; el provider o la política de autoplay de Chromium todavía pueden exigir interacción del usuario. Otros hosts no reciben parámetros añadidos salvo que se incorpore explícitamente un perfil equivalente.
+
 ## Por qué el Referer se aplica en el proceso principal
 
 El ejemplo habitual con un `<input id="refererUrl">` no cambia el header por sí mismo. JavaScript de página no puede asignar `Referer` mediante `fetch`, XHR ni `xhrSetup`, porque Chromium lo trata como un header controlado por el navegador. El campo solo es configuración hasta que una API confiable lo comunica al proceso principal; el hook `webRequest.onBeforeSendHeaders` es quien establece el header de red.
