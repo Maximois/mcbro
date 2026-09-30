@@ -36,7 +36,7 @@ Al añadir una fuente nueva, mantener MC Player como carcasa compartida y defini
 
 Para cada proveedor nuevo, añadir una ruta de comportamiento y sus pruebas sin cambiar el flujo de otros providers. La carcasa/iframe conserva la partición `persist:mc`: el aislamiento visual actual no es una frontera de seguridad ni una prueba de partición separada.
 
-Perfil de autoplay actual: para rutas `/player/` de `geo.dailymotion.com`, MC Player añade `autoplay=1` y `mute=1` al URL del iframe. Tras el evento `load`, envía un solo toque al centro del iframe después de 100 ms (el comportamiento de referencia de MC-TV esperaba 2.5 s). Main valida token, webContents, vigencia, coordenadas y que el toque no se haya enviado antes. Otros hosts no reciben parámetros ni toques automáticos salvo que se incorpore explícitamente un perfil equivalente. El proveedor o Chromium todavía pueden impedir la reproducción automática.
+Perfil de autoplay actual: para rutas `/player/` de `geo.dailymotion.com`, MC Player añade `autoplay=1` y `mute=1` al URL del iframe. Tras el evento `load`, envía un solo toque al centro del iframe después de 100 ms (el comportamiento de referencia de MC-TV esperaba 2.5 s). Main valida token, webContents, vigencia, coordenadas y que el toque no se haya enviado antes; Electron exige que la ventana contenedora esté enfocada, y el player no roba el foco si el usuario cambió a otra app. Otros hosts no reciben parámetros ni toques automáticos salvo que se incorpore explícitamente un perfil equivalente. El proveedor o Chromium todavía pueden impedir la reproducción automática.
 
 ## Por qué el Referer se aplica en el proceso principal
 

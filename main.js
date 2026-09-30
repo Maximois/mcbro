@@ -3272,10 +3272,15 @@ ipcMain.handle('streams:container-player-tap', (event, { token, x, y } = {}) => 
   const senderUrl = (() => { try { return event.sender.getURL(); } catch { return ''; } })();
   if (!entry || entry.tapSent || entry.expiresAt <= Date.now() || entry.webContentsId !== event.sender.id || !senderUrl.includes(token)) return false;
   if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > 5000 || y > 5000) return false;
+  const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+  if (!ownerWindow || ownerWindow.isDestroyed() || !ownerWindow.isFocused()) return false;
   entry.tapSent = true;
   try {
-    event.sender.sendInputEvent({ type: 'mouseDown', x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 });
-    event.sender.sendInputEvent({ type: 'mouseUp', x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 });
+    event.sender.focus();
+    const point = { x: Math.round(x), y: Math.round(y) };
+    event.sender.sendInputEvent({ type: 'mouseMove', ...point });
+    event.sender.sendInputEvent({ type: 'mouseDown', ...point, button: 'left', clickCount: 1 });
+    event.sender.sendInputEvent({ type: 'mouseUp', ...point, button: 'left', clickCount: 1 });
     return true;
   } catch { return false; }
 });
