@@ -50,6 +50,44 @@ Antes de portar el flujo, verificar si MC-TV es Electron, qué proceso posee su 
 6. Definir explícitamente política de cookies, UA, proxy, TLS y partición para el CDN; no heredar credenciales automáticamente.
 7. Probar casos separados: URL directa sin Referer, Referer capturado, Referer manual, respuesta 403, error CORS, URL firmada vencida, navegación de la pestaña después de abrir el player y cierre de la pestaña.
 
+## Idea futura: resolver el canal antes de reproducir
+
+**Estado: propuesta; no implementada.** El objetivo para MC-TV es resolver una fuente HLS reciente antes de abrir la superficie de reproducción y volver a resolverla si deja de servir, sin reiniciar la aplicación ni dejar una navegación auxiliar abierta indefinidamente.
+
+### Flujo propuesto
+
+1. El usuario selecciona un canal. Un componente `ChannelResolver` recibe la URL de entrada del canal y el Referer de navegación que necesita el proveedor.
+2. El resolver abre esa URL en un WebView/contexto de navegador en segundo plano, asociado a la sesión/cookies necesarias. Para canales embebidos, preferir la página o player oficial que inicializa la señal, no una playlist firmada copiada de una sesión anterior.
+3. El resolver observa solicitudes de red y espera una playlist HLS candidata. Acepta `.m3u8`; descarta anuncios, segmentos `.ts`/`.m4s`, playlists de otros webContents y resultados viejos. Registra juntos URL, Referer de la petición multimedia, origen, hora y contexto del canal.
+4. Cuando encuentra una URL reciente, entrega al reproductor el par `{ playlistUrl, mediaReferer }`. La reproducción comienza entonces en el player visible. El Referer utilizado para cargar la página del proveedor se conserva aparte como `entryReferer`; no sustituye automáticamente al Referer de la solicitud HLS.
+5. Si el manifiesto carga y llegan segmentos, se marca la sesión como activa. Se cierra o suspende el resolver en segundo plano cuando ya no haga falta, salvo que el proveedor requiera mantener su sesión viva para renovar el stream.
+6. Si el reproductor recibe un fallo de red recuperable o una respuesta HTTP que indique URL caducada/no autorizada (por ejemplo, `403`, `404` o `410`), solicita una renovación para el canal activo. No debe volver a scrapear por errores de decodificación local del video: estos se recuperan por separado.
+7. El resolver obtiene una playlist nueva. Si es distinta y válida, el player reemplaza la fuente HLS y continúa en el mismo canal. Una renovación en curso se comparte entre las solicitudes concurrentes para evitar varias navegaciones y URLs compitiendo.
+8. Limitar los reintentos con backoff y un máximo definido. Si no aparece una fuente nueva, mostrar un error accionable y permitir reintentar manualmente; no quedar en un bucle infinito de scraping.
+9. Al cambiar de canal o cerrar la reproducción, cancelar timers, listeners y navegación auxiliar de la sesión anterior. Ninguna respuesta tardía del canal anterior debe sustituir la playlist del canal actual.
+
+### Referentes distintos en players embebidos
+
+Para un canal de ABCTV servido mediante Dailymotion, registrar los dos contextos por separado:
+
+- `entryUrl`: la página/player que inicia el canal, por ejemplo `https://geo.dailymotion.com/player/<player>.html?video=<id>`.
+- `entryReferer`: el sitio que contiene el embed, por ejemplo `https://www.abc.com.py/tv/`.
+- `playlistUrl`: la playlist firmada entregada por el CDN de Dailymotion; su forma incluye una ruta `sec2(...)` y no debe persistirse literalmente porque el token caduca.
+- `mediaReferer`: el documento que pidió esa playlist, observado como `https://geo.dailymotion.com/`.
+
+El Referer de `entryUrl` ayuda al player embebido a inicializarse; el `mediaReferer` corresponde a la petición de la playlist/segmentos. No intercambiarlos sin probar el servidor. El fragmento `#cell=...` de una URL HLS no se envía en la petición HTTP, aunque puede aportar estado al reproductor o a su lógica de CDN.
+
+Si el proveedor necesita interacción para iniciar la señal, cualquier toque automático debe pertenecer a una estrategia específica y explícita del proveedor, ejecutarse solo cuando el player esté listo y tener un límite de tiempo/intentos. No simular clics genéricos en toda página ni usar un retraso fijo como única señal de que el botón existe.
+
+### Contrato y criterios de aceptación
+
+- El resultado de resolución debe distinguir `entryUrl`, `entryReferer`, `playlistUrl`, `mediaReferer`, hora de captura y estado/causa del último fallo. No reducir ambos Referer a un solo campo ambiguo.
+- La reproducción inicial debe esperar una playlist válida; no abrir el player con una URL capturada previamente que pueda estar vencida.
+- Al vencer la URL, una renovación exitosa debe cambiar la fuente sin cambiar de canal; un fallo definitivo debe detener reintentos y comunicarlo.
+- Un cambio de canal durante una renovación debe impedir que el resultado anterior se aplique.
+- Los tests deben cubrir URL fresca, token vencido, HTTP 403/404/410, timeout, error de media no relacionado con red, reintentos simultáneos, backoff, cambio de canal durante scraping y limpieza al cerrar.
+- Nunca guardar ni imprimir URLs firmadas completas, cookies o tokens en logs. En diagnósticos, redactar segmentos como `sec2(...)` y queries de autenticación.
+
 ## Archivos de MC Browser
 
 | Archivo | Responsabilidad |
