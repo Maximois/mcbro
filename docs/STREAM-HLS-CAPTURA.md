@@ -36,7 +36,7 @@ Al añadir una fuente nueva, mantener MC Player como carcasa compartida y defini
 
 Para cada proveedor nuevo, añadir una ruta de comportamiento y sus pruebas sin cambiar el flujo de otros providers. La carcasa/iframe conserva la partición `persist:mc`: el aislamiento visual actual no es una frontera de seguridad ni una prueba de partición separada.
 
-Perfil de autoplay actual: para rutas `/player/` de `geo.dailymotion.com`, MC Player añade `autoplay=1` y `mute=1` al URL del iframe. Tras el evento `load`, espera 100 ms y busca en los frames Dailymotion descendientes `button[data-testid="button-playback"]`, `button[aria-label="Reproducir"]` o `.playback_button`; ejecuta el botón con `userGesture` de Electron y sin coordenadas. Main valida token, webContents y vigencia, y permite un solo intento. El status distingue frame ausente, botón ausente, clic enviado y player ya activo. Otros hosts no reciben parámetros ni activación automática salvo que se incorpore explícitamente un perfil equivalente. El proveedor o Chromium todavía pueden impedir la reproducción automática.
+Los contenedores, incluidos los players de Dailymotion, se cargan en el iframe usando la URL recibida y su Referer configurado. MC Player no añade parámetros de autoplay/mute ni intenta pulsar el control de reproducción; la carga y la reproducción quedan a cargo del proveedor y del usuario.
 
 ## Por qué el Referer se aplica en el proceso principal
 
