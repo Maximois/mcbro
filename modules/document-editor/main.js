@@ -728,7 +728,11 @@ function applyUserPatch(req, who) {
     summary: res.summary,
     hash: state.doc.hash,
     doc: state.doc,
-    dirty: state.dirty
+    dirty: state.dirty,
+    history: {
+      canUndo: state.undoStack.length > 0,
+      canRedo: state.redoStack.length > 0
+    }
   };
 }
 
