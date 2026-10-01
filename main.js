@@ -927,6 +927,32 @@ ipcMain.handle('perchance:open-dl-folder', () => {
 });
 
 // === AUTH DOMAINS (nunca bloquear estos) ===
+//
+// LEE ANTES DE "LIMPIAR" ESTA LISTA. Incluye DOS clases de host a proposito:
+//
+//  1) Hosts de autenticacion real (accounts.google.com, appleid.apple.com,
+//     auth.openai.com...) donde el login se rompe si el adblock interfiere.
+//
+//  2) Sitios de CONTENIDO completos (youtube.com, github.com, x.com,
+//     chatgpt.com, google.com, deepseek.com...). NO son "de auth": estan
+//     porque cada uno tiene su propia logica o dependencias que el motor de
+//     listas rompe. YouTube, por ejemplo, tiene su propio pipeline de salto
+//     de anuncios (isYouTubeAdStream + injectYouTubeAdSkip) que depende de
+//    DOMs intactos; ademas el bloqueo aggressive rompe la navegacion de
+//    estos sitios. Decision intencional.
+//
+// CONSECUENCIA, aceptada a proposito: esta lista se pasa como allowedDomains
+// al adblocker (ver m.setup(... allowedDomains: AUTH_DOMAINS)), y ahi hace
+// `return callback({ cancel: false })` ANTES de evaluar cualquier regla. O
+// sea que en esos hosts las reglas de listas NO se aplican. Lo unico que
+// sigue bloqueando es isYouTubeAdStream(), que se evalua antes (linea ~398).
+//
+// NO_REDUCIR esta lista solo "a hosts de auth" para que el adblock aplique en
+// YouTube/GitHub/X: eso fue evaluado y rechazo porque rompe la navegacion.
+// Si hay que agregar un host, es para conectarlo con una excepcion concreta.
+//
+// El matching es exacto o por sufijo con punto (ver isAuthDomain), asi que
+// 'google.com' no captura 'evil-google.com' ni 'notgoogle.com'.
 const AUTH_DOMAINS = [
   'login.microsoftonline.com', 'login.live.com', 'login.windows.net',
   'accounts.google.com', 'accounts.youtube.com', 'oauth.googleusercontent.com',
@@ -1063,6 +1089,9 @@ async function saveBlobOrDataUrlToDownloads(wc, srcURL, hintName, sourceFrame) {
 function isAuthDomain(host) {
   const normalized = String(host || '').toLowerCase().replace(/^\.+/, '');
   if (!normalized) return false;
+  // Exacto o sufijo CON punto. No usar `includes` ni `endsWith(domain)` sin
+  // punto: 'evil-google.com'.endsWith('google.com') es true y abriria la
+  // puerta a cualquier host que termine igual.
   return AUTH_DOMAINS.some(domain => normalized === domain || normalized.endsWith('.' + domain));
 }
 
@@ -2780,6 +2809,23 @@ ipcMain.handle('open-external', (e, url) => {
     shell.openExternal(url);
 });
 // Cookies / Cache
+//
+// `persist:mc` es la particion de la SESION PRINCIPAL. No cambiar por
+// `session.defaultSession`: el usuario abre varias sesiones aisladas que NUNCA
+// comparten cookies, y cada una tiene su propia particion
+// (`persist:mc-session-<id>`, ver extraSessionPartition). defaultSession solo
+// corresponde a las ventanas sin `partition` propio, asi que usarla vaciaria
+// la sesion principal Y dejaria intactas las demas.
+//
+// Cada handler de limpieza apunta a una particion explicita a proposito:
+//   clear-cookies / clear-data / clear-all        -> persist:mc (principal)
+//   sessions:clear-data / sessions:delete         -> persist:mc-session-<id>
+//   clear-webchat-data                             -> WEBCHAT_PARTITION
+//   Perchance                                      -> su propia sesion
+//
+// Esos handlers son operacion GLOBAL a proposito: el boton "limpiar cookies"
+// del panel WebChat debe borrar las de WebChat, no las de la pestana desde la
+// que se pulso. Por eso NO se debe cambiar a `event.sender.session`.
 const sess = () => session.fromPartition('persist:mc');
 ipcMain.handle('clear-cookies', async () => {
   try {
@@ -3608,6 +3654,19 @@ ipcMain.handle('ytdlp-download', async (e, opts) => {
 // === AI MODULE fallbacks (solo si el módulo AI no carga) ────
 // Se definen como función pero NO se registran aún — se registran después
 // del módulo AI en el catch, para que los handlers reales ganen.
+//
+// OJO con los nombres duplicados: `ai:adblock:*` aparece AQUÍ (stubs) y
+// también en modules/adblocker/main.js (implementación real). NO es un
+// conflicto ni un bug: son escenarios mutuamente excluyentes.
+//
+//   - El módulo AI carga bien  → sus handlers registran, los stubs NUNCA se
+//     registran y los handlers reales de adblocker atienden la llamada.
+//   - El módulo AI falla       → cae en el catch, se registran estos stubs y
+//     la UI recibe { error: 'AI module not available' } en vez de colgarse.
+//
+// `ai:adblock:*` NO está en la lista de aiUnavail de abajo a propósito: los
+// handlers de adblocker/main.js son los únicos que deben atender esos tres
+// canales, y solo lo hacen si el módulo AI no lo reclam antes.
 const aiFallbacks = (ctx) => {
   ipcMain.handle('ai:config:get', () => ctx.aiConfig);
   ipcMain.handle('ai:config:save', (_e, cfg) => { ctx.aiConfig = { ...ctx.aiConfig, ...cfg }; ctx.saveCfg(); return ctx.aiConfig; });
@@ -4267,6 +4326,13 @@ app.on('web-contents-created', (event, wc) => {
         click: async () => {
           try {
             const pt = await resolveCtxCssPoint(wc, params);
+            // NOTA DE ESCAPADO para todo lo que sigue: este bloque es un
+            // TEMPLATE LITERAL, asi que cada `\\` del source llega a la pagina
+            // como `\`. Por eso los regex de abajo estan escritos con doble
+            // barra (`facebook\\.com\\/tr`, `replace(/\\s+/g,'')`) y NO es un
+            // error: es obligatorio. Si se "simplifica" a un solo `\`, la
+            // pagina recibe `s*` o un escape mal formado y la deteccion de
+            // trackers/ads deja de funcionar silenciosamente.
             const element = await wc.executeJavaScript(`(() => {
               const px = ${pt.x};
               const py = ${pt.y};

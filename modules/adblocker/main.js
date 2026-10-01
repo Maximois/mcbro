@@ -402,6 +402,18 @@ function createBlockHandler(getEngine, allowedDomains, isEnabled, isCategoryEnab
       }
 
       // Always allow auth/login domains
+      //
+      // IMPORTANTE: este `return` ocurre ANTES de evaluar cualquier regla del
+      // motor de listas, no solo antes del heuristico. Los hosts que llegan
+      // aca son AUTH_DOMAINS (ver main.js), que ademas incluye sitios de
+      // contenido completos como youtube.com, github.com, x.com y chatgpt.com
+      // de forma intencional: cada uno tiene su propia logica que el bloqueo
+      // rompe. Consecuencia aceptada: en esos hosts las reglas de listas NO
+      // se aplican. Lo unico que sigue bloqueando es isYouTubeAdStream(),
+      // evaluado unas lineas mas arriba.
+      //
+      // NO "optimizar" esto a un simple continue por host: comportamiento
+      // distinto.
       for (const ad of allowedDomains) {
         if (host === ad || host.endsWith('.' + ad)) {
           return callback({ cancel: false });
