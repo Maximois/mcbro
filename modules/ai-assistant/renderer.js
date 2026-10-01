@@ -916,7 +916,13 @@ const AI = {
           if (wv?.getWebContentsId) {
             const res = await mc.aiPageDom({ webContentsId: wv.getWebContentsId() });
             if (res?.html) {
-              ctx += `\nHTML: ${res.html.slice(0, 30000)}`;
+              // Antes: `res.html.slice(0, 30000)` — el head con scripts inline
+              // agotaba el presupuesto y el modelo recibía HTML cortado antes
+              // del <body>, o sea sin contenido. Ahora el main devuelve `text`
+              // ya limpio (outline + metadatos + texto real) y se manda eso.
+              // El HTML crudo sigue disponible para las herramientas.
+              const shaped = res.text || '';
+              if (shaped) ctx += `\n=== PÁGINA ACTIVA (${tabUrl}) ===\n${shaped}`;
               this.lastPageHtml = res.html;
               
               try {
@@ -1113,7 +1119,7 @@ Cuando pida seguridad:
 ## ACCESO A PESTAÑAS DEL NAVEGADOR
 Al inicio del mensaje recibes automáticamente:
 - **Lista de todas las pestañas** abiertas con ID, título, URL (la activa marcada)
-- **URL activa** + HTML (~30000 chars) de la pestaña activa
+- **URL activa** + contexto estructurado de la pestaña activa (metadatos, outline de encabezados/landmarks/tablas, links con su texto y el texto limpio del body; los scripts inline se incluyen solo si sobra presupuesto)
 - USA esto directamente sin herramientas adicionales
 
 Para acceder a otras pestañas o más contexto usa las herramientas \`\`\`tabs, \`\`\`tab:switch, \`\`\`tab:context
@@ -1481,7 +1487,10 @@ Usuario: "Descarga todos los videos de esta página"
         const res = await mc.aiPageDom({ webContentsId: wvId });
         if (res?.html) {
           let out = `URL: ${res.url || '?'}\nTítulo: ${res.title || '?'}\n`;
-          out += `HTML (${res.html.length} chars):\n${res.html.slice(0, 75000)}`;
+          // Texto estructurado (outline + body limpio) en vez de HTML crudo
+          // recortado: el modelo recibe el contenido real de la página en vez
+          // de scripts inline. El HTML crudo sigue a mano con tools.
+          out += `CONTENIDO (${res.text?.length || 0} chars útiles de ${res.html.length} raw):\n${res.text || '(sin texto extraíble)'}`;
           results.push({ type: 'tab', result: out });
         } else {
           results.push({ type: 'tab', result: 'No se pudo obtener DOM' });

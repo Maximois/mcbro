@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, session, ipcMain, shell, dialog, Notification, Menu, clipboard } = require('electron');
+const { app, BrowserWindow, session, ipcMain, shell, dialog, Notification, Menu, clipboard, webContents } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -80,6 +80,13 @@ if (!GPU_RUNTIME_ACTIVE) {
 
 // ✅ LOGIN WORKS: solo esta flag, nada más
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
+
+// Evita el parpadeo del overlay de vídeo por hardware en Windows: el <video>
+// se promovía a una capa DXGI/DirectComposition aparte y el flip de esa capa
+// titilaba incluso FUERA de la ventana (borde inferior, encima del escritorio).
+// Desactiva solo la promoción a overlay; WebGL, WebGPU, canvas y el compositing
+// de CSS siguen en GPU. No tocar la lógica HLS/DASH ni el decode del player.
+app.commandLine.appendSwitch('disable-direct-composition-video-overlays');
 
 // ── Stream / Media detection ────────────────────
 const MEDIA_RE = /\.(m3u8|mp4|webm|mpd|ts|m4s|mkv|avi|mov)(\?|#|$)/i;
@@ -927,7 +934,7 @@ const AUTH_DOMAINS = [
   'googleusercontent.com', 'googleapis.com', 'gstatic.com', 'googlevideo.com',
   'youtube.com', 'www.youtube.com', 'myaccount.google.com', 'meet.google.com',
   'drive.google.com', 'docs.google.com', 'slides.google.com', 'sheets.google.com',
-  'chat.google.com', 'maps.google.com', 'play.google.com', 'accounts.google.com',
+  'chat.google.com', 'maps.google.com', 'play.google.com',
   'login.skype.com', 'graph.windows.net', 'appleid.apple.com', 'idmsa.apple.com',
   'auth0.com', 'github.com', 'api.github.com', 'copilot.microsoft.com',
   'api.copilot.microsoft.com', 'chatgpt.com', 'auth.openai.com', 'api.openai.com',
@@ -1059,6 +1066,10 @@ function isAuthDomain(host) {
   return AUTH_DOMAINS.some(domain => normalized === domain || normalized.endsWith('.' + domain));
 }
 
+// Un redirect de OAuth cruza entre el host original y el host del proveedor:
+// por ejemplo grok.com -> accounts.google.com, o x.com -> auth.x.ai.
+// Basta con que UNO de los dos sea dominio de auth; si ambos lo son, el
+// flujo entero (incluidos hosts intermedios) queda exento.
 function isAuthRedirectFlow(targetHost, documentHost) {
   return isAuthDomain(targetHost) || isAuthDomain(documentHost);
 }
@@ -1530,33 +1541,118 @@ function cfgSnapshot() {
   };
 }
 
+// ── Validación de update-cfg ──────────────────────
+// El renderer solo debe poder escribir estos campos. Todo lo demás en CFG
+// (allowlist, customRules, permissions, extraSessions, aiConfig, proxy...)
+// se modifica por handlers dedicados, que son los que validan su entrada.
+//
+// 'rotateUA' NO está a propósito (updateUA() en src/renderer.html lo manda en
+// su patch y hoy se descarta en silencio). La rotación de UA está desactivada
+// porque Google OAuth solo funciona con el UA nativo de Electron. Cuando se
+// implemente: agregarlo aquí como 'bool' Y hacer que el UA se aplique de verdad
+// — rotateIdentity() sigue siendo un stub y currentUA solo se guarda/displaya.
+// Ojo: applyFP() corre en el mundo aislado del preload y no alcanza la página.
+const CFG_WRITABLE = {
+  // booleanos
+  blockAds: 'bool', blockTrackers: 'bool', blockThirdParty: 'bool',
+  strictDomainIsolation: 'bool', spoofUA: 'bool', blockFingerprint: 'bool',
+  gpuAcceleration: 'bool', dohEnabled: 'bool', mediaDetect: 'bool', httpsOnly: 'bool',
+  // enumeraciones
+  dohServer: 'dohServer', cookiePolicy: 'cookiePolicy', refererPolicy: 'refererPolicy',
+  language: 'lang', currentUA: 'ua', uiTextSize: 'scale',
+  // escalas de la página de inicio
+  ntSearchSize: 'scale', ntIconSize: 'scale', ntLogoSize: 'scale', ntStatsSize: 'scale',
+};
+
+const CFG_DOH_SERVERS = ['cloudflare', 'google', 'quad9', 'nextdns', 'adguard', 'mullvad', 'cleanbrowsing'];
+const CFG_COOKIE_POLICIES = ['allow-all', 'session'];
+const CFG_REFERRER_POLICIES = ['no-referrer', 'origin', 'strict-origin', 'same-origin', 'origin-when-cross-origin', 'strict-origin-when-cross-origin', 'unsafe-url', ''];
+const CFG_LANGS = ['en-US', 'en-GB', 'de-DE', 'fr-FR', 'es-ES', 'ja-JP', 'es-419', 'es-AR', 'pt-BR', 'it-IT', 'ru-RU', 'zh-CN', 'ko-KR', 'ar-SA', 'hi-IN', 'nl-NL', 'pl-PL', 'tr-TR'];
+const CFG_SCALES = ['x1', 'x2', 'x4', 'x8'];
+
+function readUaLabels() {
+  try {
+    const html = fs.readFileSync(path.join(__dirname, 'src', 'renderer.html'), 'utf8');
+    const m = /const UA_LABELS\s*=\s*\{([\s\S]*?)\}/.exec(html);
+    const keys = [];
+    if (m) for (const line of m[1].split('\n')) {
+      const km = /^\s*'([^']+)'\s*:/.exec(line);
+      if (km) keys.push(km[1]);
+    }
+    return keys;
+  } catch { return []; }
+}
+const CFG_UA_KEYS = readUaLabels();
+// Perfiles reales del <select id="ua-select"> (pueden diferir de UA_LABELS).
+const CFG_UA_OPTIONS = ['win-chrome', 'win-edge', 'mac-safari', 'linux-ff', 'android', 'iphone'];
+
+// Devuelve solo los campos permitidos y ya validados. Descarta el resto.
+function sanitizeCfgPatch(patch) {
+  const clean = {};
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return clean;
+  for (const [key, value] of Object.entries(patch)) {
+    // Ignora cualquier prototipo heredado: solo propiedades propias.
+    if (!Object.prototype.hasOwnProperty.call(CFG_WRITABLE, key)) continue;
+    const kind = CFG_WRITABLE[key];
+    if (kind === 'bool') {
+      if (typeof value === 'boolean') clean[key] = value;
+    } else if (Array.isArray(CFG_SCALES) && kind === 'scale') {
+      if (CFG_SCALES.includes(value)) clean[key] = value;
+    } else if (kind === 'dohServer') {
+      if (CFG_DOH_SERVERS.includes(value)) clean[key] = value;
+    } else if (kind === 'cookiePolicy') {
+      if (CFG_COOKIE_POLICIES.includes(value)) clean[key] = value;
+    } else if (kind === 'refererPolicy') {
+      if (typeof value === 'string' && CFG_REFERRER_POLICIES.includes(value)) clean[key] = value;
+    } else if (kind === 'lang') {
+      if (typeof value === 'string' && CFG_LANGS.includes(value)) clean[key] = value;
+    } else if (kind === 'ua') {
+      // El <select> ofrece más perfiles que las etiquetas de display (win-chrome,
+      // mac-safari, android). Aceptamos ambos conjuntos.
+      if (typeof value === 'string' && (CFG_UA_KEYS.includes(value) || CFG_UA_OPTIONS.includes(value))) clean[key] = value;
+    }
+  }
+  return clean;
+}
+
 // Convierte un nombre de archivo en ruta dentro de baseDir, sin poder escapar.
 function resolveSafePath(baseDir, name) {
   const base = path.resolve(baseDir);
   const raw = String(name == null ? '' : name);
+  // Descarta separadores, '..' y rutas absolutas de cualquier sabor.
   const safe = raw.replace(/[\\/]+/g, '_').replace(/^\.+/, '').trim();
   if (!safe) return null;
   const resolved = path.resolve(base, safe);
+  // Debe ser un archivo dentro de base, no el propio directorio.
   if (resolved === base || !resolved.startsWith(base + path.sep)) return null;
   return resolved;
 }
+
+// Confina una ruta arbitraria a baseDir (para abrir/leer archivos ya guardados).
+function isPathInside(baseDir, target) {
+  if (!target) return false;
+  const base = path.resolve(baseDir);
+  const resolved = path.resolve(String(target));
+  return resolved === base || resolved.startsWith(base + path.sep);
+}
+
 // Config
 ipcMain.handle('get-cfg', () => cfgSnapshot());
 ipcMain.handle('update-cfg', (e, patch) => {
+  const clean = sanitizeCfgPatch(patch);
   // Mutar CFG existente para que referencias (ctx.cfg en módulos) no queden obsoletas
-  Object.assign(CFG, patch);
-  if (patch.aiConfig) CFG.aiConfig = { ...CFG.aiConfig, ...patch.aiConfig };
-  if ((patch.blockAds !== undefined || patch.blockTrackers !== undefined) && ACTIONS.adblockToggle) {
+  Object.assign(CFG, clean);
+  if ((clean.blockAds !== undefined || clean.blockTrackers !== undefined) && ACTIONS.adblockToggle) {
     ACTIONS.adblockToggle({ ads: CFG.blockAds, trackers: CFG.blockTrackers });
   }
-  if (patch.dohEnabled !== undefined || patch.dohServer !== undefined) {
+  if (clean.dohEnabled !== undefined || clean.dohServer !== undefined) {
     applyDoH();
   }
-  if (patch.cookiePolicy !== undefined) {
+  if (clean.cookiePolicy !== undefined) {
     applyCookiePolicy(CFG.cookiePolicy);
     refreshCookieGuards();
   }
-  saveCfg();
+  if (Object.keys(clean).length) saveCfg();
   return cfgSnapshot();
 });
 ipcMain.handle('proxy:set', async (_e, settings = {}) => {
@@ -1632,9 +1728,14 @@ function shouldReportRequest(details) {
 
 function recordBlockedRequest(details, forcedType) {
   const type = forcedType || classifyRequest(details.url, details.documentUrl || details.referrer || '');
-  if (forcedType && type === 'ads' && classifyRequest(details.url, details.documentUrl || details.referrer || '') !== 'ads') STATS.detectedAds++;
-  if (forcedType && type === 'trackers' && classifyRequest(details.url, details.documentUrl || details.referrer || '') !== 'trackers') STATS.detectedTrackers++;
-  if (forcedType && type === 'third' && classifyRequest(details.url, details.documentUrl || details.referrer || '') !== 'third') STATS.detectedThird++;
+  // Los contadores 'detected*' / 'blocked*': detected cuenta lo que el motor
+  // detecto como publicidad (y que por tanto bloqueo), blocked cuenta el
+  // total. Antes se condicionaba a que el clasificador NO coincidiera con el
+  // tipo forzado, o sea se contaban las discrepancias en vez de las
+  // detecciones, y un bloqueo bien clasificado no sumaba nada.
+  if (forcedType && type === 'ads') STATS.detectedAds++;
+  if (forcedType && type === 'trackers') STATS.detectedTrackers++;
+  if (forcedType && type === 'third') STATS.detectedThird++;
   if (type === 'ads') STATS.blockedAds++;
   if (type === 'trackers') STATS.blockedTrackers++;
   if (type === 'third') STATS.blockedThird++;
@@ -1651,6 +1752,17 @@ function recordBlockedRequest(details, forcedType) {
     mainWin.webContents.send('stats-update', { ...STATS, uptime: Date.now() - STATS.uptimeStart });
   }
 }
+// Evita inundar el IPC en paginas con cientos de requests: coalesce en un
+// update por segundo como maximo.
+let _statsUpdateTimer = null;
+function scheduleStatsUpdate() {
+  if (_statsUpdateTimer) return;
+  _statsUpdateTimer = setTimeout(() => {
+    _statsUpdateTimer = null;
+    if (!mainWin || mainWin.isDestroyed()) return;
+    try { mainWin.webContents.send('stats-update', { ...STATS, uptime: Date.now() - STATS.uptimeStart }); } catch {}
+  }, 1000);
+}
 function recordObservedRequest(details) {
   STATS.totalRequests++;
   if (details.resourceType === 'main_frame' || details.resourceType === 'mainFrame') STATS.pagesLoaded++;
@@ -1658,6 +1770,12 @@ function recordObservedRequest(details) {
   if (type === 'ads') STATS.detectedAds++;
   if (type === 'trackers') STATS.detectedTrackers++;
   if (type === 'third') STATS.detectedThird++;
+  // shouldReportRequest() filtra imagenes/CSS/fuentes/media, asi que antes el
+  // contador de requests totales subia cientos de veces por pagina y la UI
+  // nunca recibia el evento: 'totalRequests' se quedaba congelado salvo que
+  // hubiera un bloqueo. Se manda un update con throttle (~1s) para que el
+  // contador se mueva sin spamear el IPC en cada request.
+  scheduleStatsUpdate();
   if (mainWin && !mainWin.isDestroyed() && shouldReportRequest(details)) {
     const short = details.url.replace(/https?:\/\//, '').substring(0, 80);
     mainWin.webContents.send('req-blocked', { type, resourceType: details.resourceType, blocked: false, url: details.url, msg: short });
@@ -1881,7 +1999,10 @@ async function sampleProcessMetrics() {
         type: metric.type,
         role,
         state: 'Activo',
-        memory: memoryByPid.get(metric.pid) || Math.round((metric.memory?.workingSetSize || metric.memory?.privateBytes || 0) / 1048576),
+        // tasklist ya entrega MB. Si falla, el fallback usa el workingSetSize de
+        // Electron, que viene en KILOBYTES: hay que dividir por 1024, no por
+        // 1048576 (esa conversión es de bytes y mostraba ~1000x menos RAM).
+        memory: memoryByPid.get(metric.pid) || Math.round((metric.memory?.workingSetSize || metric.memory?.privateBytes || 0) / 1024),
         cpu: Number(metric.cpu?.percentCPUUsage || 0).toFixed(1),
         url: suppressUrl ? '' : context?.url || '',
         service: ''
@@ -2607,17 +2728,28 @@ ipcMain.handle('dl-native-retry', (_e, id, saved = {}) => {
   if (!url) return { ok: false };
   try {
     pendingNativeRetryId = id;
-    const source = entry?.webContentsId ? require('electron').webContents.fromId(entry.webContentsId) : null;
-    if (source && !source.isDestroyed()) source.downloadURL(entry.url);
+    const source = entry?.webContentsId ? webContents.fromId(entry.webContentsId) : null;
+    if (source && !source.isDestroyed()) source.downloadURL(url);
     else session.fromPartition(saved.partition || 'persist:mc').downloadURL(url);
     return { ok: true };
   } catch { return { ok: false }; }
 });
 ipcMain.handle('open-dl-folder', () => { shell.openPath(CFG.downloadDir || app.getPath('downloads')); });
+const OPENABLE_EXT_MAIN = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.mp4', '.webm', '.m4v', '.mov', '.mp3', '.wav', '.ogg', '.opus', '.flac', '.m4a', '.aac', '.bin', '.txt', '.json']);
 ipcMain.handle('dl:open-file', async (_e, filePath) => {
   try {
-    if (!filePath || !fs.existsSync(filePath)) return { error: 'Archivo no encontrado' };
-    const err = await shell.openPath(filePath);
+    if (!filePath || typeof filePath !== 'string') return { error: 'Ruta no válida' };
+    const dlDir = CFG.downloadDir || app.getPath('downloads');
+    const base = path.resolve(dlDir);
+    const resolved = path.resolve(filePath);
+    if (resolved !== base && !resolved.startsWith(base + path.sep)) {
+      return { error: 'Ruta fuera de la carpeta de descargas' };
+    }
+    if (!OPENABLE_EXT_MAIN.has(path.extname(resolved).toLowerCase())) {
+      return { error: 'Tipo de archivo no permitido' };
+    }
+    if (!fs.existsSync(resolved)) return { error: 'Archivo no encontrado' };
+    const err = await shell.openPath(resolved);
     return err ? { error: err } : { ok: true };
   } catch (err) { return { error: err.message }; }
 });
@@ -3062,7 +3194,6 @@ ipcMain.handle('import-session', async () => {
 let streamHlsCaptureEnabled = false;
 const streamPlayerReferers = new Map();
 const streamEntryReferers = new Map();
-const streamContainerPlayers = new Map();
 function findHlsPlayerEntry(details) {
   const webContentsId = Number(details?.webContentsId) || 0;
   const documentUrls = [details?.documentUrl, details?.webContentsURL, details?.frame?.url, details?.frame?.top?.url].filter(Boolean);
@@ -3323,68 +3454,8 @@ ipcMain.handle('streams:entry-referer', (event, { token, url, referer } = {}) =>
     webContentsId: event.sender.id,
     expiresAt: Date.now() + 30000
   });
-  streamContainerPlayers.set(token, {
-    webContentsId: event.sender.id,
-    targetUrl: requestUrl.href,
-    expiresAt: Date.now() + 30000,
-    tapSent: false
-  });
   while (streamEntryReferers.size > 100) streamEntryReferers.delete(streamEntryReferers.keys().next().value);
-  while (streamContainerPlayers.size > 100) streamContainerPlayers.delete(streamContainerPlayers.keys().next().value);
   return true;
-});
-ipcMain.handle('streams:container-player-tap', async (event, { token } = {}) => {
-  const entry = streamContainerPlayers.get(token);
-  const senderUrl = (() => { try { return event.sender.getURL(); } catch { return ''; } })();
-  if (!entry || entry.tapSent || entry.expiresAt <= Date.now() || entry.webContentsId !== event.sender.id || !senderUrl.includes(token)) return false;
-  const ownerWindow = BrowserWindow.fromWebContents(event.sender);
-  if (!ownerWindow || ownerWindow.isDestroyed() || !ownerWindow.isFocused()) return false;
-  let targetUrl;
-  try { targetUrl = new URL(entry.targetUrl); } catch { return false; }
-  let candidateFrames = [];
-  try {
-    const frames = [event.sender.mainFrame, ...(event.sender.mainFrame?.framesInSubtree || [])].filter(Boolean);
-    candidateFrames = frames.filter(frame => {
-      try {
-        const frameUrl = new URL(frame.url);
-        const isDailymotion = frameUrl.hostname === 'dailymotion.com' || frameUrl.hostname.endsWith('.dailymotion.com');
-        return isDailymotion && (frameUrl.origin === targetUrl.origin && frameUrl.pathname === targetUrl.pathname || /\/(player|embed|video)\//i.test(frameUrl.pathname));
-      } catch { return false; }
-    });
-    candidateFrames.sort((a, b) => Number(b.url === entry.targetUrl) - Number(a.url === entry.targetUrl));
-  } catch {}
-  entry.tapSent = true;
-  try {
-    event.sender.focus();
-    for (const frame of candidateFrames) {
-      try {
-        const result = await frame.executeJavaScript(`(() => {
-          const selectors = [
-            'button[data-testid="button-playback"][aria-label="Reproducir"]',
-            'button[data-testid="button-playback"]',
-            'button[aria-label="Reproducir"]',
-            'button[aria-label="Play"]',
-            'button.playback_button'
-          ];
-          let button = null;
-          for (const selector of selectors) {
-            button = [...document.querySelectorAll(selector)].find(candidate => {
-              const rect = candidate.getBoundingClientRect();
-              return !candidate.disabled && rect.width > 0 && rect.height > 0;
-            });
-            if (button) break;
-          }
-          if (!button) return { ok: false, reason: 'play-button-not-found' };
-          const label = button.getAttribute('aria-label') || '';
-          if (/pausar|pause/i.test(label)) return { ok: true, alreadyPlaying: true, label };
-          button.click();
-          return { ok: true, clicked: true, label };
-        })()`, true);
-        if (result?.ok) return { ...result, frameUrl: frame.url };
-      } catch {}
-    }
-    return { ok: false, reason: candidateFrames.length ? 'play-button-not-found' : 'player-frame-not-found', framesChecked: candidateFrames.length };
-  } catch { return false; }
 });
 // yt-dlp
 let ytdlpPath = '';
@@ -3591,10 +3662,6 @@ async function resolveCtxCssPoint(wc, params) {
         r.onerror = () => rej(new Error('FileReader error'));
         r.readAsDataURL(blob);
       });
-      const extFor = (mime) => mime.includes('png') ? 'png' : mime.includes('jpeg') || mime.includes('jpg') ? 'jpg'
-        : mime.includes('gif') ? 'gif' : mime.includes('webp') ? 'webp'
-        : mime.includes('webm') ? 'webm' : mime.includes('mp4') ? 'mp4'
-        : mime.includes('ogg') ? 'ogv' : 'png';
       let target = null;
       let node = document.elementFromPoint(px, py);
       while (node && node.nodeType === 1) {
@@ -3619,7 +3686,7 @@ async function resolveCtxCssPoint(wc, params) {
         const src = target.currentSrc || target.src || '';
         if (src.startsWith('data:')) {
           const mime = (src.split(';')[0] || 'data:image/png').split(':')[1] || 'image/png';
-          return { type: 'image', dataUrl: src, mimeType: mime, name: 'generated.' + extFor(mime) };
+          return { type: 'image', dataUrl: src, mimeType: mime };
         }
         if (src.startsWith('blob:')) {
           try {
@@ -3627,10 +3694,10 @@ async function resolveCtxCssPoint(wc, params) {
             const blob = await resp.blob();
             const dataUrl = await toDataUrl(blob);
             const mime = blob.type || 'image/png';
-            return { type: 'image', dataUrl, mimeType: mime, name: 'generated.' + extFor(mime) };
+            return { type: 'image', dataUrl, mimeType: mime };
           } catch (e) { return { error: 'No se pudo leer la imagen: ' + e.message }; }
         }
-        if (/^https?:/i.test(src)) return { type: 'url', url: src, name: 'generated.png' };
+        if (/^https?:/i.test(src)) return { type: 'url', url: src };
         return { error: 'Imagen no soportada: ' + src.slice(0, 60) };
       }
       if (target.tagName === 'VIDEO') {
@@ -3641,10 +3708,10 @@ async function resolveCtxCssPoint(wc, params) {
             const blob = await resp.blob();
             const dataUrl = await toDataUrl(blob);
             const mime = blob.type || 'video/mp4';
-            return { type: 'video', dataUrl, mimeType: mime, name: 'generated.' + extFor(mime) };
+            return { type: 'video', dataUrl, mimeType: mime };
           } catch (e) { return { error: 'No se pudo leer el video: ' + e.message }; }
         }
-        if (/^https?:/i.test(src)) return { type: 'url', url: src, name: 'generated.mp4' };
+        if (/^https?:/i.test(src)) return { type: 'url', url: src };
         return { error: 'Video no soportado: ' + src.slice(0, 60) };
       }
       return { error: 'Elemento no soportado' };
@@ -4009,7 +4076,11 @@ app.on('web-contents-created', (event, wc) => {
         {
           label: contextMediaLabel,
           click: () => {
-            if (/^https?:\/\//i.test(params.srcURL)) mainWin?.webContents?.downloadURL(params.srcURL);
+            // Descargar desde el webContents que lanzó el menú, no desde
+            // mainWin: para un <video> incrustado en otro frame, downloadURL
+            // desde la ventana principal no resuelve la URL.
+            const target = (!wc || wc.isDestroyed()) ? mainWin?.webContents : wc;
+            if (/^https?:\/\//i.test(params.srcURL)) target?.downloadURL(params.srcURL);
             else if (/^(blob|data):/i.test(params.srcURL)) {
               saveBlobOrDataUrlToDownloads(wc, params.srcURL, 'multimedia', params.frame)
                 .then(r => { if (!r.ok) console.error('[blob-download]', r.error); });

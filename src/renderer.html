@@ -4658,9 +4658,11 @@ function bindWebviewToTab(id, wv) {
           } catch {}
         };
 
-        // Indica si estamos forzando 16x durante un anuncio (para restaurar la
-        // velocidad normal al terminar sin pisar la velocidad elegida por el usuario)
-        let adRateActive = false;
+// Estado de mute previo para no dejar el video mudo al terminar el
+        // anuncio. YouTube reutiliza el mismo elemento <video> entre anuncio y
+        // contenido, asi que si no se restaura el contenido queda en silencio.
+        let adMuteActive = false;
+        let videoMutedBeforeAd = false;
 
         const trySkip = () => {
           try {
@@ -4670,9 +4672,9 @@ function bindWebviewToTab(id, wv) {
             // detección falla porque removeCompanionAds ya los quitó).
             // 'ad-created' aparece en cuanto se crea el anuncio (antes de
             // 'ad-showing'), pero puede aparecer aunque el anuncio ya se esté
-            // saltando (p. ej. porque bloqueamos el stream). Por eso se
-            // separa: 'adCreated' solo intenta saltar, y el 16x solo se aplica
-            // si el anuncio está REALMENTE mostrándose ('adShowing').
+            // saltando (p. ej. porque bloqueamos el stream). Por eso se separa:
+            // 'adCreated' solo intenta saltar, y el mute solo se aplica si el
+            // anuncio está REALMENTE mostrándose ('adShowing').
             const adCreated = player.classList.contains('ad-created');
             const adShowing = player.classList.contains('ad-showing')
               || !!document.querySelector('.ytp-ad-player-overlay')
@@ -4685,11 +4687,12 @@ function bindWebviewToTab(id, wv) {
 
             const video = document.querySelector('video');
             if (!isAd) {
-              // Restaurar velocidad normal solo si la forzamos nosotros
-              if (adRateActive && video) {
-                try { video.playbackRate = 1; video.defaultPlaybackRate = 1; } catch {}
+              // Fin del anuncio: restaurar el audio que tenia el video antes.
+              if (adMuteActive && video) {
+                try { video.muted = videoMutedBeforeAd; } catch {}
               }
-              adRateActive = false;
+              adMuteActive = false;
+              videoMutedBeforeAd = false;
               return;
             }
 
@@ -4700,20 +4703,17 @@ function bindWebviewToTab(id, wv) {
             // 2) API interna del reproductor
             try { if (typeof player.skipAd === 'function') { player.skipAd(); return; } } catch {}
 
-            // 3) Anuncios no saltables: silenciar y acelerar a 16x (máximo de
-            //    Chrome). defaultPlaybackRate mantiene la velocidad aunque
-            //    cambie la fuente del video (p. ej. entre anuncios de un pod);
-            //    se restaura a 1 al terminar. (el seek al final congela o
-            //    reinicia el anuncio, y ocultar el video lo pausa; por eso se
-            //    usa solo playbackRate). SOLO si el anuncio está mostrándose:
-            //    si solo hay 'ad-created' (stream bloqueado, YouTube lo salta
-            //    solo), NO hay que acelerar el video de contenido.
+            // 3) Anuncios no saltables: solo silenciar. NO se toca
+            //    playbackRate (colgaba el player) ni se hace seek (congela o
+            //    reinicia el anuncio). SOLO si el anuncio está mostrándose: si
+            //    solo hay 'ad-created' (stream bloqueado, YouTube lo salta
+            //    solo), no hay que silenciar el video de contenido.
             if (adShowing && video) {
+              if (!adMuteActive) {
+                adMuteActive = true;
+                videoMutedBeforeAd = !!video.muted;
+              }
               video.muted = true;
-              try { video.playbackRate = 16; video.defaultPlaybackRate = 16; } catch {}
-              adRateActive = true;
-              const p = video.play();
-              if (p && p.catch) p.catch(() => {});
             }
           } catch {}
         };
@@ -5204,10 +5204,12 @@ function clearReqLog()   { state.reqLog = []; renderReqLog(); setText('req-count
 
 // ── stats ───────────────────────────────────────
 function refreshStats() {
-  const s = state.stats;
-  setText('stat-ads',      s.detectedAds ?? s.blockedAds);
-  setText('stat-trackers', s.detectedTrackers ?? s.blockedTrackers);
-  setText('stat-third',    s.detectedThird ?? s.blockedThird);
+  const s = state.stats || {};
+  // Sin fallback con '??': STATS siempre inicializa ambos campos, asi que
+  // detectedAds es 0 (no undefined) y el camino blocked nunca se tomaba.
+  setText('stat-ads',      s.detectedAds);
+  setText('stat-trackers', s.detectedTrackers);
+  setText('stat-third',    s.detectedThird);
   setText('stat-ads-blocked', s.blockedAds);
   setText('stat-trackers-blocked', s.blockedTrackers);
   setText('stat-third-blocked', s.blockedThird);
@@ -5217,10 +5219,12 @@ function refreshStats() {
   setText('nt-trackers',   s.blockedTrackers);
   setText('nt-media',      s.detectedMedia);
   setText('nt-req',        s.totalRequests);
-  const total = s.blockedAds + s.blockedTrackers + s.blockedThird + s.blockedCrypto;
+  const total = (s.blockedAds || 0) + (s.blockedTrackers || 0) + (s.blockedThird || 0) + (s.blockedCrypto || 0);
   const pill = $('blocked-pill');
-  pill.textContent = total + ' bloqueados';
-  pill.className = 'blocked-pill' + (total > 50 ? ' danger' : '');
+  if (pill) {
+    pill.textContent = total + ' bloqueados';
+    pill.className = 'blocked-pill' + (total > 50 ? ' danger' : '');
+  }
 }
 
 // ── Status bar resources monitor ──────────────
@@ -5231,15 +5235,26 @@ function startStatusBarResources() {
     if (typeof mc === 'undefined' || typeof mc.getProcesses !== 'function') return;
     try {
       const processes = await mc.getProcesses();
-      const browserItems = processes.filter(p => p.type === 'Browser');
+      // ProcessMetric.type puede ser 'Browser' | 'Tab' | 'Utility' | 'Zygote'
+      // | 'Sandbox helper' | 'GPU'. Los renderers de cada pestaña/webview son
+      // de tipo 'Tab', NO 'Browser': filtrar solo por 'Browser' contaba el
+      // proceso principal y descartaba la memoria/CPU de todas las pestañas,
+      // Perchance, WhatsApp e IA — que es casi todo.
+      //
+      // La barra muestra el consumo de las PESTAÑAS (renderers), no de todo
+      // el proceso de la app: el proceso principal incluye el overhead del
+      // browser y sus servicios y no es lo que el usuario perceive como "lo que
+      // me está pesando". GPU se suma aparte en CPU porque el video/webgl corre
+      // ahí y su carga es visible.
+      const tabItems = processes.filter(p => p.type === 'Tab');
       const gpuItems = processes.filter(p => p.type === 'GPU');
 
-      const browserMemory = browserItems.reduce((sum, item) => sum + (Number(item.memory) || 0), 0);
-      const browserCpu = browserItems.reduce((sum, item) => sum + (Number(item.cpu) || 0), 0);
+      const tabMemory = tabItems.reduce((sum, item) => sum + (Number(item.memory) || 0), 0);
+      const tabCpu = tabItems.reduce((sum, item) => sum + (Number(item.cpu) || 0), 0);
       const gpuCpu = gpuItems.reduce((sum, item) => sum + (Number(item.cpu) || 0), 0);
 
       const el = $('st-resources');
-      if (el) el.textContent = `CPU ${browserCpu.toFixed(0)}% \u00b7 GPU ${gpuCpu.toFixed(0)}% \u00b7 RAM ${browserMemory} MB`;
+      if (el) el.textContent = `CPU ${tabCpu.toFixed(0)}% · GPU ${gpuCpu.toFixed(0)}% · RAM ${tabMemory} MB`;
     } catch {}
   }
   update();
@@ -5309,6 +5324,24 @@ async function updateGpuAcceleration() {
 
 async function updateUA() {
   const currentUA = $('ua-select').value;
+  // NOTA (pendiente, no es bug): 'rotateUA' viaja en este patch pero
+  // sanitizeCfgPatch() (main.js, CFG_WRITABLE) no lo incluye en la whitelist,
+  // así que se descarta en silencio. Hoy no importa: la rotación de UA está
+  // desactivada a propósito porque Google OAuth solo funciona con el UA nativo
+  // de Electron, y CFG.rotateUA ni siquiera se aplica (rotateIdentity() es un
+  // stub y currentUA solo se guarda/displaya, no se aplica a la página).
+  //
+  // Cuando se implemente la rotación hay que hacer las DOS cosas:
+  //   1. agregar 'rotateUA' a CFG_WRITABLE en main.js como 'bool' para que el
+  //      campo deje de filtrarse en silencio;
+  //   2. implementar de verdad rotateIdentity() — ojo con dos trampas ya
+  //      identificadas en el código:
+  //        - el UA efectivo se decide por partición/sesión, no por un toggle
+  //          global, porque hay que mantener el UA nativo en la partición de
+  //          login de Google;
+  //        - applyFP() corre en el mundo aislado del preload y no alcanza la
+  //          página, así que un UA por webContents tampoco sería observable
+  //          desde el JS de la web sin pasar por otro mecanismo.
   state.cfg = await mc.updateCfg({ currentUA, rotateUA: false });
   setText('st-ua', 'UA: ' + (UA_LABELS[currentUA] || currentUA));
   refreshIdentity();
@@ -5361,7 +5394,7 @@ function refreshIdentity() {
 }
 
 function rotateIdentity() {
-  addSidebarLog('info', '[FP] Rotación de UA desactivada; se mantiene Chrome 124 estable');
+  addSidebarLog('info', '[FP] Rotación de UA desactivada: el login de Google (OAuth) solo funciona bien con el UA nativo de Electron');
 }
 
 function copyIdentity() {
@@ -6082,27 +6115,6 @@ function renderSidebarStreams() {
   containers.forEach(container => { container.innerHTML = markup; });
 }
 
-const CONTAINER_AUTOPLAY_PROFILES = [
-  { host: 'geo.dailymotion.com', path: /^\/player\//i, query: { autoplay: '1', mute: '1' }, tapDelayMs: 100 }
-];
-
-function getContainerAutoplayProfile(url) {
-  try {
-    const parsed = new URL(url);
-    return CONTAINER_AUTOPLAY_PROFILES.find(candidate => parsed.hostname === candidate.host && candidate.path.test(parsed.pathname)) || null;
-  } catch { return null; }
-}
-
-function applyContainerAutoplayProfile(url) {
-  try {
-    const parsed = new URL(url);
-    const profile = getContainerAutoplayProfile(url);
-    if (!profile) return url;
-    for (const [key, value] of Object.entries(profile.query)) parsed.searchParams.set(key, value);
-    return parsed.href;
-  } catch { return url; }
-}
-
 function openStreamResource(url, type, pageUrl, refererToken = '', refererValue = '') {
   if (!url) return;
   const isContainer = /^CONTAINER$/i.test(type || '');
@@ -6110,9 +6122,7 @@ function openStreamResource(url, type, pageUrl, refererToken = '', refererValue 
     addTab(url, pageUrl);
     return;
   }
-  const containerProfile = isContainer ? getContainerAutoplayProfile(url) : null;
-  const containerTapDelayMs = containerProfile?.tapDelayMs || 0;
-  const playbackUrl = isContainer ? applyContainerAutoplayProfile(url) : url;
+  const playbackUrl = url;
   const isAudio = /audio/i.test(type || '');
   const tag = isAudio ? 'audio' : 'video';
   const hls = !isContainer && (/\.(m3u8)(?:\?|#|$)/i.test(url) || /HLS/i.test(type || ''));
@@ -6146,7 +6156,13 @@ function openStreamResource(url, type, pageUrl, refererToken = '', refererValue 
         if (window.hlsInstance) { window.hlsInstance.destroy(); window.hlsInstance = null; }
         stage.classList.remove('ready');
         if (window.Hls && Hls.isSupported()) {
-          const hlsInstance = new Hls({ debug: false, enableWorker: true });
+          const hlsInstance = new Hls({
+            debug: false,
+            enableWorker: true,
+            maxBufferLength: 60,
+            maxMaxBufferLength: 120,
+            maxBufferSize: 180 * 1000 * 1000
+          });
           window.hlsInstance = hlsInstance;
           hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
             setStatus('Manifest cargado. Reproduciendo...', '');
@@ -6178,29 +6194,11 @@ function openStreamResource(url, type, pageUrl, refererToken = '', refererValue 
       const token = ${hlsPlayerToken};
       const url = ${JSON.stringify(playbackUrl)};
       const referer = ${JSON.stringify(refererValue || '')};
-      const tapDelayMs = ${JSON.stringify(containerTapDelayMs)};
       let targetNavigationStarted = false;
-      let tapScheduled = false;
       frame.addEventListener('load', () => {
         if (!targetNavigationStarted) return;
         stage.classList.add('ready');
         statusText.textContent = 'Contenedor cargado';
-        if (!tapDelayMs || tapScheduled) return;
-        tapScheduled = true;
-        setTimeout(async () => {
-          const tap = window.__mcSelectionBridge?.tapContainerPlay;
-          if (!tap) { statusText.textContent = 'Contenedor cargado; toque automático no disponible'; return; }
-          try {
-            const result = await tap(token);
-            if (result?.alreadyPlaying) statusText.textContent = 'El contenedor ya estaba reproduciendo';
-            else if (result?.clicked) statusText.textContent = 'Clic enviado al botón Reproducir';
-            else if (result?.reason === 'player-frame-not-found') statusText.textContent = 'No se encontró frame Dailymotion (' + (result.framesChecked || 0) + ')';
-            else if (result?.reason === 'play-button-not-found') statusText.textContent = 'No se encontró el botón Reproducir';
-            else statusText.textContent = 'No se pudo activar el reproductor';
-          } catch {
-            statusText.textContent = 'Contenedor cargado; no se pudo activar';
-          }
-        }, tapDelayMs);
       });
       frame.addEventListener('error', () => { statusText.textContent = 'No se pudo cargar el contenedor'; });
       (async () => {
@@ -6623,46 +6621,54 @@ function renderPersistedDownloads() {
   // Solo renderizar las que no están ya en el DOM (las activas se renderizan en vivo)
   state.downloads.forEach(d => {
     if (document.getElementById(d.id)) return;
-    if (d.state === 'active' && !d.perchance) return; // las demás activas se renderizan en vivo
+    // Las activas se renderizan en vivo SOLO durante la sesion en la que
+    // arrancaron. Una 'active' sin item en el DOM viene de una sesion previa
+    // (app cerrada a mitad de una descarga grande, p.ej. video): hay que
+    // mostrarla igual, si no queda invisible en el historial para siempre.
     const el = document.createElement('div');
     el.className = 'dl-item'; el.id = d.id;
     el.draggable = false;
     el.addEventListener('dragstart', (e) => { e.preventDefault(); e.stopPropagation(); });
+    // Sin item en vivo no hay progreso real: el DownloadItem de Electron
+    // murio con la sesion anterior. Se muestra como interrumpida para que
+    // ofrezca 'Reanudar' en vez de un 0% que nunca avanza.
+    const isStaleActive = d.state === 'active' && !d.perchance;
+    const shownState = isStaleActive ? 'interrupted' : (d.state || 'done');
     el.dataset.url = d.url || '';
     el.dataset.type = d.type || 'MP4';
     el.dataset.page = d.page || '';
     el.dataset.name = d.name || '';
-    el.dataset.state = d.state || 'done';
+    el.dataset.state = shownState;
     el.dataset.file = d.file || '';
     el.dataset.perchance = d.perchance ? 'true' : 'false';
     el.dataset.native = d.native || String(d.id).startsWith('dl-native-') ? 'true' : 'false';
     const dom = (d.url || '').replace(/https?:\/\//, '').split('/')[0] || '';
-    const fullName = d.state === 'done' && d.filename
+    const fullName = shownState === 'done' && d.filename
       ? d.filename
       : (d.name ? d.name.replace(/_\d+$/, '') : (d.filename || 'descarga'));
     const friendly = compactDownloadName(fullName);
-    const stateLabel = d.state === 'done' ? '✓ ' + (d.size || '') + ' MB' :
-               d.state === 'active' ? (d.total > 0 ? (d.progress || 0) + '%' : 'Descargando') :
-                       d.state === 'error' ? '✗ ERROR' :
-                       d.state === 'cancelled' ? '✕ Cancelado' :
-                       d.state === 'interrupted' ? '↻ Interrumpida' : '—';
-    const stateColor = d.state === 'done' ? 'var(--success)' :
-               d.state === 'active' ? 'var(--accent)' :
-                       d.state === 'error' ? 'var(--danger)' :
-                       d.state === 'cancelled' ? 'var(--danger)' : 'var(--warn)';
-    const metaHtml = d.state === 'done' && d.file
+    const stateLabel = shownState === 'done' ? '✓ ' + (d.size || '') + ' MB' :
+               shownState === 'active' ? (d.total > 0 ? (d.progress || 0) + '%' : 'Descargando') :
+                       shownState === 'error' ? '✗ ERROR' :
+                       shownState === 'cancelled' ? '✕ Cancelado' :
+                       shownState === 'interrupted' ? '↻ Interrumpida' : '—';
+    const stateColor = shownState === 'done' ? 'var(--success)' :
+               shownState === 'active' ? 'var(--accent)' :
+                       shownState === 'error' ? 'var(--danger)' :
+                       shownState === 'cancelled' ? 'var(--danger)' : 'var(--warn)';
+    const metaHtml = shownState === 'done' && d.file
       ? '<a href="#" onclick="openDlFile(\'' + d.id + '\');return false;" style="color:var(--accent);text-decoration:underline;">Abrir archivo</a> &middot; <a href="#" onclick="mc.openDlFolder();return false;" style="color:var(--accent);text-decoration:underline;">Abrir carpeta</a>'
-      : d.state === 'active' && d.perchance
+      : shownState === 'active' && d.perchance
         ? fmtBytes(d.received || 0) + ' / ' + fmtBytes(d.total || 0)
         : escapeHtml(d.filename || friendly);
     el.innerHTML =
       '<div class="dl-header"><span class="dl-name" title="'+escapeHtml(fullName)+'">'+escapeHtml(friendly)+'</span><span class="dl-pct" id="pct-'+d.id+'" style="color:'+stateColor+'">'+stateLabel+'</span></div>'
-    +'<div class="pbar"><div class="pfill" id="fill-'+d.id+'" style="width:'+(d.state==='done'?'100%':Math.min(100,Math.max(0,Number(d.progress)||0))+'%')+'"'+(d.state==='error'||d.state==='cancelled'?' class="error"':'')+'></div></div>'
-    +'<div class="dl-meta"><span id="meta-'+d.id+'">'+metaHtml+'</span><span id="speed-'+d.id+'">'+(d.state === 'done' ? '' : '— KB/s')+'</span></div>'
+    +'<div class="pbar"><div class="pfill" id="fill-'+d.id+'" style="width:'+(shownState==='done'?'100%':Math.min(100,Math.max(0,Number(d.progress)||0))+'%')+'"'+(shownState==='error'||shownState==='cancelled'?' class="error"':'')+'></div></div>'
+    +'<div class="dl-meta"><span id="meta-'+d.id+'">'+metaHtml+'</span><span id="speed-'+d.id+'">'+(shownState === 'done' ? '' : '— KB/s')+'</span></div>'
      +'<div class="dl-actions">'
-     +  (d.state === 'interrupted' && !d.perchance
+     +  (shownState === 'interrupted' && !d.perchance
        ? '<button class="dl-btn" data-act="resume" onclick="retryPersistedDownload(\''+d.id+'\')" title="Reanudar">▶</button><button class="dl-btn" data-act="pause" onclick="pausePersistedDownload(\''+d.id+'\')" title="Pausar" style="display:none">⏸</button><button class="dl-btn" data-act="cancel" onclick="cancelPersistedDownload(\''+d.id+'\')" title="Cancelar">✕</button>'
-       : !d.perchance && (d.state === 'error' || d.state === 'cancelled')
+       : !d.perchance && (shownState === 'error' || shownState === 'cancelled')
          ? '<button class="dl-btn" data-act="retry" onclick="dlAction(\'retry\',\''+d.id+'\')" title="Reintentar">↻</button>'
          : '')
      +'</div>';

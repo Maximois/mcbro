@@ -407,6 +407,11 @@ const ALERT_BUBBLE_SCRIPT = `(() => {
       // Aviso +18: devolver false cancela la carga del iframe gallery
       // (ERR_ABORTED + pantalla gris). Toast informativo + true = suave y
       // no rompe la galería.
+      // NOTA de escapado: esto vive dentro de ALERT_BUBBLE_SCRIPT, que es un
+      // template literal, así que el '\\s' del source llega a la página como
+      // '\s' (correcto). No "simplificar" a '\s' aquí: en el source del módulo
+      // quedaría un escape simple que el template consumiría, y la página
+      // recibiría 's*' (letra s), dejando de matchear "over 18".
       if (/WARNING|over\\s*18|adult themes|young viewers|inappropriate for young/i.test(msg)) {
         showAlert(msg);
         return true;

@@ -1,5 +1,5 @@
 ﻿'use strict';
-const { ipcMain, BrowserWindow, session, safeStorage, app, dialog } = require('electron');
+const { ipcMain, BrowserWindow, session, safeStorage, app, dialog, webContents } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -7,6 +7,222 @@ const { spawn } = require('child_process');
 // Safe logging — evita EPIPE cuando stdout/stderr están redirigidos a pipe roto
 function safeLog(...args) { try { console.log(...args); } catch {} }
 function safeErr(...args) { try { console.error(...args); } catch {} }
+
+// Convierte un nombre de archivo en ruta dentro de baseDir sin poder escapar.
+// Descarta separadores, '..' y rutas absolutas; null si no queda nada utilizable.
+function safeNameIn(baseDir, name) {
+  const base = path.resolve(baseDir);
+  const safe = String(name == null ? '' : name).replace(/[\\/]+/g, '_').replace(/^\.+/, '').trim();
+  if (!safe) return null;
+  const resolved = path.resolve(base, safe);
+  if (resolved === base || !resolved.startsWith(base + path.sep)) return null;
+  return resolved;
+}
+
+// ── shapePageHtml: convierte HTML crudo en contexto útil para el modelo ──
+//
+// El objetivo no es "mandar menos" sino mandar lo que sirve: un outline de la
+// estructura (encabezados, landmarks, tablas, listas, media) más el texto real
+// del body. Los <script>/<style> son ruido que además es lo que llena el
+// presupuesto de contexto, pero se necesitan aparte para detectar frameworks,
+// así que el HTML crudo se conserva intacto en otra propiedad.
+const SCRIPT_BUDGET = 4000;   // presupuesto para el tail de scripts inline
+
+function shapePageHtml(rawHtml, budget = 30000) {
+  const src = String(rawHtml || '');
+  if (!src) return { text: '', meta: '', outline: '', textLength: 0 };
+
+  // 1) Metadatos: lo que describe la página sin recorrer el body.
+  const meta = [];
+  const pushMeta = (k, v) => {
+    const s = String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+    if (s) meta.push(`${k}: ${s.slice(0, 200)}`);
+  };
+  // Busca <meta name|property="<want>" content="..."> en cualquier orden de
+  // atributos. El valor a comparar es `want` (el nombre del metadato), no el
+  // nombre del atributo: en name="description" hay que buscar 'description'.
+  const metaTag = (attr, want, key) => {
+    const attrRe = new RegExp(`\\b${attr}\\s*=\\s*["']([^"']*)["']`, 'i');
+    const contentRe = /\bcontent\s*=\s*["']([^"']*)["']/i;
+    for (const tag of src.match(/<meta\b[^>]*>/gi) || []) {
+      const a = attrRe.exec(tag);
+      if (!a || a[1].trim().toLowerCase() !== want.toLowerCase()) continue;
+      const c = contentRe.exec(tag);
+      if (c) pushMeta(key || want, c[1]);
+      return;
+    }
+  };
+  metaTag('name', 'description');
+  metaTag('name', 'keywords');
+  metaTag('property', 'og:title');
+  metaTag('property', 'og:description');
+  metaTag('property', 'og:site_name');
+  metaTag('name', 'author');
+  const canonical = /<link[^>]*\brel\s*=\s*["']canonical["'][^>]*\bhref\s*=\s*["']([^"']+)["']/i.exec(src);
+  if (canonical) pushMeta('canonical', canonical[1]);
+  // JSON-LD: nombre/tipo real de la entidad (Product, Article, Recipe...).
+  const ld = [...src.matchAll(/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
+    .map(m => m[1])
+    .flatMap(s => { try { const p = JSON.parse(s); return Array.isArray(p) ? p : [p]; } catch { return []; } })
+    .flatMap(o => (o && (o['@graph'] || []).length ? o['@graph'] : [o]));
+  for (const o of ld.slice(0, 3)) {
+    if (!o || typeof o !== 'object') continue;
+    pushMeta('ld:type', Array.isArray(o['@type']) ? o['@type'].join('/') : o['@type']);
+    pushMeta('ld:name', o.name || o.headline);
+    pushMeta('ld:description', o.description);
+  }
+
+  // 2) Body aislado: el head no aporta nada al análisis de contenido.
+  let body = src;
+  const b = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(src);
+  if (b) body = b[1];
+
+  // 3) Outline: estructura navegable del documento.
+  const outline = [];
+  const headRe = /<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi;
+  for (const m of body.matchAll(headRe)) {
+    const t = cleanText(m[2]);
+    if (t) outline.push(`${'#'.repeat(+m[1])} ${t.slice(0, 160)}`);
+  }
+  const count = (re) => (body.match(re) || []).length;
+  const landmarks = [];
+  if (count(/<main\b/gi)) landmarks.push('main');
+  if (count(/<nav\b/gi)) landmarks.push(`nav×${count(/<nav\b/gi)}`);
+  if (count(/<article\b/gi)) landmarks.push(`article×${count(/<article\b/gi)}`);
+  if (count(/<aside\b/gi)) landmarks.push('aside');
+  if (count(/<form\b/gi)) landmarks.push(`form×${count(/<form\b/gi)}`);
+  if (count(/<table\b/gi)) landmarks.push(`table×${count(/<table\b/gi)}`);
+  if (count(/<iframe\b/gi)) landmarks.push(`iframe×${count(/<iframe\b/gi)}`);
+  if (count(/<video\b/gi)) landmarks.push(`video×${count(/<video\b/gi)}`);
+  // Fuentes de medios: útil para saber qué tipos de contenido tiene la página.
+  const media = [...body.matchAll(/https?:\/\/[^"'\s<>]+\.(?:m3u8|mpd|mp4|webm|m4a|mp3)(?:\?[^"'\s<>]*)?/gi)]
+    .map(m => m[0]);
+  if (media.length) landmarks.push(`media×${media.length}`);
+
+  // 4) Links con texto de ancla:Action-targets que el modelo necesita.
+  const links = [];
+  for (const m of body.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    const t = cleanText(m[2]);
+    if (!t || t.length < 2) continue;
+    links.push(`[${t.slice(0, 60)}](${m[1].slice(0, 160)})`);
+    if (links.length >= 40) break;
+  }
+
+  // 5) Contenido textual limpio.
+  let clean = body
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<svg\b[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<(br|hr)\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|section|article|li|tr|h[1-6]|header|footer|nav)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ');
+  clean = cleanText(clean);
+
+  // 6) Ensamblado por presupuesto. Orden fijo: el contenido útil NUNCA se deja
+  //    afuera por ruido. Antes los scripts inline se agregaban "si sobraba
+  //    presupuesto" y, como son enormes, expulsaban el texto real de la
+  //    página: en una prueba con 40 KB de bundle, 78 chars de contenido
+  //    reais quedaron afuera y el 96% del mensaje era ruido.
+  //    Regla: los scripts solo entran si son cortos y parecen datos/config
+  //    embebidos (JSON-LD, __NEXT_DATA__, etc.), nunca bundles.
+  const MAX_INLINE_SCRIPT = 1500;
+
+  const parts = [];
+  let used = 0;
+  const add = (s, { soft = false } = {}) => {
+    if (!s) return;
+    const room = budget - used;
+    if (room <= 0) return;
+    let piece = s;
+    if (piece.length > room) {
+      if (soft) return;               // opcional: no entra ni truncado
+      piece = piece.slice(0, room);
+    }
+    parts.push(piece);
+    used += piece.length;
+  };
+
+  // 6.1 Contenido útil: prioridad absoluta.
+  add(meta.slice(0, 12).join('\n'));
+  add(landmarks.join(' '));
+  add(outline.slice(0, 120).join('\n'));
+  add(clean);                          // texto real, sin recortar si se puede
+  add(links.join('\n'));
+
+  // 6.2 Datos embebidos pequeños: framework y configuración. Opcional.
+  if (used < budget * 0.6) {
+    const embedded = [...src.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
+      .map(m => m[1].trim())
+      .filter(s => s.length > 0 && s.length <= MAX_INLINE_SCRIPT)
+      .filter(s => !/^\s*(var|let|const|function|!|\(|window\.|document\.)/.test(s) || /__NEXT_DATA__|__NUXT__|__INITIAL|application\/ld/.test(s))
+      .slice(0, 3);
+    add(embedded.join('\n'), { soft: true });
+  }
+
+  const text = parts.join('\n\n').trim();
+  return {
+    text: text.slice(0, budget),
+    meta: meta.slice(0, 12).join('\n'),
+    outline: outline.slice(0, 120),
+    links: links.slice(0, 40),
+    media: [...new Set(media)].slice(0, 30),
+    textLength: clean.length
+  };
+}
+
+// Las entidades nombradas (&eacute;, &macute;, &nbsp;...) no se pueden
+// decodificar con una lista corta:faltaban las acentuadas y comillas tipográficas,
+// que en español son courante. Se usa el decoder del DOM de Chromium, que es el
+// mismo que ve el usuario en la página.
+let _entityDecoder = null;
+function decodeEntities(s) {
+  if (typeof s !== 'string' || !s.includes('&')) return String(s == null ? '' : s);
+  if (_entityDecoder === null) {
+    try {
+      const ta = new TextAreaElement();
+      ta.innerHTML = String(s);
+      _entityDecoder = true;
+      return ta.value;
+    } catch {
+      _entityDecoder = false;   // sin DOM: fallback regex
+    }
+  }
+  if (_entityDecoder === true) return s;
+  // Fallback sin DOM: tabla de las entidades más frecuentes (latín acentuado,
+  // que aparece mucho en contenido en español) + numéricas + comunes.
+  const named = {
+    nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+    hellip: '…', mdash: '—', ndash: '–', laquo: '«', raquo: '»',
+    ldquo: '"', rdquo: '"', lsquo: '‘', rsquo: '’',
+    copy: '©', reg: '®', trade: '™', deg: '°', middot: '·',
+    euro: '€', pound: '£', yen: '¥', cent: '¢', sect: '§',
+    para: '¶', bull: '•', dagger: '†', permil: '‰', times: '×',
+    divide: '÷', frac12: '½', frac14: '¼', frac34: '¾', plusmn: '±',
+    micro: 'µ', not: '¬', shy: '', iexcl: '¡', iquest: '¿',
+    aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú',
+    agrave: 'à', egrave: 'è', igrave: 'ì', ograve: 'ò', ugrave: 'ù',
+    auml: 'ä', euml: 'ë', iuml: 'ï', ouml: 'ö', uuml: 'ü',
+    acirc: 'â', ecirc: 'ê', icirc: 'î', ocirc: 'ô', ucirc: 'û',
+    atilde: 'ã', ntilde: 'ñ', otilde: 'õ', ccedil: 'ç',
+    szlig: 'ß', aelig: 'æ', oslash: 'ø', aring: 'å', thorn: 'þ',
+    eth: 'ð', eacute_: 'é', Yacute: 'Ý', yacute: 'ý'
+  };
+  return String(s)
+    .replace(/&#x([0-9a-f]+);/gi, (_, x) => { const n = parseInt(x, 16); return n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : ''; })
+    .replace(/&#(\d+);/g, (_, d) => { const n = +d; return n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : ''; })
+    .replace(/&([a-z][a-z0-9]*);/gi, (m, name) => {
+      const v = named[name.toLowerCase()];
+      return v === undefined ? m : v;
+    });
+}
+
+function cleanText(s) {
+  return decodeEntities(s)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 // ── Encrypt/decrypt API keys usando safeStorage (DPAPI en Windows) ──
 const SENSITIVE_KEYS = ['opencodeKey', 'groqKey', 'openaiKey', 'geminiKey'];
@@ -289,15 +505,15 @@ function setup(ctx) {
   // Guardar media generada por IA (imagen, audio, video)
   ipcMain.handle('ai:media:save', async (_e, { data, mimeType, filename }) => {
     try {
-      const ext = mimeType?.includes('png') ? '.png' : mimeType?.includes('jpeg') || mimeType?.includes('jpg') ? '.jpg'
-        : mimeType?.includes('gif') ? '.gif' : mimeType?.includes('webp') ? '.webp'
-        : mimeType?.includes('mp3') ? '.mp3' : mimeType?.includes('wav') ? '.wav'
-        : mimeType?.includes('mp4') ? '.mp4' : mimeType?.includes('webm') ? '.webm'
-        : mimeType?.includes('ogg') ? '.ogg' : '.bin';
       const dlDir = (CFG && CFG.downloadDir) || app.getPath('downloads');
       if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
-      const fname = filename || `mc-ai-media-${Date.now()}${ext}`;
-      const fpath = path.join(dlDir, fname);
+      // Todos los callers actuales envían `filename` con la extensión ya resuelta
+      // (ver p. ej. modules/ai-assistant/renderer.js y src/renderer.html).
+      // El nombre se confina a la carpeta de descargas: sin esto, un filename
+      // con '..' escribiría fuera de dlDir.
+      const fname = filename || `mc-ai-media-${Date.now()}.bin`;
+      const fpath = safeNameIn(dlDir, fname);
+      if (!fpath) return { error: 'Nombre de archivo no válido' };
       fs.writeFileSync(fpath, Buffer.from(data, 'base64'));
       safeLog('[AI-MEDIA] Saved:', fpath);
       return { ok: true, path: fpath, filename: fname };
@@ -747,6 +963,16 @@ function setup(ctx) {
   });
 
   // ── AI Active Page DOM (from webview webContentsId) ──
+  //
+  // Antes se mandaba `html.slice(0, 80000)` al renderer y este lo volvía a
+  // recortar a 30000 para el contexto (renderer.js). Doble recorte a lo bruto:
+  // el `<head>` con scripts inline se comía el presupuesto y el modelo recibía
+  // HTML cortado antes del `<body>`, o sea sin el contenido de la página.
+  // Ahora se devuelven las tres capas y el renderer elige:
+  //   html  → crudo, para herramientas que necesitan el DOM real
+  //           (scraping/estructura/detección de frameworks).
+  //   text  → outline + texto limpio, para el contexto del modelo.
+  //   meta  → metadatos clave (title, og:, JSON-LD, inputs).
   ipcMain.handle('ai:page:dom', async (_e, { webContentsId }) => {
     try {
       const wc = webContentsId ? webContents.fromId(webContentsId) : null;
@@ -758,7 +984,12 @@ function setup(ctx) {
       const title = wc.getTitle();
       const url = wc.getURL();
       const cookies = await session.fromPartition('persist:mc-browser-v2').cookies.get({ url }).catch(() => []);
-      return { ok: true, title, url, html: (html || '').slice(0, 80000), cookies };
+      const shaped = shapePageHtml(html || '');
+      return {
+        ok: true, title, url,
+        html: (html || '').slice(0, 80000),   // crudo, para herramientas
+        ...shaped                            // outline/texto/metadatos
+      };
     } catch (err) {
       return { error: err.message };
     }
