@@ -3968,6 +3968,42 @@ app.on('web-contents-created', (event, wc) => {
           window.__mcCtxPos = { x: e.clientX, y: e.clientY, t: Date.now() };
         }, true);
       })()`).catch(() => {});
+      try {
+        const host = new URL(wc.getURL()).hostname.toLowerCase();
+        if (host === 'monoschinos2.net' || host.endsWith('.monoschinos2.net')) {
+          wc.executeJavaScript(`(() => {
+            if (window.__mcMonoschinosWarningCleanup) return;
+            window.__mcMonoschinosWarningCleanup = true;
+            const isWarning = text =>
+              /Warning\\s*:\\s*file_exists\\(\\)/i.test(text) &&
+              /open_basedir restriction in effect/i.test(text) &&
+              /bloques\\.php/i.test(text);
+            const cleanEpisodeList = () => {
+              const lists = Array.from(document.querySelectorAll('ul.eplist'));
+              let waiting = lists.length === 0;
+              for (const list of lists) {
+                const nodes = Array.from(list.childNodes);
+                const firstItem = nodes.findIndex(node =>
+                  node.nodeType === Node.ELEMENT_NODE && node.matches('li'));
+                if (firstItem < 0) {
+                  waiting = true;
+                  continue;
+                }
+                const leadingNodes = nodes.slice(0, firstItem);
+                const text = leadingNodes.map(node => node.textContent || '').join('');
+                if (isWarning(text)) leadingNodes.forEach(node => node.remove());
+              }
+              return waiting;
+            };
+            if (!cleanEpisodeList()) return;
+            const observer = new MutationObserver(() => {
+              if (!cleanEpisodeList()) observer.disconnect();
+            });
+            observer.observe(document.documentElement, { childList: true, subtree: true });
+            setTimeout(() => observer.disconnect(), 10000);
+          })()`).catch(() => {});
+        }
+      } catch {}
     } catch {}
   });
   wc.on('context-menu', async (_contextEvent, params) => {
@@ -4533,6 +4569,32 @@ app.on('web-contents-created', (event, wc) => {
   });
 });
 
+// ── Documentos asociados (PDF / DOCX / TXT / MD) ──
+// En Windows y Linux, abrir un archivo con la app no dispara `open-file`: la
+// ruta llega como argumento de linea de comandos, en el primer arranque o en
+// cada `second-instance` si la app ya estaba corriendo. El modulo del editor se
+// carga mas abajo (dentro de whenReady), asi que la ruta se guarda aca y se
+// entrega recien cuando el modulo esta disponible y la ventana termino de
+// cargar.
+let pendingDocumentPath = '';
+let docEditorMod = null;
+
+function openDocumentFromArgv(argv) {
+  if (!docEditorMod) return false;
+  let p = '';
+  try { p = docEditorMod.extractDocumentPath(argv) || ''; } catch { p = ''; }
+  if (!p) return false;
+  docEditorMod.handleExternalOpen(p).catch((e) => console.error('[DOC-ED]', e.message));
+  return true;
+}
+
+function flushPendingDocument() {
+  if (!pendingDocumentPath) return false;
+  if (!openDocumentFromArgv([pendingDocumentPath])) return false;
+  pendingDocumentPath = '';
+  return true;
+}
+
 function extractExternalUrl(argv = []) {
   return (Array.isArray(argv) ? argv : [])
     .map(value => String(value || '').replace(/^['"]|['"]$/g, ''))
@@ -4568,6 +4630,9 @@ if (!gotTheLock) {
 } else {
   app.on('second-instance', (_event, commandLine) => {
     try {
+      // Un documento asociado tiene prioridad: si vino un archivo, se abre en la
+      // pestana de Documentos en vez de navegar a una URL.
+      if (openDocumentFromArgv(commandLine)) return;
       const target = extractExternalUrl(commandLine);
       if (target) openExternalUrl(target);
       if (mainWin) {
@@ -4620,6 +4685,9 @@ app.whenReady().then(() => {
       pendingExternalUrl = '';
       openExternalUrl(target);
     }
+    // Si la app se lanzo con un documento asociado, recien ahora que el renderer
+    // esta listo se puede avisarle que muestre la pestana de Documentos.
+    flushPendingDocument();
   });
   if (process.env.MC_PCH_DIAG === '1') {
     try {
@@ -4980,6 +5048,22 @@ app.whenReady().then(() => {
   // checkMedia ahora es una función de nivel de módulo (ver más arriba, junto
   // a recordBlockedRequest/recordObservedRequest) para poder reutilizarla en
   // setupExtraSession(). Se sigue usando igual acá abajo.
+
+  // Editor de documentos (PDF/DOCX/TXT/MD). Dueño del archivo y del
+  // documento abierto; el renderer es una vista y la IA usa los mismos
+  // handlers de parche.
+  try {
+    const m = require('./modules/document-editor/main');
+    m.setup({ cfg: CFG, getMainWin: () => mainWin });
+    docEditorMod = m;
+    // Si se lanzo la app haciendo doble clic en un .pdf/.docx, la ruta quedo
+    // esperando en pendingDocumentPath. Se intenta ahora y, siTodavia no esta
+    // lista la ventana, en did-finish-load.
+    try {
+      pendingDocumentPath = m.extractDocumentPath(process.argv) || pendingDocumentPath;
+    } catch {}
+    flushPendingDocument();
+  } catch (e) { console.error('[DOC-ED]', e.message); }
 
   // Adblocker module
   try {

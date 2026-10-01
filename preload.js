@@ -69,6 +69,8 @@ const ALLOWED = new Set([
    'lab:fs:write','lab:fs:read','lab:fs:read-binary','lab:fs:exists',
    'lab:fs:list','lab:fs:delete','lab:fs:mkdir',
    'lab:fs:save-dialog','lab:fs:open-dialog',
+   // Editor de documentos (PDF/DOCX/TXT/MD)
+   'doc:changed','doc:open-request','doc:error',
 ]);
 
 // -- Internal state for lab recording frame callback
@@ -270,6 +272,37 @@ contextBridge.exposeInMainWorld('mc', {
    aiAutoScrape: (opts) => ipcRenderer.invoke('ai:auto-scrape', opts),
    aiGetCache: (opts) => ipcRenderer.invoke('ai:get-cache', opts),
    aiClearCache: (opts) => ipcRenderer.invoke('ai:clear-cache', opts),
+
+  // Editor de documentos. Toda la escritura pasa por el main: el renderer
+  // nunca toca el disco y la IA usa exactamente estos mismos canales.
+  docState:      (opts)   => ipcRenderer.invoke('doc:state', opts || {}),
+  docLimits:     ()       => ipcRenderer.invoke('doc:limits'),
+  docOpen:       ()       => ipcRenderer.invoke('doc:open'),
+  docOpenPath:   (p)      => ipcRenderer.invoke('doc:open-path', p || {}),
+  docClose:      ()       => ipcRenderer.invoke('doc:close'),
+  docCreate:     (p)      => ipcRenderer.invoke('doc:create', p || {}),
+  docRead:       (p)      => ipcRenderer.invoke('doc:read', p || {}),
+  docFind:       (p)      => ipcRenderer.invoke('doc:find', p || {}),
+  docContext:    (p)      => ipcRenderer.invoke('doc:context', p || {}),
+  docPatch:      (p)      => ipcRenderer.invoke('doc:patch', p || {}),
+  docEdit:       (p)      => ipcRenderer.invoke('doc:edit', p || {}),
+  docUndo:       ()       => ipcRenderer.invoke('doc:undo'),
+  docRedo:       ()       => ipcRenderer.invoke('doc:redo'),
+  docPreview:    (p)      => ipcRenderer.invoke('doc:preview', p || {}),
+  docSave:       ()       => ipcRenderer.invoke('doc:save'),
+  docSaveAs:     (p)      => ipcRenderer.invoke('doc:save-as', p || {}),
+  docExport:     (p)      => ipcRenderer.invoke('doc:export', p || {}),
+  docPrintHtml:  ()       => ipcRenderer.invoke('doc:print-preview-html'),
+  docBytes:      ()       => ipcRenderer.invoke('doc:bytes'),
+  docReveal:     (p)      => ipcRenderer.invoke('doc:reveal', p || {}),
+  docWorkList:   ()       => ipcRenderer.invoke('doc:work:list'),
+  docWorkLoad:   (p)      => ipcRenderer.invoke('doc:work:load', p || {}),
+  docWorkSave:   ()       => ipcRenderer.invoke('doc:work:save'),
+  docWorkDelete: (p)      => ipcRenderer.invoke('doc:work:delete', p || {}),
+  docRecents:    ()       => ipcRenderer.invoke('doc:recent:list'),
+  docRecentsClear: ()     => ipcRenderer.invoke('doc:recent:clear'),
+  docRecentOpen: (p)      => ipcRenderer.invoke('doc:recent:open', p || {}),
+
   // Memory
   memoryList:      (filters)   => ipcRenderer.invoke('memory:list', filters),
   memorySearch:    (query)     => ipcRenderer.invoke('memory:search', query),

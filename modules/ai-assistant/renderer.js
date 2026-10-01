@@ -618,6 +618,21 @@ const AI = {
     this._wv = null;
   },
 
+  /**
+   * Documento abierto en el editor, para pegarlo al mensaje.
+   * Devuelve null si no hay documento o si el módulo no está cargado.
+   */
+  async getDocContext() {
+    try {
+      if (typeof mc === 'undefined' || !mc || typeof mc.docContext !== 'function') return null;
+      const snap = await mc.docState({});
+      if (!snap || !snap.open) return null;
+      const res = await mc.docContext({ maxChars: 6000 });
+      if (!res || !res.ok) return null;
+      return res;
+    } catch { return null; }
+  },
+
   getTabContextJSON() {
     try {
       const tabs = typeof window.__mcGetTabs === 'function' ? window.__mcGetTabs() : [];
@@ -728,6 +743,22 @@ const AI = {
       apiContent = Array.isArray(userContent)
         ? [{ type: 'text', text: note }, ...userContent]
         : `${note}\n\n${userContent}`;
+    }
+    // Documento abierto en el editor: entra al mensaje real, no al system
+    // prompt, así el modelo lo tiene fresco y con el hash correcto.
+    const docCtx = await this.getDocContext();
+    if (docCtx) {
+      const bloque = [
+        '',
+        '--- DOCUMENTO ABIERTO EN EL EDITOR ---',
+        `${docCtx.title} · ${docCtx.sourceName} · ${docCtx.format} · hash ${docCtx.hash}`,
+        `${docCtx.stats?.words || 0} palabras, ${docCtx.stats?.blocks || 0} bloques${docCtx.truncated ? ' (adelanto truncado)' : ''}`,
+        '',
+        docCtx.text
+      ].join('\n');
+      apiContent = Array.isArray(apiContent)
+        ? [{ type: 'text', text: apiContent[0]?.text ? apiContent[0].text + bloque : bloque }, ...apiContent.slice(1)]
+        : apiContent + bloque;
     }
     this.msgs.push({ role: 'user', content: apiContent });
     this.appendMsg('user', userContent);
@@ -1123,6 +1154,38 @@ Al inicio del mensaje recibes automáticamente:
 - USA esto directamente sin herramientas adicionales
 
 Para acceder a otras pestañas o más contexto usa las herramientas \`\`\`tabs, \`\`\`tab:switch, \`\`\`tab:context
+
+## EDITOR DE DOCUMENTOS
+Si hay un documento abierto (PDF, DOCX, TXT o Markdown) recibís su título, su hash y un adelanto del texto. Para cambiarlo usá parches atómicos, nunca reescribas el documento entero.
+
+\`\`\`doc:read
+\`\`\`
+→ Devuelve el texto del documento + su **hash**. SIEMPRE usá este hash en el siguiente parche.
+
+\`\`\`doc:find
+texto a buscar
+\`\`\`
+→ Dónde aparece un texto (sabés el bloque exacto antes de parchear)
+
+\`\`\`doc:patch
+{ "expectedHash": "<hash del doc:read>", "ops": [ ...operaciones... ] }
+\`\`\`
+→ Aplica cambios. Operaciones válidas:
+   - \`{"op":"replace","find":"texto exacto","replace":"texto nuevo","all":false,"caseSensitive":false,"regex":false}\`
+   - \`{"op":"insert","after":"ancla","block":{"type":"paragraph","text":"..."}}\` (o \`"before"\`, o \`"index":12\`)
+   - \`{"op":"delete","find":"texto exacto"}\`
+   - \`{"op":"style","find":"texto","bold":true,"italic":true,"underline":false,"align":"center","size":14,"color":"#333333"}\`
+   - \`{"op":"replaceBlock","id":"b12","block":{"type":"heading","level":2,"text":"Título"}}\`
+   - \`{"op":"deleteBlock","id":"b12"}\`
+   - \`{"op":"setTitle","title":"..."}\` · \`{"op":"setMeta","key":"author","value":"..."}\`
+
+Tipos de bloque: \`heading(level 1-3)\`, \`paragraph\`, \`list(items[], ordered)\`, \`quote\`, \`code\`, \`image(src data:)\`, \`table(rows[][], header)\`, \`pagebreak\`, \`hr\`.
+
+Reglas:
+- Un parche por cambio lógico. Si algo falla, **se descarta el parche entero**.
+- Todo texto ancla debe existir y ser único, salvo que pongas \`"all":true\`.
+- Si el parche vuelve con error de hash obsoleto, el documento cambió: usá \`doc:read\` de nuevo.
+- Para exportar: \`\`\`doc:export pdf\`\`\` (o docx / txt / md).
 
 ## HERRAMIENTAS DISPONIBLES
 
@@ -1850,6 +1913,85 @@ Usuario: "Descarga todos los videos de esta página"
       } catch (err) {
         results.push({ type: 'lab', result: `Error: ${err.message}` });
       }
+    }
+
+    // doc blocks → editor de documentos (doc:read / doc:patch / doc:find /
+    // doc:export). Misma API que usa el editor a mano: el main es dueño del
+    // documento y valida cada parche con expectedHash.
+    const docRegex = /```doc:(\w+)\s*([\s\S]*?)```/g;
+    while ((match = docRegex.exec(text)) !== null) {
+      const tool = match[1].toLowerCase();
+      const body = match[2].trim();
+      if (tool === 'read' || tool === 'context') {
+        const res = await mc.docRead({ maxChars: 6000 });
+        if (res.error) { results.push({ type: 'doc', result: `Error: ${res.error}` }); continue; }
+        let out = `DOCUMENTO: ${res.title} (${res.sourceName || 'sin guardar'}, ${res.format}, hash ${res.hash})\n`;
+        out += `hash actual para parchear: ${res.hash}\n`;
+        out += `(${res.stats?.words || 0} palabras, ${res.stats?.blocks || 0} bloques)\n\n${res.text}`;
+        if (res.truncated) out += `\n\n[truncado: ${res.totalChars} chars en total]`;
+        results.push({ type: 'doc', result: out });
+        continue;
+      }
+      if (tool === 'find') {
+        const res = await mc.docFind({ query: body, caseSensitive: /-i\s/i.test(body) ? false : true });
+        if (res.error) { results.push({ type: 'doc', result: `Error: ${res.error}` }); continue; }
+        const hits = res.hits || [];
+        results.push({ type: 'doc', result: hits.length
+          ? `${hits.length} coincidencia(s):\n` + hits.map((h) => `  bloque ${h.index} [${h.type}] → "${h.preview}"`).join('\n')
+          : 'Sin coincidencias' });
+        continue;
+      }
+      if (tool === 'patch') {
+        let patch;
+        try { patch = JSON.parse(body); }
+        catch (e) { results.push({ type: 'doc', result: 'Error: el JSON del parche no es válido: ' + e.message }); continue; }
+        const ops = Array.isArray(patch.ops) ? patch.ops.length : 0;
+        if (this.activeMode === 'supervised') {
+          const detalle = (patch.ops || []).map((o) => `• ${o.op}: ${o.find || o.after || o.before || o.index || o.id || ''}`).join('\n');
+          const ok = await this.showConsent(`📄 El AI quiere modificar el documento abierto (${ops} cambio/s):\n${detalle}\n\n¿Autorizás?`);
+          if (!ok) { results.push({ type: 'doc', result: '⛔ Cancelado por el usuario' }); continue; }
+        }
+        this.appendMsg('thinking', `📄 Aplicando ${ops} cambio(s) al documento…`);
+        const res = await mc.docPatch({ expectedHash: patch.expectedHash, ops: patch.ops });
+        if (!res.ok) {
+          let msg = `Error: ${res.error}`;
+          if (res.stale) msg += `\n\nEl hash cambió. Vuelve a usar doc:read para obtener el actual: ${res.hash}`;
+          if (res.errors && res.errors.length > 1) msg += '\n' + res.errors.map((e) => `• ${e.message}`).join('\n');
+          results.push({ type: 'doc', result: msg });
+          continue;
+        }
+        if (typeof window.DocEditor !== 'undefined' && window.DocEditor.applySnapshot) {
+          const snap = await mc.docState({});
+          window.DocEditor.applySnapshot(snap);
+          if (!window.DocEditor.isOpen()) {
+            results.push({ type: 'doc', result: `✓ ${res.applied} cambio(s) aplicado(s). Nuevo hash: ${res.hash}. Abrí el editor (Ctrl+Shift+D) para verlos.` });
+            continue;
+          }
+        }
+        results.push({ type: 'doc', result: `✓ ${res.applied} cambio(s) aplicado(s). Nuevo hash: ${res.hash}\n${(res.diff || []).map((d) => `• ${d.op}: "${(d.before || '').slice(0, 60)}" → "${(d.after || '').slice(0, 60)}"`).join('\n')}` });
+        continue;
+      }
+      if (tool === 'export') {
+        const fmt = (body.match(/\b(pdf|docx|txt|md)\b/i) || [])[1] || 'pdf';
+        if (this.activeMode === 'supervised') {
+          const ok = await this.showConsent(`📤 El AI quiere exportar el documento como ${fmt.toUpperCase()}. ¿Autorizás?`);
+          if (!ok) { results.push({ type: 'doc', result: '⛔ Cancelado por el usuario' }); continue; }
+        }
+        this.appendMsg('thinking', `📤 Exportando a ${fmt.toUpperCase()}…`);
+        const res = await mc.docSaveAs({ format: fmt.toLowerCase() });
+        if (res && res.error) results.push({ type: 'doc', result: `Error: ${res.error}` });
+        else if (res && res.canceled) results.push({ type: 'doc', result: 'Exportación cancelada' });
+        else results.push({ type: 'doc', result: `✓ Exportado: ${res.sourceName}` });
+        continue;
+      }
+      if (tool === 'open' || tool === 'state') {
+        const snap = await mc.docState({});
+        if (!snap.open) { results.push({ type: 'doc', result: 'No hay ningún documento abierto' }); continue; }
+        if (tool === 'state' && typeof window.DocEditor !== 'undefined') window.DocEditor.open();
+        results.push({ type: 'doc', result: `Abierto: ${snap.doc.title} (${snap.format}, ${snap.doc.blocks.length} bloques, hash ${snap.doc.hash}, ${snap.dirty ? 'sin guardar' : 'guardado'})` });
+        continue;
+      }
+      results.push({ type: 'doc', result: `Herramienta doc desconocida: ${tool}. Usá read, patch, find o export.` });
     }
 
     // Auto-detect HTML/JS/CSS blocks → lab (only if lab mode is on)

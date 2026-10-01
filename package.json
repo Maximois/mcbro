@@ -10,7 +10,10 @@
     "dev": "set MC_DEV=1 && electron .",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --win",
-    "test": "node --test"
+    "test": "node --test",
+    "test:doc": "node tools/doc-editor-smoke.js",
+    "test:doc-worker": "node tools/doc-editor-worker.js",
+    "test:doc-tab": "electron tools/doc-editor-tab-smoke.js"
   },
   "devDependencies": {
     "electron": "30.0.9",
@@ -67,6 +70,31 @@
         "ext": "htm",
         "description": "HTML Web Page",
         "role": "Viewer"
+      },
+      {
+        "ext": "pdf",
+        "description": "Documento PDF",
+        "role": "Editor"
+      },
+      {
+        "ext": "docx",
+        "description": "Documento de Word",
+        "role": "Editor"
+      },
+      {
+        "ext": "txt",
+        "description": "Documento de texto",
+        "role": "Editor"
+      },
+      {
+        "ext": "md",
+        "description": "Documento Markdown",
+        "role": "Editor"
+      },
+      {
+        "ext": "markdown",
+        "description": "Documento Markdown",
+        "role": "Editor"
       }
     ],
     "nsis": {
