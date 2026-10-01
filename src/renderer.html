@@ -2934,11 +2934,26 @@ const Sessions = {
 
   teardownTabs() {
     const wrap = document.getElementById('session-webview-wrap');
-    if (wrap) { try { wrap.querySelectorAll('webview').forEach(w => w.remove()); } catch {} }
-    this.tabs.forEach(t => { try { t.wv?.remove(); } catch {} });
+    const webviews = new Set([
+      ...(wrap ? Array.from(wrap.querySelectorAll('webview')) : []),
+      ...this.tabs.map(t => t.wv).filter(Boolean)
+    ]);
+    webviews.forEach(wv => this.destroyTabWebview(wv));
     this.tabs = [];
     this.activeTabId = null;
     this._wv = null;
+  },
+
+  destroyTabWebview(wv) {
+    if (!wv) return;
+    try { wv.stop(); } catch {}
+    let webContentsId = 0;
+    try { webContentsId = Number(wv.getWebContentsId?.()) || 0; } catch {}
+    if (webContentsId && typeof mc !== 'undefined' && typeof mc.destroyWebview === 'function') {
+      mc.destroyWebview(webContentsId).catch(() => {});
+    }
+    try { wv.removeAttribute('src'); } catch {}
+    try { wv.remove(); } catch {}
   },
 
   addTab(url, opts = {}) {
@@ -3014,7 +3029,7 @@ const Sessions = {
     const idx = this.tabs.findIndex(t => t.id === id);
     if (idx < 0) return;
     const [removed] = this.tabs.splice(idx, 1);
-    try { removed.wv?.remove(); } catch {}
+    this.destroyTabWebview(removed.wv);
     if (this.tabs.length === 0) {
       this._wv = null;
       this.activeTabId = null;
