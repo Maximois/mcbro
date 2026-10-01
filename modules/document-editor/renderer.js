@@ -317,10 +317,21 @@ function ensureTab() {
     if (!bar) return;
     const block = selectedBlock();
     const supported = block && ['paragraph', 'heading', 'quote', 'code', 'list'].includes(block.type);
-    bar.querySelectorAll('button,select').forEach((control) => { control.disabled = !supported; });
-    if (!supported) return;
+    bar.querySelectorAll('button,select').forEach((control) => {
+      const formatOnly = control.id === 'doc-style' || control.id === 'doc-size' ||
+        control.hasAttribute('data-block-toggle') || control.hasAttribute('data-block-align') ||
+        control.hasAttribute('data-block-list') || control.id === 'doc-insert-pagebreak';
+      control.disabled = !block || (formatOnly && !supported);
+    });
+    if (!block) return;
+    const blocks = ui.snap.doc.blocks || [];
+    const index = blocks.findIndex((item) => item.id === block.id);
+    bar.querySelectorAll('[data-block-move]').forEach((button) => {
+      button.disabled = button.dataset.blockMove === 'up' ? index <= 0 : index < 0 || index >= blocks.length - 1;
+    });
     bar.querySelector('#doc-style').value = block.type === 'heading' ? 'heading-' + (block.level || 1)
       : ['paragraph', 'quote', 'code'].includes(block.type) ? block.type : 'paragraph';
+    if (!supported) return;
     bar.querySelector('#doc-size').value = String(block.size || 11);
     bar.querySelectorAll('[data-block-toggle]').forEach((button) => {
       button.classList.toggle('active', !!block[button.dataset.blockToggle]);
@@ -395,6 +406,10 @@ function ensureTab() {
       });
     } else if (button.id === 'doc-insert-pagebreak') {
       insertSelectedPageBreak();
+    } else if (button.dataset.blockMove) {
+      moveSelectedBlock(button.dataset.blockMove);
+    } else if (button.hasAttribute('data-block-delete')) {
+      deleteSelectedBlock();
     }
   }
 
@@ -409,6 +424,71 @@ function ensureTab() {
     ] });
     if (res && res.ok) { applySnapshot(res); select(block.id); }
     else if (res && res.error) toast(res.error, 'error');
+  }
+
+  async function moveSelectedBlock(direction) {
+    const selected = selectedBlock();
+    if (!selected || !ui.snap) return;
+    await flushPending();
+    const blocks = ui.snap.doc.blocks || [];
+    const index = blocks.findIndex((block) => block.id === selected.id);
+    const insertAt = direction === 'up' ? index - 1 : index + 2;
+    if (index < 0 || insertAt < 0 || index >= blocks.length || (direction === 'down' && index >= blocks.length - 1)) return;
+    const moved = Object.assign({}, blocks[index]);
+    delete moved.id;
+    const res = await API.docEdit({ expectedHash: ui.snap.doc.hash, ops: [
+      { op: 'insert', index: insertAt, block: moved },
+      { op: 'deleteBlock', id: selected.id }
+    ] });
+    if (res && res.ok) {
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+      const movedId = res.doc.blocks[newIndex]?.id;
+      applySnapshot(res);
+      if (movedId) select(movedId);
+    } else if (res && res.error) toast(res.error, 'error');
+  }
+
+  async function deleteSelectedBlock() {
+    const block = selectedBlock();
+    if (!block || !ui.snap) return;
+    const label = blockText(block).trim().slice(0, 80) || block.type;
+    if (!window.confirm('¿Eliminar este bloque?\n\n' + label)) return;
+    await flushPending();
+    const res = await API.docEdit({ expectedHash: ui.snap.doc.hash, ops: [{ op: 'deleteBlock', id: block.id }] });
+    if (res && res.ok) applySnapshot(res);
+    else if (res && res.error) toast(res.error, 'error');
+  }
+
+  async function travelHistory(direction) {
+    await flushPending();
+    const res = direction === 'undo' ? await API.docUndo() : await API.docRedo();
+    if (res && res.ok) applySnapshot(res);
+    else if (res && res.error) toast(res.error);
+  }
+
+  async function findAndReplace() {
+    await flushPending();
+    const find = window.prompt('Buscar texto en el documento:');
+    if (!find) return;
+    const replace = window.prompt('Reemplazar por:', '');
+    if (replace == null) return;
+    if (!window.confirm('Reemplazar todas las coincidencias de «' + find + '»?')) return;
+    const res = await API.docEdit({ expectedHash: ui.snap?.doc?.hash, ops: [
+      { op: 'replace', find, replace, all: true, caseSensitive: false }
+    ] });
+    if (res && res.ok) { applySnapshot(res); toast('Reemplazo aplicado en ' + res.applied + ' bloque(s)'); }
+    else if (res && res.error) toast(res.error, 'error');
+  }
+
+  async function showDocumentStats() {
+    await flushPending();
+    const res = await API.docRead({ maxChars: 200000 });
+    if (res && res.error) { toast(res.error, 'error'); return; }
+    const stats = res && res.stats;
+    if (!stats) return;
+    window.alert('Palabras: ' + stats.words + '\nCaracteres: ' + stats.chars +
+      '\nBloques: ' + stats.blocks + '\nTítulos: ' + stats.headings +
+      '\nTablas: ' + stats.tables + '\nImágenes: ' + stats.images + '\nPáginas: ' + stats.pages);
   }
 
   // ── Contenido ──────────────────────────────────────────────────────────
@@ -511,13 +591,7 @@ function ensureTab() {
     const blocks = (snap.doc && snap.doc.blocks) || [];
     b0.innerHTML = blocks.map((b) =>
       '<div class="doc-b" data-type="' + esc(b.type) + '" data-level="' + (b.level || '') +
-        '" data-id="' + esc(b.id) + '"' + blockStyle(b) + '>' +
-        '<span class="doc-row">' +
-          '<button data-act="up" title="Subir">&uarr;</button>' +
-          '<button data-act="down" title="Bajar">&darr;</button>' +
-          '<button data-act="type" title="Cambiar tipo">T</button>' +
-          '<button data-act="del" title="Borrar">&times;</button>' +
-        '</span>' + blockMarkup(b) + '</div>'
+        '" data-id="' + esc(b.id) + '"' + blockStyle(b) + '>' + blockMarkup(b) + '</div>'
     ).join('');
     const nodes = new Map(Array.from(b0.querySelectorAll(':scope > .doc-b')).map(node => [node.dataset.id, node]));
     const stack = document.createElement('div');
@@ -540,10 +614,14 @@ function ensureTab() {
     const t = el('doc-title');
     const s = el('doc-sub');
     const btnSave = el('doc-save');
+    const btnUndo = el('doc-undo');
+    const btnRedo = el('doc-redo');
     if (!snap || !snap.open) {
       t.textContent = 'Documentos';
       s.textContent = '';
       btnSave.disabled = true;
+      btnUndo.disabled = true;
+      btnRedo.disabled = true;
       setTabTitle('📄 Documentos');
       return;
     }
@@ -557,6 +635,8 @@ function ensureTab() {
     if (tituloDoc && tituloDoc !== nombre) bits.push(tituloDoc);
     s.textContent = bits.join(' · ');
     btnSave.disabled = !snap.dirty || !snap.sourcePath;
+    btnUndo.disabled = !snap.history?.canUndo;
+    btnRedo.disabled = !snap.history?.canRedo;
     setTabTitle('📄 ' + nombre + (snap.dirty ? ' *' : ''));
   }
 
@@ -838,62 +918,6 @@ function ensureTab() {
   }
 
   // ── Fila flotante de bloque ────────────────────────────────────────────
-  const TYPES = ['paragraph', 'heading', 'list', 'quote', 'code'];
-
-  async function onRowAction(e) {
-    const btn = e.target.closest('button[data-act]');
-    if (!btn) return;
-    e.preventDefault();
-    e.stopPropagation();
-    await flushPending();
-    const bEl = btn.closest('.doc-b');
-    if (!bEl || !ui.snap || !ui.snap.open) return;
-    const blocks = (ui.snap.doc && ui.snap.doc.blocks) || [];
-    const i = blocks.findIndex((x) => x.id === bEl.dataset.id);
-    if (i < 0) return;
-    const hash = ui.snap.doc.hash;
-    const b = blocks[i];
-    let res;
-    switch (btn.dataset.act) {
-      case 'up': {
-        if (i === 0) return;
-        const moved = Object.assign({}, b);
-        delete moved.id;
-        res = await API.docEdit({ expectedHash: hash, ops: [
-          { op: 'insert', index: i - 1, block: moved },
-          { op: 'deleteBlock', id: b.id }
-        ] });
-        break;
-      }
-      case 'down': {
-        if (i >= blocks.length - 1) return;
-        const moved = Object.assign({}, b);
-        delete moved.id;
-        res = await API.docEdit({ expectedHash: hash, ops: [
-          { op: 'insert', index: i + 2, block: moved },
-          { op: 'deleteBlock', id: b.id }
-        ] });
-        break;
-      }
-      case 'del':
-        res = await API.docEdit({ expectedHash: hash, ops: [{ op: 'deleteBlock', id: b.id }] });
-        break;
-      case 'type': {
-        const next = TYPES[(TYPES.indexOf(b.type) + 1) % TYPES.length];
-        const nb = Object.assign({}, b, { type: next });
-        delete nb.runs; delete nb.items; delete nb.rows;
-        if (next === 'list') nb.items = [blockText(b) || 'elemento'];
-        else nb.text = blockText(b);
-        res = await API.docEdit({ expectedHash: hash, ops: [{ op: 'replaceBlock', id: b.id, block: nb }] });
-        break;
-      }
-      default:
-        return;
-    }
-    if (res && res.ok) applySnapshot(res);
-    else if (res && res.error) toast(res.error, 'error');
-  }
-
   // ── Cableado de edición ────────────────────────────────────────────────
   function wireEditing() {
     const b0 = el('doc-body');
@@ -926,7 +950,6 @@ function ensureTab() {
       const bEl = e.target.closest('.doc-b');
       select(bEl ? bEl.dataset.id : null);
     });
-    b0.addEventListener('click', onRowAction);
   }
 
   // ── Teclado ────────────────────────────────────────────────────────────
@@ -942,6 +965,9 @@ function ensureTab() {
     if (e.key === 'Escape' && !enCampo) { e.preventDefault(); api.close(); return; }
     if (e.ctrlKey || e.metaKey) {
       const k = String(e.key || '').toLowerCase();
+      if (k === 'z') { e.preventDefault(); await travelHistory(e.shiftKey ? 'redo' : 'undo'); return; }
+      if (k === 'y') { e.preventDefault(); await travelHistory('redo'); return; }
+      if (k === 'f') { e.preventDefault(); findAndReplace(); return; }
       if (k === 's') { e.preventDefault(); onSave(); return; }
       if (k === 'o') { e.preventDefault(); onOpen(); return; }
     }

@@ -1005,6 +1005,6 @@ module.exports = {
   _internals: {
     openFile, saveTo, saveAs, saveInPlace, exportAs, docToBytes, printToPdfBytes,
     formatFromExt, sniff, isGranted, grant, applyUserPatch,
-    stateSnapshot, saveWorkCopy, listWorkCopies, loadWorkCopy
+    stateSnapshot, saveWorkCopy, listWorkCopies, loadWorkCopy, travelDocumentHistory
   }
 };

@@ -26,10 +26,12 @@ visibles y en su lugar normal.
 - Botón de documento en la barra lateral izquierda, o **Ctrl+Shift+D**, abre la
   pestaña (y la enfoca si ya estaba abierta, sin duplicarla).
 - **Ctrl+S** guarda, **Ctrl+O** abre, **Esc** cierra la pestaña.
+- **Ctrl+Z** deshace, **Ctrl+Y** o **Ctrl+Shift+Z** rehace, y **Ctrl+F** busca/reemplaza.
 - El botón `×` de la pestaña y **Ctrl+W** la cierran como cualquier otra.
 - Clic en un bloque y Enter crea el bloque siguiente.
 - Backspace al principio de un bloque lo fusiona con el anterior.
-- La fila flotante de cada bloque lo mueve, le cambia el tipo o lo borra.
+- La cinta superior da formato al bloque seleccionado, cambia su orden o lo elimina.
+- Deshacer incluye cambios del usuario y parches de la IA (hasta 100 pasos).
 - Pestaña **Páginas** muestra el PDF original renderizado (hasta 60 páginas);
   **Contenido** muestra el texto editable.
 - Si el usuario abre un `.pdf`/`.docx`/`.txt`/`.md` haciendo doble clic (o con

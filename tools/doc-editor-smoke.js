@@ -240,6 +240,27 @@ const DOC = () => model.createDoc({
     assert.strictEqual(res.doc.title, 'Informe corregido');
     assert.strictEqual(res.dirty, true);
   });
+  await ta('deshacer y rehacer restauran el documento y actualizan disponibilidad', async () => {
+    const before = main.getState();
+    const edited = I.applyUserPatch({
+      expectedHash: before.doc.hash,
+      ops: [{ op: 'setTitle', title: 'Cambio reversible' }]
+    }, 'test');
+    assert.strictEqual(edited.ok, true);
+    assert.strictEqual(edited.history.canUndo, true);
+    assert.strictEqual(edited.history.canRedo, false);
+
+    const undone = I.travelDocumentHistory('undo');
+    assert.strictEqual(undone.ok, true);
+    assert.strictEqual(undone.doc.title, before.doc.title);
+    assert.strictEqual(undone.history.canRedo, true);
+
+    const redone = I.travelDocumentHistory('redo');
+    assert.strictEqual(redone.ok, true);
+    assert.strictEqual(redone.doc.title, 'Cambio reversible');
+    assert.strictEqual(redone.history.canUndo, true);
+    assert.strictEqual(redone.history.canRedo, false);
+  });
   await ta('un hash viejo se rechaza como documento obsoleto', async () => {
     const res = I.applyUserPatch({ expectedHash: 'hash-inventado', ops: [{ op: 'setTitle', title: 'x' }] }, 'test');
     assert.strictEqual(res.ok, false);
