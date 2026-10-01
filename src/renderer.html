@@ -7025,7 +7025,29 @@ function bindDownloadEvents() {
   };
 
   mc.on('dl-native-done', d => {
-    const item = document.getElementById(d.id);
+    // Persistir en historial PRIMERO: renderPersistedDownloads() dibuja desde
+    // state.downloads, asi que tiene que existir antes de renderizar.
+    trackDownload({
+      id: d.id, url: d.url || '', file: d.file || '',
+      filename: d.filename || '', size: d.size,
+      // type/name los usa renderPersistedDownloads() para la etiqueta y el
+      // icono. Sin ellos el video caia en el 'MP4' por defecto de L6638.
+      type: (d.type || 'FILE'), name: d.name || d.filename || 'descarga',
+      native: true,
+      state: d.cancelled ? 'cancelled' : 'done', ts: Date.now()
+    });
+
+    let item = document.getElementById(d.id);
+    // Si la descarga no nació en el panel (p. ej. se lanzó desde el menú
+    // contextual de la página), nunca hubo item en la cola. Antes se guardaba
+    // en el historial pero sin renderizarlo, así que quedaba invisible: la
+    // entrada existía pero no se veía en ninguna parte.
+    if (!item) {
+      renderPersistedDownloads();
+      item = document.getElementById(d.id);
+      const queue = $('download-queue');
+      if (item && queue) queue.insertBefore(item, queue.firstChild);
+    }
     if (item) {
       const id = item.id;
       item.dataset.file = d.file || '';
@@ -7048,12 +7070,6 @@ function bindDownloadEvents() {
       }
       setDlButtons(item, d.cancelled ? 'cancelled' : 'done');
     }
-    // Persistir en historial
-    trackDownload({
-      id: d.id, url: d.url || '', file: d.file || '',
-      filename: d.filename || '', size: d.size,
-      state: d.cancelled ? 'cancelled' : 'done', ts: Date.now()
-    });
     dlActive = Math.max(0, dlActive-1);
     setText('dl-count-badge', dlActive+' activas');
     const dot = $('dl-badge-dot'); if (dot) dot.style.display = dlActive > 0 ? 'block' : 'none';

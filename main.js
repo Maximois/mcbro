@@ -1836,7 +1836,15 @@ function registerNativeDownloadHandler(sess) {
       pendingNativeRetryId = null;
       const dlDir = CFG.downloadDir || app.getPath('downloads');
       if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
-      nativeDlRegistry.set(dlId, { id: dlId, item, url, filename, webContentsId: webContents?.id, state: 'active' });
+      // mimeType lo trae Chromium ya resuelto (incluye el sniff de bytes para
+      // blob:/data:), así que es la fuente fiable para etiquetar el historial.
+      const mime = String(item.getMimeType() || '').toLowerCase();
+      const type = mime.startsWith('video/') ? 'MP4'
+        : mime.startsWith('audio/') ? 'AUDIO'
+        : mime.startsWith('image/') ? 'IMG'
+        : mime === 'application/pdf' ? 'PDF'
+        : 'FILE';
+      nativeDlRegistry.set(dlId, { id: dlId, item, url, filename, type, webContentsId: webContents?.id, state: 'active' });
       // Guardar en la carpeta de descargas configurada. El nombre viene de
       // Content-Disposition (Chromium lo sanitiza, pero no confiamos en eso):
       // se confina a dlDir por si trae separadores o '..'.
@@ -1853,6 +1861,7 @@ function registerNativeDownloadHandler(sess) {
         id: dlId,
         url,
         filename,
+        type,
         totalBytes,
         pageUrl,
         state: 'active'
@@ -1891,6 +1900,10 @@ function registerNativeDownloadHandler(sess) {
           filename,
           file: filePath,
           size,
+          // El historial del renderer usa type/name para la etiqueta y el icono;
+          // sin ellos la entrada cae en los valores por defecto.
+          type: nativeDlRegistry.get(dlId)?.type || 'FILE',
+          name: filename,
           state,
           cancelled: state === 'cancelled' || state === 'interrupted'
         });
