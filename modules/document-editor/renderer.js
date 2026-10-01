@@ -24,6 +24,7 @@
 
   const ui = {
     snap: null,        // último estado que mandó el main
+    selectedBlockId: null,
     view: 'content',   // 'content' | 'pages'
     pdfRenderToken: 0,
     toast: null
@@ -295,6 +296,7 @@ function ensureTab() {
   function select(id) {
     const h = host();
     if (!h) return;
+    ui.selectedBlockId = id || null;
     h.querySelectorAll('.doc-b.sel').forEach((x) => x.classList.remove('sel'));
     if (id) {
       const b = h.querySelector('.doc-b[data-id="' + cssEscape(id) + '"]');
@@ -598,6 +600,8 @@ function ensureTab() {
     stack.className = 'doc-paper-stack';
     b0.replaceChildren(stack);
     layoutPaperPages(stack, blocks, nodes, snap.doc.page || { width: 595, height: 842, margin: 57 });
+    if (ui.selectedBlockId) select(ui.selectedBlockId);
+    else refreshFormatBar();
   }
 
   // Para distinguir pestañas manda el nombre del archivo; el titulo que trae el
