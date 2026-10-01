@@ -105,6 +105,16 @@ function installPerchanceDownloads(partition = PERCHANCE_PARTITION, opts = {}) {
   const ses = session.fromPartition(partition);
   const dir = downloadFolder(folder);
 
+  // Idempotente: 'will-download' no admite off(). Si se registrara dos veces
+  // sobre la misma partición, ambos handlers pelearían el mismo DownloadItem
+  // (el último setSavePath gana y los eventos del otro quedan huérfanos).
+  if (ses.__mcPerchanceDownloadsInstalled) {
+    if (typeof onEvent === 'function' && onEvent !== (() => {})) ses.__mcPerchanceDownloadsOnEvent = onEvent;
+    return ses;
+  }
+  ses.__mcPerchanceDownloadsInstalled = true;
+  ses.__mcPerchanceDownloadsOnEvent = onEvent;
+
   ses.setDownloadPath(dir); // fallback a nivel de session
 
   // El panel de Perchance no hace restricción de red ni allowlist. Solo dejamos
@@ -125,15 +135,16 @@ function installPerchanceDownloads(partition = PERCHANCE_PARTITION, opts = {}) {
     // (c) RUTA SÍNCRONA = descarga garantizada, sin diálogo, sin depender del SO.
     item.setSavePath(fullPath);
 
-    onEvent({ id, type: "start", url, pageUrl, filename, path: fullPath, totalBytes: item.getTotalBytes() });
+    const emit = ses.__mcPerchanceDownloadsOnEvent || onEvent;
+    emit({ id, type: "start", url, pageUrl, filename, path: fullPath, totalBytes: item.getTotalBytes() });
 
     item.on("updated", (_e, state) => {
-      onEvent({ id, type: "progress", state, url, pageUrl, filename, path: fullPath, receivedBytes: item.getReceivedBytes(), totalBytes: item.getTotalBytes() });
+      emit({ id, type: "progress", state, url, pageUrl, filename, path: fullPath, receivedBytes: item.getReceivedBytes(), totalBytes: item.getTotalBytes() });
     });
     item.once("done", (_e, state) => {
       const ok = state === "completed";
       if (!ok) console.warn("[perchance] descarga NO completada:", state, url);
-      onEvent({ id, type: "done", state, url, pageUrl, filename, path: fullPath, receivedBytes: item.getReceivedBytes(), totalBytes: item.getTotalBytes(), success: ok });
+      emit({ id, type: "done", state, url, pageUrl, filename, path: fullPath, receivedBytes: item.getReceivedBytes(), totalBytes: item.getTotalBytes(), success: ok });
     });
   });
 

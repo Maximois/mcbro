@@ -957,32 +957,97 @@ async function saveBlobOrDataUrlToDownloads(wc, srcURL, hintName, sourceFrame) {
     if (!wc || wc.isDestroyed()) return { ok: false, error: 'página no disponible' };
     const safeHint = String(hintName || '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim();
     const script = `
-      (() => {
+      (async () => {
         try {
           const url = ${JSON.stringify(srcURL)};
           const hint = ${JSON.stringify(safeHint)};
+
+          // 1. extension desde el nombre que ya tuvieramos
+          const guessed = /\\.([a-z0-9]{2,8})$/i.exec(hint);
+          let ext = guessed ? guessed[1].toLowerCase() : '';
+
+          // 2. tipo MIME real. Un blob: NO lo revela la URL, hay que leerlo.
+          let mime = '';
+          if (/^data:/i.test(url)) {
+            const m = /^data:([^;,]+)[;,]/i.exec(url);
+            if (m) mime = m[1];
+          } else {
+            try {
+              const res = await fetch(url);
+              mime = (res.headers.get('content-type') || '').split(';')[0].trim();
+            } catch {}
+          }
+
+          // 3. tipo del elemento <img>/<video>/<source> que apunta a esta URL
+          if (!mime) {
+            const el = Array.from(document.querySelectorAll('img[src],video[src],video[poster],source[src]'))
+              .find(n => n.src === url || n.getAttribute('src') === url || n.poster === url);
+            if (el) mime = el.getAttribute('type') || '';
+          }
+
+          if (!ext && mime) {
+            const map = {
+              'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png',
+              'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif',
+              'image/svg+xml': 'svg', 'image/bmp': 'bmp', 'image/x-icon': 'ico',
+              'image/tiff': 'tiff', 'image/heic': 'heic',
+              'video/mp4': 'mp4', 'video/webm': 'webm', 'video/ogg': 'ogv',
+              'video/quicktime': 'mov', 'video/x-matroska': 'mkv',
+              'audio/mpeg': 'mp3', 'audio/ogg': 'ogg', 'audio/wav': 'wav',
+              'text/plain': 'txt', 'text/html': 'html', 'application/json': 'json',
+              'application/pdf': 'pdf', 'application/zip': 'zip'
+            };
+            ext = map[mime.toLowerCase()] || (/^[a-z0-9.+-]+\\/([a-z0-9.+-]+)$/i.test(mime) ? mime.split('/')[1].toLowerCase().replace(/^x-/, '') : '');
+          }
+
+          // 4. ultimo recurso: sniff de los primeros bytes.
+          //    Ojo: comparar bytes con fromCharCode es inutil para PNG
+          //    (0x89 no es imprimible), hay que mirar offsets.
+          if (!ext && /^blob:/i.test(url)) {
+            try {
+              const buf = new Uint8Array(await (await fetch(url)).arrayBuffer());
+              const ascii = (i, n) => String.fromCharCode.apply(null, buf.slice(i, i + n));
+              if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) ext = 'png';
+              else if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) ext = 'jpg';
+              else if (ascii(0, 4) === 'GIF8') ext = 'gif';
+              else if (ascii(0, 4) === 'RIFF' && ascii(8, 4) === 'WEBP') ext = 'webp';
+              else if (ascii(0, 3) === 'ID3' || (buf[0] === 0xFF && (buf[1] & 0xE0) === 0xE0)) ext = 'mp3';
+              else if (ascii(4, 4) === 'ftyp') ext = 'mp4';
+              else if (ascii(0, 5) === '%PDF-') ext = 'pdf';
+              else if (buf[0] === 0x1A && buf[1] === 0x45 && buf[2] === 0xDF && buf[3] === 0xA3) ext = 'webm';
+            } catch {}
+          }
+
+          // Prioridad: atributo download del ancla original > hint > 'imagen'
           const original = Array.from(document.querySelectorAll('a[href]')).find(link => link.href === url);
           const originalName = original && original.getAttribute('download');
-          const filename = originalName || (/\\.[a-z0-9]{2,8}$/i.test(hint) ? hint : '');
+          let stem = hint || 'imagen';
+          if (!ext && !originalName) stem = 'imagen';
+          const filename = originalName || (stem + (ext ? '.' + ext : ''));
+
+          // Sin atributo download, Chromium no siempre resuelve un blob: de
+          // iframe y el click se propaga al frame padre (=> zoom en galeria).
           const anchor = document.createElement('a');
           anchor.href = url;
-          if (filename) anchor.download = filename;
+          anchor.download = filename;
+          anchor.rel = 'noopener';
           anchor.style.display = 'none';
           (document.body || document.documentElement).appendChild(anchor);
           anchor.click();
           setTimeout(() => anchor.remove(), 1000);
-          return { ok: true };
+          return { ok: true, filename, mime: mime || null, ext: ext || null };
         } catch (error) {
           return { error: error.message || String(error) };
         }
       })()
     `;
     const executor = sourceFrame && typeof sourceFrame.executeJavaScript === 'function' ? sourceFrame : wc;
-    const result = executor === wc
-      ? await wc.executeJavaScript(script, true)
-      : await executor.executeJavaScript(script, true);
+    // awaitPromise: el script es async (lee el MIME del blob) y sin esto
+    // executeJavaScript devuelve "[object Promise]" y el anchor nunca se
+    // clickea. userGesture mantiene el click como gesto del usuario.
+    const result = await executor.executeJavaScript(script, true, { awaitPromise: true });
     if (!result || result.error) return { ok: false, error: result?.error || 'no se pudo iniciar la descarga' };
-    return { ok: true };
+    return { ok: true, filename: result.filename || null, mime: result.mime || null };
   } catch (e) {
     return { ok: false, error: e.message || String(e) };
   }
@@ -995,14 +1060,7 @@ function isAuthDomain(host) {
 }
 
 function isAuthRedirectFlow(targetHost, documentHost) {
-  const host = String(targetHost || '').toLowerCase().replace(/^\.+/, '');
-  const doc = String(documentHost || '').toLowerCase().replace(/^\.+/, '');
-  if (!host && !doc) return false;
-  return isAuthDomain(host) || isAuthDomain(doc) ||
-    (host && doc && (host.includes('google') && doc.includes('google')))
-    || (host && doc && (host.includes('x.ai') || host.includes('x.com') || host.includes('twitter.com')) && (doc.includes('grok.com') || doc.includes('x.ai') || doc.includes('x.com') || doc.includes('twitter.com')))
-    || (host && doc && (host.includes('x.com') || host.includes('twitter.com')) && (doc.includes('grok.com') || doc.includes('x.com') || doc.includes('twitter.com')))
-    || (host && doc && (host.includes('grok.com') || host.includes('google') || host.includes('x.ai') || host.includes('x.com') || host.includes('twitter.com')) && (doc.includes('grok.com') || doc.includes('google') || doc.includes('x.ai') || doc.includes('x.com') || doc.includes('twitter.com')));
+  return isAuthDomain(targetHost) || isAuthDomain(documentHost);
 }
 function isAuthPopupUrl(rawUrl) {
   try {
@@ -1472,6 +1530,16 @@ function cfgSnapshot() {
   };
 }
 
+// Convierte un nombre de archivo en ruta dentro de baseDir, sin poder escapar.
+function resolveSafePath(baseDir, name) {
+  const base = path.resolve(baseDir);
+  const raw = String(name == null ? '' : name);
+  const safe = raw.replace(/[\\/]+/g, '_').replace(/^\.+/, '').trim();
+  if (!safe) return null;
+  const resolved = path.resolve(base, safe);
+  if (resolved === base || !resolved.startsWith(base + path.sep)) return null;
+  return resolved;
+}
 // Config
 ipcMain.handle('get-cfg', () => cfgSnapshot());
 ipcMain.handle('update-cfg', (e, patch) => {
@@ -1632,36 +1700,29 @@ function checkMedia(u, pageUrl, resourceType) {
 function registerNativeDownloadHandler(sess) {
   sess.on('will-download', (event, item, webContents) => {
     try {
-      const url = item.getURL() || '';
-      const pageUrl = webContents?.getURL?.() || '';
-      let filename = item.getFilename() || 'descarga';
-      // Perchance: los botones de descarga de la galería/t2i crean
-      // <a href="blob:/data:" download> y llaman .click(), lo que dispara
-      // will-download con URL blob:/data:. Aseguramos nombre/extensión legible
-      // (solo para páginas Perchance; el resto conserva el comportamiento).
-      if (isPerchanceHost(pageUrl) && /^(blob|data):/i.test(url)) {
-        if (!filename || filename === 'descarga') {
-          const m = /^data:([^;,]+)/i.exec(url);
-          const mime = m ? m[1] : '';
-          const ext = mime.includes('png') ? '.png'
-            : mime.includes('jpeg') || mime.includes('jpg') ? '.jpg'
-            : mime.includes('gif') ? '.gif'
-            : mime.includes('webp') ? '.webp'
-            : mime.includes('webm') ? '.webm'
-            : mime.includes('mp4') ? '.mp4'
-            : mime.includes('ogg') ? '.ogg'
-            : mime.includes('mp3') ? '.mp3' : '';
-          filename = 'perchance-' + Date.now() + ext;
-        }
+      const wc = webContents;
+      if (wc && !wc.isDestroyed()) {
+        const urlPage = wc.getURL() || '';
+        // Perchance corre en su propia partición. Su módulo ya registra
+        // 'will-download' para manejar blob:/data: correctamente y con su
+        // carpeta de descargas dedicada (Downloads/Perchance).
+        try {
+          const host = new URL(urlPage).hostname.toLowerCase();
+          if (host === 'perchance.org' || host.endsWith('.perchance.org')) return;
+        } catch {}
       }
+      const url = item.getURL() || '';
+      const filename = item.getFilename() || 'descarga';
       const totalBytes = item.getTotalBytes();
       const dlId = pendingNativeRetryId || ('dl-native-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
       pendingNativeRetryId = null;
       const dlDir = CFG.downloadDir || app.getPath('downloads');
       if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
       nativeDlRegistry.set(dlId, { id: dlId, item, url, filename, webContentsId: webContents?.id, state: 'active' });
-      // Guardar en la carpeta de descargas configurada
-      item.setSavePath(path.join(dlDir, filename));
+      // Guardar en la carpeta de descargas configurada. El nombre viene de
+      // Content-Disposition (Chromium lo sanitiza, pero no confiamos en eso):
+      // se confina a dlDir por si trae separadores o '..'.
+      item.setSavePath(resolveSafePath(dlDir, filename) || path.join(dlDir, 'descarga'));
 
       // Avisar al renderer para cerrar la pestaña popup que solo sirvió
       // para iniciar esta descarga (comportamiento de navegadores normales:
@@ -4763,7 +4824,7 @@ app.whenReady().then(() => {
   // WhatsApp extractor module (independiente)
   try {
     const m = require('./modules/whatsapp-extractor/main');
-    m.setup({ cfg: CFG });
+    m.setup({ cfg: CFG, resolveSafePath });
   } catch (e) { console.error('[WA-EXTRACT]', e.message); }
 
   // checkMedia ahora es una función de nivel de módulo (ver más arriba, junto
