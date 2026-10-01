@@ -1848,13 +1848,13 @@ function registerNativeDownloadHandler(sess) {
   sess.on('will-download', (event, item, webContents) => {
     try {
       const wc = webContents;
+      const pageUrl = wc && !wc.isDestroyed() ? wc.getURL() || '' : '';
       if (wc && !wc.isDestroyed()) {
-        const urlPage = wc.getURL() || '';
         // Perchance corre en su propia partición. Su módulo ya registra
         // 'will-download' para manejar blob:/data: correctamente y con su
         // carpeta de descargas dedicada (Downloads/Perchance).
         try {
-          const host = new URL(urlPage).hostname.toLowerCase();
+          const host = new URL(pageUrl).hostname.toLowerCase();
           if (host === 'perchance.org' || host.endsWith('.perchance.org')) return;
         } catch {}
       }
